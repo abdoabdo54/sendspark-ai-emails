@@ -9,12 +9,19 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Mail, Sparkles, Upload, Eye, Send } from 'lucide-react';
+import { Mail, Sparkles, Upload, Eye, Send, Loader2 } from 'lucide-react';
 import AISubjectGenerator from './AISubjectGenerator';
 import TagPreviewTool from './TagPreviewTool';
 import GoogleSheetsImport from './GoogleSheetsImport';
+import { useEmailAccounts } from '@/hooks/useEmailAccounts';
+import { useCampaigns } from '@/hooks/useCampaigns';
+import { toast } from '@/hooks/use-toast';
 
 const EmailComposer = () => {
+  const { accounts } = useEmailAccounts();
+  const { createCampaign, sendCampaign } = useCampaigns();
+  const [isSending, setIsSending] = useState(false);
+
   const [emailData, setEmailData] = useState({
     fromName: '',
     subject: '',
@@ -24,11 +31,56 @@ const EmailComposer = () => {
     sendMethod: 'apps-script'
   });
 
-  const [previewMode, setPreviewMode] = useState(false);
+  const activeAccounts = accounts.filter(account => account.is_active);
 
-  const handleSend = () => {
-    console.log('Sending email with data:', emailData);
-    // This would integrate with your backend for actual sending
+  const handleSend = async () => {
+    if (!emailData.fromName || !emailData.subject || !emailData.recipients) {
+      toast({
+        title: "Missing Information",
+        description: "Please fill in all required fields",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    if (activeAccounts.length === 0) {
+      toast({
+        title: "No Active Accounts",
+        description: "Please add and activate at least one email account",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    setIsSending(true);
+    try {
+      const campaign = await createCampaign({
+        from_name: emailData.fromName,
+        subject: emailData.subject,
+        recipients: emailData.recipients,
+        html_content: emailData.htmlContent,
+        text_content: emailData.textContent,
+        send_method: emailData.sendMethod,
+        sent_at: new Date().toISOString()
+      });
+
+      if (campaign) {
+        await sendCampaign(campaign.id);
+        // Reset form
+        setEmailData({
+          fromName: '',
+          subject: '',
+          recipients: '',
+          htmlContent: '',
+          textContent: '',
+          sendMethod: 'apps-script'
+        });
+      }
+    } catch (error) {
+      console.error('Error sending campaign:', error);
+    } finally {
+      setIsSending(false);
+    }
   };
 
   const insertTag = (tag: string) => {
@@ -37,6 +89,8 @@ const EmailComposer = () => {
       htmlContent: prev.htmlContent + tag
     }));
   };
+
+  const recipientCount = emailData.recipients.split(',').filter(email => email.trim()).length;
 
   return (
     <div className="space-y-6">
@@ -190,16 +244,32 @@ const EmailComposer = () => {
         <CardContent className="pt-6">
           <div className="flex justify-between items-center">
             <div className="text-sm text-slate-600">
-              Ready to send to {emailData.recipients.split(',').filter(Boolean).length} recipients
+              Ready to send to {recipientCount} recipients
+              {activeAccounts.length === 0 && (
+                <span className="text-red-600 ml-2">(No active email accounts)</span>
+              )}
             </div>
             <div className="flex gap-3">
-              <Button variant="outline" onClick={() => setPreviewMode(!previewMode)}>
+              <Button variant="outline">
                 <Eye className="w-4 h-4 mr-2" />
                 Preview
               </Button>
-              <Button onClick={handleSend} className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700">
-                <Send className="w-4 h-4 mr-2" />
-                Send Campaign
+              <Button 
+                onClick={handleSend} 
+                className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
+                disabled={isSending || activeAccounts.length === 0}
+              >
+                {isSending ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Sending...
+                  </>
+                ) : (
+                  <>
+                    <Send className="w-4 h-4 mr-2" />
+                    Send Campaign
+                  </>
+                )}
               </Button>
             </div>
           </div>

@@ -5,65 +5,16 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Calendar, Mail, Users, CheckCircle, XCircle, Clock, Search, Filter } from 'lucide-react';
-
-interface Campaign {
-  id: string;
-  name: string;
-  subject: string;
-  status: 'completed' | 'failed' | 'pending' | 'sending';
-  recipientCount: number;
-  sentCount: number;
-  failedCount: number;
-  createdAt: string;
-  completedAt?: string;
-  sendMethod: string;
-}
+import { Calendar, Mail, Users, CheckCircle, XCircle, Clock, Search, Filter, Loader2 } from 'lucide-react';
+import { useCampaigns } from '@/hooks/useCampaigns';
 
 const CampaignHistory = () => {
-  const [campaigns] = useState<Campaign[]>([
-    {
-      id: '1',
-      name: 'Monthly Newsletter',
-      subject: 'Your Monthly Update - December 2024',
-      status: 'completed',
-      recipientCount: 1500,
-      sentCount: 1485,
-      failedCount: 15,
-      createdAt: '2024-12-01T10:00:00Z',
-      completedAt: '2024-12-01T10:30:00Z',
-      sendMethod: 'Google Apps Script'
-    },
-    {
-      id: '2',
-      name: 'Product Launch',
-      subject: 'Introducing Our New Feature',
-      status: 'sending',
-      recipientCount: 800,
-      sentCount: 450,
-      failedCount: 5,
-      createdAt: '2024-12-02T14:00:00Z',
-      sendMethod: 'PowerMTA SMTP'
-    },
-    {
-      id: '3',
-      name: 'Welcome Series',
-      subject: 'Welcome to Our Platform!',
-      status: 'failed',
-      recipientCount: 200,
-      sentCount: 50,
-      failedCount: 150,
-      createdAt: '2024-12-01T16:00:00Z',
-      completedAt: '2024-12-01T16:15:00Z',
-      sendMethod: 'Generic SMTP'
-    }
-  ]);
-
+  const { campaigns, loading } = useCampaigns();
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
 
   const filteredCampaigns = campaigns.filter(campaign => {
-    const matchesSearch = campaign.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    const matchesSearch = campaign.from_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          campaign.subject.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesStatus = statusFilter === 'all' || campaign.status === statusFilter;
     return matchesSearch && matchesStatus;
@@ -71,20 +22,20 @@ const CampaignHistory = () => {
 
   const getStatusIcon = (status: string) => {
     switch (status) {
-      case 'completed': return <CheckCircle className="w-4 h-4 text-green-600" />;
+      case 'sent': return <CheckCircle className="w-4 h-4 text-green-600" />;
       case 'failed': return <XCircle className="w-4 h-4 text-red-600" />;
       case 'sending': return <Clock className="w-4 h-4 text-blue-600 animate-spin" />;
-      case 'pending': return <Clock className="w-4 h-4 text-orange-600" />;
+      case 'draft': return <Clock className="w-4 h-4 text-orange-600" />;
       default: return <Clock className="w-4 h-4 text-slate-600" />;
     }
   };
 
   const getStatusBadge = (status: string) => {
     const variants = {
-      completed: 'default',
+      sent: 'default',
       failed: 'destructive',
       sending: 'secondary',
-      pending: 'outline'
+      draft: 'outline'
     };
     return variants[status as keyof typeof variants] || 'outline';
   };
@@ -102,6 +53,14 @@ const CampaignHistory = () => {
   const getSuccessRate = (sent: number, total: number) => {
     return total > 0 ? ((sent / total) * 100).toFixed(1) : '0.0';
   };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center p-8">
+        <Loader2 className="w-8 h-8 animate-spin" />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -137,9 +96,9 @@ const CampaignHistory = () => {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Statuses</SelectItem>
-                <SelectItem value="completed">Completed</SelectItem>
+                <SelectItem value="sent">Sent</SelectItem>
                 <SelectItem value="sending">Sending</SelectItem>
-                <SelectItem value="pending">Pending</SelectItem>
+                <SelectItem value="draft">Draft</SelectItem>
                 <SelectItem value="failed">Failed</SelectItem>
               </SelectContent>
             </Select>
@@ -170,7 +129,7 @@ const CampaignHistory = () => {
                   <div className="flex items-center gap-3">
                     {getStatusIcon(campaign.status)}
                     <div>
-                      <CardTitle className="text-lg">{campaign.name}</CardTitle>
+                      <CardTitle className="text-lg">{campaign.from_name}</CardTitle>
                       <CardDescription>{campaign.subject}</CardDescription>
                     </div>
                   </div>
@@ -186,21 +145,21 @@ const CampaignHistory = () => {
                       <Users className="w-4 h-4" />
                       <span className="text-sm">Recipients</span>
                     </div>
-                    <p className="text-xl font-bold">{campaign.recipientCount.toLocaleString()}</p>
+                    <p className="text-xl font-bold">{campaign.total_recipients.toLocaleString()}</p>
                   </div>
                   <div className="text-center">
                     <div className="flex items-center justify-center gap-1 text-green-600 mb-1">
                       <CheckCircle className="w-4 h-4" />
                       <span className="text-sm">Sent</span>
                     </div>
-                    <p className="text-xl font-bold text-green-600">{campaign.sentCount.toLocaleString()}</p>
+                    <p className="text-xl font-bold text-green-600">{campaign.sent_count.toLocaleString()}</p>
                   </div>
                   <div className="text-center">
                     <div className="flex items-center justify-center gap-1 text-red-600 mb-1">
                       <XCircle className="w-4 h-4" />
                       <span className="text-sm">Failed</span>
                     </div>
-                    <p className="text-xl font-bold text-red-600">{campaign.failedCount.toLocaleString()}</p>
+                    <p className="text-xl font-bold text-red-600">{(campaign.total_recipients - campaign.sent_count).toLocaleString()}</p>
                   </div>
                   <div className="text-center">
                     <div className="flex items-center justify-center gap-1 text-blue-600 mb-1">
@@ -208,21 +167,21 @@ const CampaignHistory = () => {
                       <span className="text-sm">Success Rate</span>
                     </div>
                     <p className="text-xl font-bold text-blue-600">
-                      {getSuccessRate(campaign.sentCount, campaign.recipientCount)}%
+                      {getSuccessRate(campaign.sent_count, campaign.total_recipients)}%
                     </p>
                   </div>
                 </div>
                 
                 <div className="flex justify-between items-center text-sm text-slate-600">
                   <div>
-                    <span className="font-medium">Method:</span> {campaign.sendMethod}
+                    <span className="font-medium">Method:</span> {campaign.send_method}
                   </div>
                   <div>
-                    <span className="font-medium">Started:</span> {formatDate(campaign.createdAt)}
-                    {campaign.completedAt && (
+                    <span className="font-medium">Created:</span> {formatDate(campaign.created_at)}
+                    {campaign.sent_at && (
                       <>
                         <span className="mx-2">•</span>
-                        <span className="font-medium">Completed:</span> {formatDate(campaign.completedAt)}
+                        <span className="font-medium">Sent:</span> {formatDate(campaign.sent_at)}
                       </>
                     )}
                   </div>
@@ -232,12 +191,12 @@ const CampaignHistory = () => {
                   <div className="mt-4">
                     <div className="flex justify-between text-sm text-slate-600 mb-2">
                       <span>Progress</span>
-                      <span>{((campaign.sentCount / campaign.recipientCount) * 100).toFixed(1)}%</span>
+                      <span>{((campaign.sent_count / campaign.total_recipients) * 100).toFixed(1)}%</span>
                     </div>
                     <div className="w-full bg-slate-200 rounded-full h-2">
                       <div 
                         className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-                        style={{ width: `${(campaign.sentCount / campaign.recipientCount) * 100}%` }}
+                        style={{ width: `${(campaign.sent_count / campaign.total_recipients) * 100}%` }}
                       />
                     </div>
                   </div>

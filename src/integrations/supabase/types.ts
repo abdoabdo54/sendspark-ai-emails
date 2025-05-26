@@ -9,7 +9,122 @@ export type Json =
 export type Database = {
   public: {
     Tables: {
-      [_ in never]: never
+      campaign_stats: {
+        Row: {
+          bounces: number | null
+          campaign_id: string | null
+          clicks: number | null
+          created_at: string
+          id: string
+          opens: number | null
+          unsubscribes: number | null
+        }
+        Insert: {
+          bounces?: number | null
+          campaign_id?: string | null
+          clicks?: number | null
+          created_at?: string
+          id?: string
+          opens?: number | null
+          unsubscribes?: number | null
+        }
+        Update: {
+          bounces?: number | null
+          campaign_id?: string | null
+          clicks?: number | null
+          created_at?: string
+          id?: string
+          opens?: number | null
+          unsubscribes?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "campaign_stats_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "email_campaigns"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      email_accounts: {
+        Row: {
+          config: Json | null
+          created_at: string
+          email: string
+          id: string
+          is_active: boolean | null
+          name: string
+          type: string
+          updated_at: string
+        }
+        Insert: {
+          config?: Json | null
+          created_at?: string
+          email: string
+          id?: string
+          is_active?: boolean | null
+          name: string
+          type: string
+          updated_at?: string
+        }
+        Update: {
+          config?: Json | null
+          created_at?: string
+          email?: string
+          id?: string
+          is_active?: boolean | null
+          name?: string
+          type?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      email_campaigns: {
+        Row: {
+          created_at: string
+          from_name: string
+          html_content: string | null
+          id: string
+          recipients: string
+          send_method: string
+          sent_at: string | null
+          sent_count: number | null
+          status: string | null
+          subject: string
+          text_content: string | null
+          total_recipients: number | null
+        }
+        Insert: {
+          created_at?: string
+          from_name: string
+          html_content?: string | null
+          id?: string
+          recipients: string
+          send_method: string
+          sent_at?: string | null
+          sent_count?: number | null
+          status?: string | null
+          subject: string
+          text_content?: string | null
+          total_recipients?: number | null
+        }
+        Update: {
+          created_at?: string
+          from_name?: string
+          html_content?: string | null
+          id?: string
+          recipients?: string
+          send_method?: string
+          sent_at?: string | null
+          sent_count?: number | null
+          status?: string | null
+          subject?: string
+          text_content?: string | null
+          total_recipients?: number | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
