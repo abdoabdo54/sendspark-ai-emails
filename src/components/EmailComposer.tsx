@@ -9,10 +9,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Mail, Sparkles, Upload, Eye, Send, Loader2 } from 'lucide-react';
+import { Mail, Sparkles, Upload, Eye, Send, Loader2, FileText, TestTube } from 'lucide-react';
 import AISubjectGenerator from './AISubjectGenerator';
 import TagPreviewTool from './TagPreviewTool';
 import GoogleSheetsImport from './GoogleSheetsImport';
+import EmailTemplateLibrary from './EmailTemplateLibrary';
 import { useEmailAccounts } from '@/hooks/useEmailAccounts';
 import { useCampaigns } from '@/hooks/useCampaigns';
 import { toast } from '@/hooks/use-toast';
@@ -21,6 +22,8 @@ const EmailComposer = () => {
   const { accounts } = useEmailAccounts();
   const { createCampaign, sendCampaign } = useCampaigns();
   const [isSending, setIsSending] = useState(false);
+  const [isTestSending, setIsTestSending] = useState(false);
+  const [activeTab, setActiveTab] = useState('compose');
 
   const [emailData, setEmailData] = useState({
     fromName: '',
@@ -28,12 +31,13 @@ const EmailComposer = () => {
     recipients: '',
     htmlContent: '',
     textContent: '',
-    sendMethod: 'apps-script'
+    sendMethod: 'smtp'
   });
 
   const activeAccounts = accounts.filter(account => account.is_active);
+  const selectedMethodAccounts = activeAccounts.filter(account => account.type === emailData.sendMethod);
 
-  const handleSend = async () => {
+  const handleSend = async (isTest = false) => {
     if (!emailData.fromName || !emailData.subject || !emailData.recipients) {
       toast({
         title: "Missing Information",
@@ -43,21 +47,25 @@ const EmailComposer = () => {
       return;
     }
 
-    if (activeAccounts.length === 0) {
+    if (selectedMethodAccounts.length === 0) {
       toast({
         title: "No Active Accounts",
-        description: "Please add and activate at least one email account",
+        description: `Please add and activate at least one ${emailData.sendMethod.toUpperCase()} account`,
         variant: "destructive"
       });
       return;
     }
 
-    setIsSending(true);
+    const setSending = isTest ? setIsTestSending : setIsSending;
+    setSending(true);
+    
     try {
+      const testRecipients = isTest ? emailData.recipients.split(',')[0].trim() : emailData.recipients;
+      
       const campaign = await createCampaign({
         from_name: emailData.fromName,
-        subject: emailData.subject,
-        recipients: emailData.recipients,
+        subject: isTest ? `[TEST] ${emailData.subject}` : emailData.subject,
+        recipients: testRecipients,
         html_content: emailData.htmlContent,
         text_content: emailData.textContent,
         send_method: emailData.sendMethod,
@@ -66,21 +74,43 @@ const EmailComposer = () => {
 
       if (campaign) {
         await sendCampaign(campaign.id);
-        // Reset form
-        setEmailData({
-          fromName: '',
-          subject: '',
-          recipients: '',
-          htmlContent: '',
-          textContent: '',
-          sendMethod: 'apps-script'
+        
+        if (!isTest) {
+          // Reset form only for actual sends, not tests
+          setEmailData({
+            fromName: '',
+            subject: '',
+            recipients: '',
+            htmlContent: '',
+            textContent: '',
+            sendMethod: 'smtp'
+          });
+        }
+        
+        toast({
+          title: isTest ? "Test Email Sent" : "Campaign Sent",
+          description: isTest ? "Test email has been sent to the first recipient" : "Your email campaign has been sent successfully",
         });
       }
     } catch (error) {
       console.error('Error sending campaign:', error);
     } finally {
-      setIsSending(false);
+      setSending(false);
     }
+  };
+
+  const handleTemplateSelect = (template: any) => {
+    setEmailData(prev => ({
+      ...prev,
+      subject: template.subject,
+      htmlContent: template.htmlContent,
+      textContent: template.textContent
+    }));
+    setActiveTab('compose');
+    toast({
+      title: "Template Applied",
+      description: `"${template.name}" template has been loaded`,
+    });
   };
 
   const insertTag = (tag: string) => {
@@ -94,187 +124,248 @@ const EmailComposer = () => {
 
   return (
     <div className="space-y-6">
-      {/* Email Configuration */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Mail className="w-5 h-5" />
-            Email Configuration
-          </CardTitle>
-          <CardDescription>
-            Configure your email settings and content
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="fromName">From Name</Label>
-              <Input
-                id="fromName"
-                placeholder="Your Name or Company"
-                value={emailData.fromName}
-                onChange={(e) => setEmailData(prev => ({ ...prev, fromName: e.target.value }))}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="sendMethod">Send Method</Label>
-              <Select 
-                value={emailData.sendMethod} 
-                onValueChange={(value) => setEmailData(prev => ({ ...prev, sendMethod: value }))}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select sending method" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="apps-script">Google Apps Script</SelectItem>
-                  <SelectItem value="powermta">PowerMTA SMTP</SelectItem>
-                  <SelectItem value="smtp">Generic SMTP</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
+        <TabsList className="grid w-full grid-cols-2">
+          <TabsTrigger value="compose" className="flex items-center gap-2">
+            <Mail className="w-4 h-4" />
+            Compose Email
+          </TabsTrigger>
+          <TabsTrigger value="templates" className="flex items-center gap-2">
+            <FileText className="w-4 h-4" />
+            Email Templates
+          </TabsTrigger>
+        </TabsList>
 
-          <div className="space-y-2">
-            <Label htmlFor="subject">Subject Line</Label>
-            <div className="flex gap-2">
-              <Input
-                id="subject"
-                placeholder="Enter your email subject"
-                value={emailData.subject}
-                onChange={(e) => setEmailData(prev => ({ ...prev, subject: e.target.value }))}
-                className="flex-1"
-              />
-              <AISubjectGenerator onSubjectSelect={(subject) => 
-                setEmailData(prev => ({ ...prev, subject }))
-              } />
-            </div>
-          </div>
+        <TabsContent value="templates">
+          <Card>
+            <CardHeader>
+              <CardTitle>Email Template Library</CardTitle>
+              <CardDescription>
+                Choose from our collection of professional email templates
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <EmailTemplateLibrary onSelectTemplate={handleTemplateSelect} />
+            </CardContent>
+          </Card>
+        </TabsContent>
 
-          <div className="space-y-2">
-            <Label htmlFor="recipients">Recipients</Label>
-            <Textarea
-              id="recipients"
-              placeholder="Enter email addresses separated by commas, or import from Google Sheets"
-              value={emailData.recipients}
-              onChange={(e) => setEmailData(prev => ({ ...prev, recipients: e.target.value }))}
-              rows={3}
-            />
-            <GoogleSheetsImport onImport={(emails) => 
-              setEmailData(prev => ({ ...prev, recipients: emails.join(', ') }))
-            } />
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Email Content */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Email Content</CardTitle>
-          <CardDescription>
-            Create your email content with dynamic tags and personalization
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Tabs defaultValue="html" className="w-full">
-            <TabsList className="grid w-full grid-cols-3">
-              <TabsTrigger value="html">HTML Content</TabsTrigger>
-              <TabsTrigger value="text">Plain Text</TabsTrigger>
-              <TabsTrigger value="preview">Preview</TabsTrigger>
-            </TabsList>
-
-            <TabsContent value="html" className="space-y-4">
-              <div className="flex justify-between items-center">
-                <Label>HTML Email Body</Label>
-                <TagPreviewTool onTagInsert={insertTag} />
-              </div>
-              <Textarea
-                placeholder="Enter your HTML email content here. Use tags like {{[fromname]}}, {{[to]}}, etc."
-                value={emailData.htmlContent}
-                onChange={(e) => setEmailData(prev => ({ ...prev, htmlContent: e.target.value }))}
-                rows={15}
-                className="font-mono text-sm"
-              />
-              <div className="flex gap-2 flex-wrap">
-                <Badge variant="outline">Available tags:</Badge>
-                <Badge variant="secondary" className="cursor-pointer" onClick={() => insertTag('{{[fromname]}}')}>
-                  {'{{[fromname]}}'}
-                </Badge>
-                <Badge variant="secondary" className="cursor-pointer" onClick={() => insertTag('{{[to]}}')}>
-                  {'{{[to]}}'}
-                </Badge>
-                <Badge variant="secondary" className="cursor-pointer" onClick={() => insertTag('{{[subject]}}')}>
-                  {'{{[subject]}}'}
-                </Badge>
-                <Badge variant="secondary" className="cursor-pointer" onClick={() => insertTag('{{[rndn_10]}}')}>
-                  {'{{[rndn_10]}}'}
-                </Badge>
-              </div>
-            </TabsContent>
-
-            <TabsContent value="text" className="space-y-4">
-              <Label>Plain Text Email Body</Label>
-              <Textarea
-                placeholder="Enter the plain text version of your email"
-                value={emailData.textContent}
-                onChange={(e) => setEmailData(prev => ({ ...prev, textContent: e.target.value }))}
-                rows={15}
-              />
-            </TabsContent>
-
-            <TabsContent value="preview" className="space-y-4">
-              <div className="border rounded-lg p-4 bg-white">
-                <div className="border-b pb-2 mb-4">
-                  <p className="text-sm text-slate-600">From: {emailData.fromName || 'Your Name'}</p>
-                  <p className="text-sm text-slate-600">Subject: {emailData.subject || 'Your Subject'}</p>
+        <TabsContent value="compose" className="space-y-6">
+          {/* Email Configuration */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Mail className="w-5 h-5" />
+                Email Configuration
+              </CardTitle>
+              <CardDescription>
+                Configure your email settings and content
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="fromName">From Name</Label>
+                  <Input
+                    id="fromName"
+                    placeholder="Your Name or Company"
+                    value={emailData.fromName}
+                    onChange={(e) => setEmailData(prev => ({ ...prev, fromName: e.target.value }))}
+                  />
                 </div>
-                <div 
-                  className="prose max-w-none"
-                  dangerouslySetInnerHTML={{ 
-                    __html: emailData.htmlContent || '<p>Your email content will appear here...</p>' 
-                  }}
-                />
+                <div className="space-y-2">
+                  <Label htmlFor="sendMethod">Send Method</Label>
+                  <Select 
+                    value={emailData.sendMethod} 
+                    onValueChange={(value) => setEmailData(prev => ({ ...prev, sendMethod: value }))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select sending method" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="smtp">SMTP Server</SelectItem>
+                      <SelectItem value="apps-script">Google Apps Script</SelectItem>
+                      <SelectItem value="powermta">PowerMTA</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
-            </TabsContent>
-          </Tabs>
-        </CardContent>
-      </Card>
 
-      {/* Send Controls */}
-      <Card>
-        <CardContent className="pt-6">
-          <div className="flex justify-between items-center">
-            <div className="text-sm text-slate-600">
-              Ready to send to {recipientCount} recipients
-              {activeAccounts.length === 0 && (
-                <span className="text-red-600 ml-2">(No active email accounts)</span>
+              {selectedMethodAccounts.length > 0 && (
+                <div className="bg-green-50 p-3 rounded-lg">
+                  <p className="text-sm text-green-800">
+                    ✓ {selectedMethodAccounts.length} active {emailData.sendMethod.toUpperCase()} account(s) available
+                  </p>
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    {selectedMethodAccounts.map(account => (
+                      <Badge key={account.id} variant="secondary" className="bg-green-100 text-green-800">
+                        {account.name}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
               )}
-            </div>
-            <div className="flex gap-3">
-              <Button variant="outline">
-                <Eye className="w-4 h-4 mr-2" />
-                Preview
-              </Button>
-              <Button 
-                onClick={handleSend} 
-                className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
-                disabled={isSending || activeAccounts.length === 0}
-              >
-                {isSending ? (
-                  <>
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    Sending...
-                  </>
-                ) : (
-                  <>
-                    <Send className="w-4 h-4 mr-2" />
-                    Send Campaign
-                  </>
-                )}
-              </Button>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+
+              <div className="space-y-2">
+                <Label htmlFor="subject">Subject Line</Label>
+                <div className="flex gap-2">
+                  <Input
+                    id="subject"
+                    placeholder="Enter your email subject"
+                    value={emailData.subject}
+                    onChange={(e) => setEmailData(prev => ({ ...prev, subject: e.target.value }))}
+                    className="flex-1"
+                  />
+                  <AISubjectGenerator onSubjectSelect={(subject) => 
+                    setEmailData(prev => ({ ...prev, subject }))
+                  } />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="recipients">Recipients</Label>
+                <Textarea
+                  id="recipients"
+                  placeholder="Enter email addresses separated by commas, or import from Google Sheets"
+                  value={emailData.recipients}
+                  onChange={(e) => setEmailData(prev => ({ ...prev, recipients: e.target.value }))}
+                  rows={3}
+                />
+                <GoogleSheetsImport onImport={(emails) => 
+                  setEmailData(prev => ({ ...prev, recipients: emails.join(', ') }))
+                } />
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Email Content */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Email Content</CardTitle>
+              <CardDescription>
+                Create your email content with dynamic tags and personalization
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Tabs defaultValue="html" className="w-full">
+                <TabsList className="grid w-full grid-cols-3">
+                  <TabsTrigger value="html">HTML Content</TabsTrigger>
+                  <TabsTrigger value="text">Plain Text</TabsTrigger>
+                  <TabsTrigger value="preview">Preview</TabsTrigger>
+                </TabsList>
+
+                <TabsContent value="html" className="space-y-4">
+                  <div className="flex justify-between items-center">
+                    <Label>HTML Email Body</Label>
+                    <TagPreviewTool onTagInsert={insertTag} />
+                  </div>
+                  <Textarea
+                    placeholder="Enter your HTML email content here. Use tags like {{[fromname]}}, {{[to]}}, etc."
+                    value={emailData.htmlContent}
+                    onChange={(e) => setEmailData(prev => ({ ...prev, htmlContent: e.target.value }))}
+                    rows={15}
+                    className="font-mono text-sm"
+                  />
+                  <div className="flex gap-2 flex-wrap">
+                    <Badge variant="outline">Available tags:</Badge>
+                    <Badge variant="secondary" className="cursor-pointer" onClick={() => insertTag('{{[fromname]}}')}>
+                      {'{{[fromname]}}'}
+                    </Badge>
+                    <Badge variant="secondary" className="cursor-pointer" onClick={() => insertTag('{{[to]}}')}>
+                      {'{{[to]}}'}
+                    </Badge>
+                    <Badge variant="secondary" className="cursor-pointer" onClick={() => insertTag('{{[subject]}}')}>
+                      {'{{[subject]}}'}
+                    </Badge>
+                    <Badge variant="secondary" className="cursor-pointer" onClick={() => insertTag('{{[rndn_10]}}')}>
+                      {'{{[rndn_10]}}'}
+                    </Badge>
+                  </div>
+                </TabsContent>
+
+                <TabsContent value="text" className="space-y-4">
+                  <Label>Plain Text Email Body</Label>
+                  <Textarea
+                    placeholder="Enter the plain text version of your email"
+                    value={emailData.textContent}
+                    onChange={(e) => setEmailData(prev => ({ ...prev, textContent: e.target.value }))}
+                    rows={15}
+                  />
+                </TabsContent>
+
+                <TabsContent value="preview" className="space-y-4">
+                  <div className="border rounded-lg p-4 bg-white">
+                    <div className="border-b pb-2 mb-4">
+                      <p className="text-sm text-slate-600">From: {emailData.fromName || 'Your Name'}</p>
+                      <p className="text-sm text-slate-600">Subject: {emailData.subject || 'Your Subject'}</p>
+                    </div>
+                    <div 
+                      className="prose max-w-none"
+                      dangerouslySetInnerHTML={{ 
+                        __html: emailData.htmlContent || '<p>Your email content will appear here...</p>' 
+                      }}
+                    />
+                  </div>
+                </TabsContent>
+              </Tabs>
+            </CardContent>
+          </Card>
+
+          {/* Send Controls */}
+          <Card>
+            <CardContent className="pt-6">
+              <div className="flex justify-between items-center">
+                <div className="text-sm text-slate-600">
+                  Ready to send to {recipientCount} recipients
+                  {selectedMethodAccounts.length === 0 && (
+                    <span className="text-red-600 ml-2">(No active {emailData.sendMethod.toUpperCase()} accounts)</span>
+                  )}
+                </div>
+                <div className="flex gap-3">
+                  <Button 
+                    variant="outline"
+                    onClick={() => handleSend(true)}
+                    disabled={isTestSending || selectedMethodAccounts.length === 0}
+                  >
+                    {isTestSending ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Testing...
+                      </>
+                    ) : (
+                      <>
+                        <TestTube className="w-4 h-4 mr-2" />
+                        Send Test
+                      </>
+                    )}
+                  </Button>
+                  <Button variant="outline">
+                    <Eye className="w-4 h-4 mr-2" />
+                    Preview
+                  </Button>
+                  <Button 
+                    onClick={() => handleSend(false)} 
+                    className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
+                    disabled={isSending || selectedMethodAccounts.length === 0}
+                  >
+                    {isSending ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Sending...
+                      </>
+                    ) : (
+                      <>
+                        <Send className="w-4 h-4 mr-2" />
+                        Send Campaign
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 };

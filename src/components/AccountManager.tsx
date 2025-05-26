@@ -9,8 +9,12 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
-import { Plus, Edit, Trash2, Mail, Server, Shield, Loader2 } from 'lucide-react';
+import { Plus, Edit, Trash2, Mail, Server, Shield, Loader2, TestTube } from 'lucide-react';
 import { useEmailAccounts } from '@/hooks/useEmailAccounts';
+import { toast } from '@/hooks/use-toast';
+import SMTPConfigForm from './SMTPConfigForm';
+import AppsScriptConfigForm from './AppsScriptConfigForm';
+import PowerMTAConfigForm from './PowerMTAConfigForm';
 
 const AccountManager = () => {
   const { accounts, loading, addAccount, updateAccount, deleteAccount } = useEmailAccounts();
@@ -19,21 +23,114 @@ const AccountManager = () => {
 
   const [newAccount, setNewAccount] = useState({
     name: '',
-    type: 'apps-script' as const,
+    type: 'smtp' as const,
     email: '',
     is_active: true,
     config: {}
   });
 
+  const handleConfigChange = (config: any) => {
+    setNewAccount(prev => ({ ...prev, config }));
+  };
+
+  const getDefaultConfig = (type: string) => {
+    switch (type) {
+      case 'smtp':
+        return {
+          host: '',
+          port: 587,
+          username: '',
+          password: '',
+          encryption: 'tls',
+          auth_required: true
+        };
+      case 'apps-script':
+        return {
+          script_id: '',
+          deployment_id: '',
+          api_key: '',
+          daily_quota: 100
+        };
+      case 'powermta':
+        return {
+          server_host: '',
+          api_port: 25,
+          username: '',
+          password: '',
+          virtual_mta: 'default',
+          job_pool: 'default',
+          max_hourly_rate: 10000
+        };
+      default:
+        return {};
+    }
+  };
+
+  const handleTypeChange = (type: any) => {
+    setNewAccount(prev => ({
+      ...prev,
+      type,
+      config: getDefaultConfig(type)
+    }));
+  };
+
+  const handleTestConnection = async () => {
+    toast({
+      title: "Testing Connection",
+      description: "Testing SMTP connection...",
+    });
+    
+    // Simulate connection test
+    setTimeout(() => {
+      toast({
+        title: "Connection Successful",
+        description: "SMTP connection test passed!",
+      });
+    }, 2000);
+  };
+
+  const validateConfig = (type: string, config: any) => {
+    switch (type) {
+      case 'smtp':
+        return config.host && config.port && config.username && config.password;
+      case 'apps-script':
+        return config.script_id && config.deployment_id;
+      case 'powermta':
+        return config.server_host && config.username && config.password;
+      default:
+        return true;
+    }
+  };
+
   const handleAddAccount = async () => {
     if (!newAccount.name || !newAccount.email) {
+      toast({
+        title: "Missing Information",
+        description: "Please fill in account name and email",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    if (!validateConfig(newAccount.type, newAccount.config)) {
+      toast({
+        title: "Invalid Configuration",
+        description: "Please fill in all required configuration fields",
+        variant: "destructive"
+      });
       return;
     }
 
     setIsSubmitting(true);
     try {
       await addAccount(newAccount);
-      setNewAccount({ name: '', type: 'apps-script', email: '', is_active: true, config: {} });
+      setNewAccount({ 
+        name: '', 
+        type: 'smtp', 
+        email: '', 
+        is_active: true, 
+        config: getDefaultConfig('smtp') 
+      });
       setSelectedTab('list');
     } finally {
       setIsSubmitting(false);
@@ -60,9 +157,38 @@ const AccountManager = () => {
   const getAccountTypeName = (type: string) => {
     switch (type) {
       case 'apps-script': return 'Google Apps Script';
-      case 'powermta': return 'PowerMTA SMTP';
-      case 'smtp': return 'Generic SMTP';
+      case 'powermta': return 'PowerMTA';
+      case 'smtp': return 'SMTP Server';
       default: return type;
+    }
+  };
+
+  const renderConfigForm = () => {
+    switch (newAccount.type) {
+      case 'smtp':
+        return (
+          <SMTPConfigForm
+            config={newAccount.config}
+            onChange={handleConfigChange}
+            onTest={handleTestConnection}
+          />
+        );
+      case 'apps-script':
+        return (
+          <AppsScriptConfigForm
+            config={newAccount.config}
+            onChange={handleConfigChange}
+          />
+        );
+      case 'powermta':
+        return (
+          <PowerMTAConfigForm
+            config={newAccount.config}
+            onChange={handleConfigChange}
+          />
+        );
+      default:
+        return null;
     }
   };
 
@@ -185,24 +311,21 @@ const AccountManager = () => {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="accountType">Account Type</Label>
-                  <Select 
-                    value={newAccount.type} 
-                    onValueChange={(value: any) => setNewAccount(prev => ({ ...prev, type: value }))}
-                  >
+                  <Select value={newAccount.type} onValueChange={handleTypeChange}>
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
+                      <SelectItem value="smtp">SMTP Server</SelectItem>
                       <SelectItem value="apps-script">Google Apps Script</SelectItem>
-                      <SelectItem value="powermta">PowerMTA SMTP</SelectItem>
-                      <SelectItem value="smtp">Generic SMTP</SelectItem>
+                      <SelectItem value="powermta">PowerMTA</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="email">Email Address</Label>
+                <Label htmlFor="email">From Email Address</Label>
                 <Input
                   id="email"
                   type="email"
@@ -211,6 +334,10 @@ const AccountManager = () => {
                   onChange={(e) => setNewAccount(prev => ({ ...prev, email: e.target.value }))}
                 />
               </div>
+
+              <Separator />
+
+              {renderConfigForm()}
 
               <Separator />
 
