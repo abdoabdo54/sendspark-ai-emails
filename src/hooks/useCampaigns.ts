@@ -30,7 +30,14 @@ export const useCampaigns = () => {
         .order('created_at', { ascending: false });
 
       if (error) throw error;
-      setCampaigns(data || []);
+      
+      // Type cast the data to ensure proper typing
+      const typedData = (data || []).map(item => ({
+        ...item,
+        status: item.status as 'draft' | 'sending' | 'sent' | 'failed'
+      })) as Campaign[];
+      
+      setCampaigns(typedData);
     } catch (error) {
       console.error('Error fetching campaigns:', error);
       toast({
@@ -59,12 +66,18 @@ export const useCampaigns = () => {
 
       if (error) throw error;
 
-      setCampaigns(prev => [data, ...prev]);
+      // Type cast the returned data
+      const typedData = {
+        ...data,
+        status: data.status as 'draft' | 'sending' | 'sent' | 'failed'
+      } as Campaign;
+
+      setCampaigns(prev => [typedData, ...prev]);
       toast({
         title: "Success",
         description: "Campaign created successfully"
       });
-      return data;
+      return typedData;
     } catch (error) {
       console.error('Error creating campaign:', error);
       toast({
