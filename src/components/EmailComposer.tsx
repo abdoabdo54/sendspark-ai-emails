@@ -143,16 +143,16 @@ const EmailComposer = () => {
               <div className="flex gap-2 flex-wrap">
                 <Badge variant="outline">Available tags:</Badge>
                 <Badge variant="secondary" className="cursor-pointer" onClick={() => insertTag('{{[fromname]}}')}>
-                  {{[fromname]}}
+                  {'{{[fromname]}}'}
                 </Badge>
                 <Badge variant="secondary" className="cursor-pointer" onClick={() => insertTag('{{[to]}}')}>
-                  {{[to]}}
+                  {'{{[to]}}'}
                 </Badge>
                 <Badge variant="secondary" className="cursor-pointer" onClick={() => insertTag('{{[subject]}}')}>
-                  {{[subject]}}
+                  {'{{[subject]}}'}
                 </Badge>
                 <Badge variant="secondary" className="cursor-pointer" onClick={() => insertTag('{{[rndn_10]}}')}>
-                  {{[rndn_10]}}
+                  {'{{[rndn_10]}}'}
                 </Badge>
               </div>
             </TabsContent>
