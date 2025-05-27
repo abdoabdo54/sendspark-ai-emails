@@ -16,24 +16,64 @@ import SMTPConfigForm from './SMTPConfigForm';
 import AppsScriptConfigForm from './AppsScriptConfigForm';
 import PowerMTAConfigForm from './PowerMTAConfigForm';
 
+// Define the config interfaces
+interface SMTPConfig {
+  host: string;
+  port: number;
+  username: string;
+  password: string;
+  encryption: 'none' | 'tls' | 'ssl';
+  auth_required: boolean;
+}
+
+interface AppsScriptConfig {
+  script_id: string;
+  deployment_id: string;
+  api_key: string;
+  daily_quota: number;
+}
+
+interface PowerMTAConfig {
+  server_host: string;
+  api_port: number;
+  username: string;
+  password: string;
+  virtual_mta: string;
+  job_pool: string;
+  max_hourly_rate: number;
+}
+
 const AccountManager = () => {
   const { accounts, loading, addAccount, updateAccount, deleteAccount } = useEmailAccounts();
   const [selectedTab, setSelectedTab] = useState('list');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const [newAccount, setNewAccount] = useState({
+  const [newAccount, setNewAccount] = useState<{
+    name: string;
+    type: 'smtp' | 'apps-script' | 'powermta';
+    email: string;
+    is_active: boolean;
+    config: SMTPConfig | AppsScriptConfig | PowerMTAConfig;
+  }>({
     name: '',
-    type: 'smtp' as const,
+    type: 'smtp',
     email: '',
     is_active: true,
-    config: {}
+    config: {
+      host: '',
+      port: 587,
+      username: '',
+      password: '',
+      encryption: 'tls' as const,
+      auth_required: true
+    }
   });
 
   const handleConfigChange = (config: any) => {
     setNewAccount(prev => ({ ...prev, config }));
   };
 
-  const getDefaultConfig = (type: string) => {
+  const getDefaultConfig = (type: 'smtp' | 'apps-script' | 'powermta'): SMTPConfig | AppsScriptConfig | PowerMTAConfig => {
     switch (type) {
       case 'smtp':
         return {
@@ -41,7 +81,7 @@ const AccountManager = () => {
           port: 587,
           username: '',
           password: '',
-          encryption: 'tls',
+          encryption: 'tls' as const,
           auth_required: true
         };
       case 'apps-script':
@@ -61,12 +101,10 @@ const AccountManager = () => {
           job_pool: 'default',
           max_hourly_rate: 10000
         };
-      default:
-        return {};
     }
   };
 
-  const handleTypeChange = (type: any) => {
+  const handleTypeChange = (type: 'smtp' | 'apps-script' | 'powermta') => {
     setNewAccount(prev => ({
       ...prev,
       type,
@@ -168,7 +206,7 @@ const AccountManager = () => {
       case 'smtp':
         return (
           <SMTPConfigForm
-            config={newAccount.config}
+            config={newAccount.config as SMTPConfig}
             onChange={handleConfigChange}
             onTest={handleTestConnection}
           />
@@ -176,14 +214,14 @@ const AccountManager = () => {
       case 'apps-script':
         return (
           <AppsScriptConfigForm
-            config={newAccount.config}
+            config={newAccount.config as AppsScriptConfig}
             onChange={handleConfigChange}
           />
         );
       case 'powermta':
         return (
           <PowerMTAConfigForm
-            config={newAccount.config}
+            config={newAccount.config as PowerMTAConfig}
             onChange={handleConfigChange}
           />
         );
