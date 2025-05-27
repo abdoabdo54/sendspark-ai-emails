@@ -1,4 +1,3 @@
-
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
@@ -25,6 +24,35 @@ interface Campaign {
   send_method: string;
 }
 
+async function sendEmailViaSMTP(config: any, emailData: any): Promise<{ success: boolean; error?: string }> {
+  try {
+    console.log(`Sending email via SMTP to ${emailData.to}`);
+    
+    const response = await fetch('https://kzatxttazxwqawefumed.supabase.co/functions/v1/send-smtp-email', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${Deno.env.get('SUPABASE_ANON_KEY')}`
+      },
+      body: JSON.stringify({
+        config,
+        emailData
+      })
+    });
+
+    const result = await response.json();
+    
+    if (response.ok && result.success) {
+      return { success: true };
+    } else {
+      return { success: false, error: result.error || 'SMTP sending failed' };
+    }
+  } catch (error) {
+    console.error('SMTP sending error:', error);
+    return { success: false, error: error.message };
+  }
+}
+
 async function sendViaSMTP(account: EmailAccount, campaign: Campaign, recipients: string[]) {
   console.log(`Sending via SMTP: ${account.config.host}:${account.config.port}`);
   
@@ -32,37 +60,22 @@ async function sendViaSMTP(account: EmailAccount, campaign: Campaign, recipients
   
   for (const recipient of recipients) {
     try {
-      // Use Deno's built-in SMTP support or a library
-      const response = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          service_id: 'smtp_service',
-          template_id: 'smtp_template',
-          user_id: 'smtp_user',
-          template_params: {
-            to_email: recipient,
-            from_name: campaign.from_name,
-            from_email: account.email,
-            subject: campaign.subject,
-            html_content: campaign.html_content || campaign.text_content,
-            smtp_host: account.config.host,
-            smtp_port: account.config.port,
-            smtp_username: account.config.username,
-            smtp_password: account.config.password,
-            smtp_encryption: account.config.encryption
-          }
-        })
-      });
+      const emailData = {
+        from: { email: account.email, name: campaign.from_name },
+        to: recipient,
+        subject: campaign.subject,
+        html: campaign.html_content || campaign.text_content,
+        text: campaign.text_content
+      };
 
-      if (response.ok) {
+      const result = await sendEmailViaSMTP(account.config, emailData);
+
+      if (result.success) {
         console.log(`✓ SMTP sent to: ${recipient}`);
         results.push({ email: recipient, status: 'sent' });
       } else {
-        console.log(`✗ SMTP failed to: ${recipient}`);
-        results.push({ email: recipient, status: 'failed', error: 'SMTP delivery failed' });
+        console.log(`✗ SMTP failed to: ${recipient} - ${result.error}`);
+        results.push({ email: recipient, status: 'failed', error: result.error });
       }
     } catch (error) {
       console.log(`✗ SMTP error for ${recipient}:`, error);
@@ -266,7 +279,8 @@ serve(async (req) => {
         failedCount,
         totalRecipients: recipients.length,
         method: campaign.send_method,
-        account: account.name
+        account: account.name,
+        details: results
       }),
       { 
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },

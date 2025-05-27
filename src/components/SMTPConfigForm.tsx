@@ -7,7 +7,9 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
-import { Eye, EyeOff, TestTube } from 'lucide-react';
+import { Eye, EyeOff, TestTube, Loader2, CheckCircle, XCircle } from 'lucide-react';
+import { testSMTPConnection, validateSMTPConfig } from '@/utils/emailSender';
+import { toast } from '@/hooks/use-toast';
 
 interface SMTPConfig {
   host: string;
@@ -26,12 +28,68 @@ interface SMTPConfigFormProps {
 
 const SMTPConfigForm = ({ config, onChange, onTest }: SMTPConfigFormProps) => {
   const [showPassword, setShowPassword] = useState(false);
+  const [isTestingConnection, setIsTestingConnection] = useState(false);
+  const [testResult, setTestResult] = useState<{ success: boolean; error?: string } | null>(null);
 
   const updateConfig = (field: keyof SMTPConfig, value: any) => {
+    setTestResult(null); // Clear test result when config changes
     onChange({
       ...config,
       [field]: value
     });
+  };
+
+  const handleTestConnection = async () => {
+    // Validate config first
+    const validation = validateSMTPConfig(config);
+    if (!validation.valid) {
+      toast({
+        title: "Configuration Error",
+        description: validation.errors.join(', '),
+        variant: "destructive"
+      });
+      return;
+    }
+
+    setIsTestingConnection(true);
+    setTestResult(null);
+
+    try {
+      console.log('Testing SMTP connection with config:', {
+        host: config.host,
+        port: config.port,
+        username: config.username,
+        encryption: config.encryption,
+        auth_required: config.auth_required
+      });
+
+      const result = await testSMTPConnection(config);
+      setTestResult(result);
+
+      if (result.success) {
+        toast({
+          title: "Connection Successful",
+          description: "SMTP connection test passed successfully!",
+        });
+        onTest(); // Call the parent's onTest function
+      } else {
+        toast({
+          title: "Connection Failed",
+          description: result.error || "SMTP connection test failed",
+          variant: "destructive"
+        });
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      setTestResult({ success: false, error: errorMessage });
+      toast({
+        title: "Test Error",
+        description: errorMessage,
+        variant: "destructive"
+      });
+    } finally {
+      setIsTestingConnection(false);
+    }
   };
 
   return (
@@ -123,9 +181,39 @@ const SMTPConfigForm = ({ config, onChange, onTest }: SMTPConfigFormProps) => {
 
         <Separator />
 
-        <Button onClick={onTest} variant="outline" className="w-full">
-          <TestTube className="w-4 h-4 mr-2" />
-          Test SMTP Connection
+        {/* Test Result Display */}
+        {testResult && (
+          <div className={`p-3 rounded-lg flex items-center gap-2 ${
+            testResult.success ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-800'
+          }`}>
+            {testResult.success ? (
+              <CheckCircle className="w-4 h-4" />
+            ) : (
+              <XCircle className="w-4 h-4" />
+            )}
+            <span className="text-sm">
+              {testResult.success ? 'Connection test successful!' : testResult.error}
+            </span>
+          </div>
+        )}
+
+        <Button 
+          onClick={handleTestConnection} 
+          variant="outline" 
+          className="w-full"
+          disabled={isTestingConnection}
+        >
+          {isTestingConnection ? (
+            <>
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              Testing Connection...
+            </>
+          ) : (
+            <>
+              <TestTube className="w-4 h-4 mr-2" />
+              Test SMTP Connection
+            </>
+          )}
         </Button>
       </CardContent>
     </Card>
