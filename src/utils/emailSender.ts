@@ -16,7 +16,7 @@ export async function sendEmailViaSMTP(
   subject: string,
   htmlContent: string,
   textContent?: string
-): Promise<{ success: boolean; error?: string }> {
+): Promise<{ success: boolean; error?: string; logs?: string[] }> {
   try {
     console.log('Sending email via SMTP function:', { to: toEmail, subject });
     
@@ -42,10 +42,16 @@ export async function sendEmailViaSMTP(
     
     if (response.ok && result.success) {
       console.log('✓ Email sent successfully via SMTP');
-      return { success: true };
+      if (result.logs) {
+        console.log('SMTP Logs:', result.logs);
+      }
+      return { success: true, logs: result.logs };
     } else {
       console.error('✗ SMTP sending failed:', result.error);
-      return { success: false, error: result.error || 'SMTP sending failed' };
+      if (result.logs) {
+        console.error('SMTP Error Logs:', result.logs);
+      }
+      return { success: false, error: result.error || 'SMTP sending failed', logs: result.logs };
     }
   } catch (error) {
     console.error('✗ SMTP error:', error);
@@ -53,7 +59,7 @@ export async function sendEmailViaSMTP(
   }
 }
 
-export async function testSMTPConnection(config: SMTPConfig): Promise<{ success: boolean; error?: string }> {
+export async function testSMTPConnection(config: SMTPConfig): Promise<{ success: boolean; error?: string; logs?: string[] }> {
   try {
     console.log('Testing SMTP connection:', { host: config.host, port: config.port });
     
@@ -70,10 +76,16 @@ export async function testSMTPConnection(config: SMTPConfig): Promise<{ success:
     
     if (response.ok && result.success) {
       console.log('✓ SMTP connection test successful');
-      return { success: true };
+      if (result.logs) {
+        console.log('SMTP Test Logs:', result.logs);
+      }
+      return { success: true, logs: result.logs };
     } else {
       console.error('✗ SMTP connection test failed:', result.error);
-      return { success: false, error: result.error || 'Connection test failed' };
+      if (result.logs) {
+        console.error('SMTP Test Error Logs:', result.logs);
+      }
+      return { success: false, error: result.error || 'Connection test failed', logs: result.logs };
     }
   } catch (error) {
     console.error('✗ SMTP test error:', error);

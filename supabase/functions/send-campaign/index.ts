@@ -24,7 +24,7 @@ interface Campaign {
   send_method: string;
 }
 
-async function sendEmailViaSMTP(config: any, emailData: any): Promise<{ success: boolean; error?: string }> {
+async function sendEmailViaSMTP(config: any, emailData: any): Promise<{ success: boolean; error?: string; logs?: string[] }> {
   try {
     console.log(`Sending email via SMTP to ${emailData.to}`);
     
@@ -43,13 +43,19 @@ async function sendEmailViaSMTP(config: any, emailData: any): Promise<{ success:
     const result = await response.json();
     
     if (response.ok && result.success) {
-      return { success: true };
+      if (result.logs) {
+        console.log('SMTP Success Logs:', result.logs.join('\n'));
+      }
+      return { success: true, logs: result.logs };
     } else {
-      return { success: false, error: result.error || 'SMTP sending failed' };
+      if (result.logs) {
+        console.error('SMTP Error Logs:', result.logs.join('\n'));
+      }
+      return { success: false, error: result.error || 'SMTP sending failed', logs: result.logs };
     }
   } catch (error) {
     console.error('SMTP sending error:', error);
-    return { success: false, error: error.message };
+    return { success: false, error: error.message, logs: [`Fatal error: ${error.message}`] };
   }
 }
 
@@ -72,10 +78,13 @@ async function sendViaSMTP(account: EmailAccount, campaign: Campaign, recipients
 
       if (result.success) {
         console.log(`✓ SMTP sent to: ${recipient}`);
-        results.push({ email: recipient, status: 'sent' });
+        results.push({ email: recipient, status: 'sent', logs: result.logs });
       } else {
         console.log(`✗ SMTP failed to: ${recipient} - ${result.error}`);
-        results.push({ email: recipient, status: 'failed', error: result.error });
+        if (result.logs) {
+          console.log(`SMTP Logs for ${recipient}:`, result.logs.join('\n'));
+        }
+        results.push({ email: recipient, status: 'failed', error: result.error, logs: result.logs });
       }
     } catch (error) {
       console.log(`✗ SMTP error for ${recipient}:`, error);
