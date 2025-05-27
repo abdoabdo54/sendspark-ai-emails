@@ -28,15 +28,36 @@ interface Campaign {
 async function sendViaSMTP(account: EmailAccount, campaign: Campaign, recipients: string[]) {
   console.log(`Sending via SMTP: ${account.config.host}:${account.config.port}`);
   
-  // Simulate SMTP sending with realistic delays
   const results = [];
+  
   for (const recipient of recipients) {
     try {
-      // Simulate network delay
-      await new Promise(resolve => setTimeout(resolve, 100 + Math.random() * 200));
-      
-      // Simulate 95% success rate
-      if (Math.random() > 0.05) {
+      // Use Deno's built-in SMTP support or a library
+      const response = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          service_id: 'smtp_service',
+          template_id: 'smtp_template',
+          user_id: 'smtp_user',
+          template_params: {
+            to_email: recipient,
+            from_name: campaign.from_name,
+            from_email: account.email,
+            subject: campaign.subject,
+            html_content: campaign.html_content || campaign.text_content,
+            smtp_host: account.config.host,
+            smtp_port: account.config.port,
+            smtp_username: account.config.username,
+            smtp_password: account.config.password,
+            smtp_encryption: account.config.encryption
+          }
+        })
+      });
+
+      if (response.ok) {
         console.log(`✓ SMTP sent to: ${recipient}`);
         results.push({ email: recipient, status: 'sent' });
       } else {
@@ -47,7 +68,11 @@ async function sendViaSMTP(account: EmailAccount, campaign: Campaign, recipients
       console.log(`✗ SMTP error for ${recipient}:`, error);
       results.push({ email: recipient, status: 'failed', error: error.message });
     }
+    
+    // Add delay between emails to avoid rate limiting
+    await new Promise(resolve => setTimeout(resolve, 1000));
   }
+  
   return results;
 }
 
@@ -55,24 +80,43 @@ async function sendViaAppsScript(account: EmailAccount, campaign: Campaign, reci
   console.log(`Sending via Google Apps Script: ${account.config.script_id}`);
   
   const results = [];
-  for (const recipient of recipients) {
-    try {
-      // Simulate Apps Script API call delay
-      await new Promise(resolve => setTimeout(resolve, 200 + Math.random() * 300));
-      
-      // Simulate 98% success rate for Apps Script
-      if (Math.random() > 0.02) {
+  
+  try {
+    const response = await fetch(`https://script.google.com/macros/s/${account.config.deployment_id}/exec`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${account.config.api_key}`
+      },
+      body: JSON.stringify({
+        recipients: recipients,
+        subject: campaign.subject,
+        htmlContent: campaign.html_content,
+        textContent: campaign.text_content,
+        fromName: campaign.from_name,
+        fromEmail: account.email
+      })
+    });
+
+    if (response.ok) {
+      const result = await response.json();
+      for (const recipient of recipients) {
         console.log(`✓ Apps Script sent to: ${recipient}`);
         results.push({ email: recipient, status: 'sent' });
-      } else {
-        console.log(`✗ Apps Script quota exceeded for: ${recipient}`);
-        results.push({ email: recipient, status: 'failed', error: 'Daily quota exceeded' });
       }
-    } catch (error) {
-      console.log(`✗ Apps Script error for ${recipient}:`, error);
+    } else {
+      for (const recipient of recipients) {
+        console.log(`✗ Apps Script failed to: ${recipient}`);
+        results.push({ email: recipient, status: 'failed', error: 'Apps Script API error' });
+      }
+    }
+  } catch (error) {
+    console.log(`✗ Apps Script error:`, error);
+    for (const recipient of recipients) {
       results.push({ email: recipient, status: 'failed', error: error.message });
     }
   }
+  
   return results;
 }
 
@@ -81,32 +125,43 @@ async function sendViaPowerMTA(account: EmailAccount, campaign: Campaign, recipi
   
   const results = [];
   
-  // PowerMTA can handle batch sending
-  const batchSize = 100;
-  for (let i = 0; i < recipients.length; i += batchSize) {
-    const batch = recipients.slice(i, i + batchSize);
-    
-    try {
-      // Simulate PowerMTA batch processing
-      await new Promise(resolve => setTimeout(resolve, 500 + Math.random() * 200));
-      
-      // PowerMTA has very high success rate (99%)
-      for (const recipient of batch) {
-        if (Math.random() > 0.01) {
-          console.log(`✓ PowerMTA sent to: ${recipient}`);
-          results.push({ email: recipient, status: 'sent' });
-        } else {
-          console.log(`✗ PowerMTA bounced: ${recipient}`);
-          results.push({ email: recipient, status: 'failed', error: 'Email bounced' });
-        }
+  try {
+    const response = await fetch(`http://${account.config.server_host}:${account.config.api_port}/api/submit`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Basic ${btoa(`${account.config.username}:${account.config.password}`)}`
+      },
+      body: JSON.stringify({
+        recipients: recipients,
+        subject: campaign.subject,
+        html_content: campaign.html_content,
+        text_content: campaign.text_content,
+        from_name: campaign.from_name,
+        from_email: account.email,
+        virtual_mta: account.config.virtual_mta,
+        job_pool: account.config.job_pool
+      })
+    });
+
+    if (response.ok) {
+      for (const recipient of recipients) {
+        console.log(`✓ PowerMTA sent to: ${recipient}`);
+        results.push({ email: recipient, status: 'sent' });
       }
-    } catch (error) {
-      console.log(`✗ PowerMTA batch error:`, error);
-      for (const recipient of batch) {
-        results.push({ email: recipient, status: 'failed', error: error.message });
+    } else {
+      for (const recipient of recipients) {
+        console.log(`✗ PowerMTA failed to: ${recipient}`);
+        results.push({ email: recipient, status: 'failed', error: 'PowerMTA API error' });
       }
     }
+  } catch (error) {
+    console.log(`✗ PowerMTA error:`, error);
+    for (const recipient of recipients) {
+      results.push({ email: recipient, status: 'failed', error: error.message });
+    }
   }
+  
   return results;
 }
 

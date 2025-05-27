@@ -1,4 +1,3 @@
-
 import { useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -47,6 +46,7 @@ const AccountManager = () => {
   const { accounts, loading, addAccount, updateAccount, deleteAccount } = useEmailAccounts();
   const [selectedTab, setSelectedTab] = useState('list');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [editingAccount, setEditingAccount] = useState<string | null>(null);
 
   const [newAccount, setNewAccount] = useState<{
     name: string;
@@ -175,6 +175,79 @@ const AccountManager = () => {
     }
   };
 
+  const handleEditAccount = (account: any) => {
+    setEditingAccount(account.id);
+    setNewAccount({
+      name: account.name,
+      type: account.type,
+      email: account.email,
+      is_active: account.is_active,
+      config: account.config
+    });
+    setSelectedTab('add');
+  };
+
+  const handleSaveAccount = async () => {
+    if (!newAccount.name || !newAccount.email) {
+      toast({
+        title: "Missing Information",
+        description: "Please fill in account name and email",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    if (!validateConfig(newAccount.type, newAccount.config)) {
+      toast({
+        title: "Invalid Configuration",
+        description: "Please fill in all required configuration fields",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      if (editingAccount) {
+        await updateAccount(editingAccount, newAccount);
+        setEditingAccount(null);
+        toast({
+          title: "Success",
+          description: "Account updated successfully"
+        });
+      } else {
+        await addAccount(newAccount);
+        toast({
+          title: "Success", 
+          description: "Account added successfully"
+        });
+      }
+      
+      setNewAccount({ 
+        name: '', 
+        type: 'smtp', 
+        email: '', 
+        is_active: true, 
+        config: getDefaultConfig('smtp') 
+      });
+      setSelectedTab('list');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleCancelEdit = () => {
+    setEditingAccount(null);
+    setNewAccount({ 
+      name: '', 
+      type: 'smtp', 
+      email: '', 
+      is_active: true, 
+      config: getDefaultConfig('smtp') 
+    });
+    setSelectedTab('list');
+  };
+
   const toggleAccount = async (id: string, currentStatus: boolean) => {
     await updateAccount(id, { is_active: !currentStatus });
   };
@@ -254,7 +327,7 @@ const AccountManager = () => {
       <Tabs value={selectedTab} onValueChange={setSelectedTab}>
         <TabsList>
           <TabsTrigger value="list">Account List</TabsTrigger>
-          <TabsTrigger value="add">Add New</TabsTrigger>
+          <TabsTrigger value="add">{editingAccount ? 'Edit Account' : 'Add New'}</TabsTrigger>
         </TabsList>
 
         <TabsContent value="list" className="space-y-4">
@@ -306,7 +379,7 @@ const AccountManager = () => {
                         </span>
                       </div>
                       <div className="flex gap-2">
-                        <Button variant="outline" size="sm">
+                        <Button variant="outline" size="sm" onClick={() => handleEditAccount(account)}>
                           <Edit className="w-4 h-4 mr-1" />
                           Edit
                         </Button>
@@ -331,9 +404,9 @@ const AccountManager = () => {
         <TabsContent value="add" className="space-y-6">
           <Card>
             <CardHeader>
-              <CardTitle>Add New Email Account</CardTitle>
+              <CardTitle>{editingAccount ? 'Edit Email Account' : 'Add New Email Account'}</CardTitle>
               <CardDescription>
-                Configure a new email sending account for your campaigns
+                {editingAccount ? 'Update your email account configuration' : 'Configure a new email sending account for your campaigns'}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -381,20 +454,20 @@ const AccountManager = () => {
 
               <div className="flex gap-3 pt-4">
                 <Button 
-                  onClick={handleAddAccount} 
+                  onClick={handleSaveAccount} 
                   className="flex-1"
                   disabled={isSubmitting || !newAccount.name || !newAccount.email}
                 >
                   {isSubmitting ? (
                     <>
                       <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      Adding...
+                      {editingAccount ? 'Updating...' : 'Adding...'}
                     </>
                   ) : (
-                    'Add Account'
+                    editingAccount ? 'Update Account' : 'Add Account'
                   )}
                 </Button>
-                <Button variant="outline" onClick={() => setSelectedTab('list')}>
+                <Button variant="outline" onClick={handleCancelEdit}>
                   Cancel
                 </Button>
               </div>

@@ -1,4 +1,3 @@
-
 import { useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -24,6 +23,7 @@ const EmailComposer = () => {
   const [isSending, setIsSending] = useState(false);
   const [isTestSending, setIsTestSending] = useState(false);
   const [activeTab, setActiveTab] = useState('compose');
+  const [showPreview, setShowPreview] = useState(false);
 
   const [emailData, setEmailData] = useState({
     fromName: '',
@@ -120,10 +120,64 @@ const EmailComposer = () => {
     }));
   };
 
+  const handlePreview = () => {
+    if (!emailData.subject || !emailData.htmlContent) {
+      toast({
+        title: "Missing Content",
+        description: "Please add a subject and email content to preview",
+        variant: "destructive"
+      });
+      return;
+    }
+    setShowPreview(true);
+  };
+
+  const processEmailContent = (content: string) => {
+    // Replace common email tags with sample data for preview
+    return content
+      .replace(/\{\{(\[fromname\])\}\}/g, emailData.fromName || 'Your Name')
+      .replace(/\{\{(\[to\])\}\}/g, 'recipient@example.com')
+      .replace(/\{\{(\[subject\])\}\}/g, emailData.subject)
+      .replace(/\{\{(\[rndn_10\])\}\}/g, Math.random().toString(36).substring(2, 12));
+  };
+
   const recipientCount = emailData.recipients.split(',').filter(email => email.trim()).length;
 
   return (
     <div className="space-y-6">
+      {/* Preview Modal */}
+      {showPreview && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-auto">
+            <div className="p-6">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-lg font-semibold">Email Preview</h3>
+                <Button variant="outline" onClick={() => setShowPreview(false)}>
+                  Close
+                </Button>
+              </div>
+              <div className="border rounded-lg">
+                <div className="bg-slate-50 p-4 border-b">
+                  <div className="text-sm text-slate-600 space-y-1">
+                    <p><strong>From:</strong> {emailData.fromName || 'Your Name'} &lt;{selectedMethodAccounts[0]?.email || 'sender@example.com'}&gt;</p>
+                    <p><strong>To:</strong> {emailData.recipients.split(',')[0]?.trim() || 'recipient@example.com'}</p>
+                    <p><strong>Subject:</strong> {emailData.subject}</p>
+                  </div>
+                </div>
+                <div className="p-6">
+                  <div 
+                    className="prose max-w-none"
+                    dangerouslySetInnerHTML={{ 
+                      __html: processEmailContent(emailData.htmlContent || emailData.textContent || '<p>No content provided</p>')
+                    }}
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList className="grid w-full grid-cols-2">
           <TabsTrigger value="compose" className="flex items-center gap-2">
@@ -302,7 +356,7 @@ const EmailComposer = () => {
                     <div 
                       className="prose max-w-none"
                       dangerouslySetInnerHTML={{ 
-                        __html: emailData.htmlContent || '<p>Your email content will appear here...</p>' 
+                        __html: processEmailContent(emailData.htmlContent || '<p>Your email content will appear here...</p>')
                       }}
                     />
                   </div>
@@ -339,7 +393,7 @@ const EmailComposer = () => {
                       </>
                     )}
                   </Button>
-                  <Button variant="outline">
+                  <Button variant="outline" onClick={handlePreview}>
                     <Eye className="w-4 h-4 mr-2" />
                     Preview
                   </Button>
