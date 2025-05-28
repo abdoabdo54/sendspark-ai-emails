@@ -1,413 +1,417 @@
-
 import { useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Users, Plus, Upload, Download, Mail, Filter, Search, Loader2 } from 'lucide-react';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import { useSubscribers } from '@/hooks/useSubscribers';
+import { useEmailLists } from '@/hooks/useEmailLists';
 import { useOrganizations } from '@/hooks/useOrganizations';
+import { Users, UserPlus, Upload, Filter, MoreHorizontal, Mail, Tag } from 'lucide-react';
+import { toast } from '@/hooks/use-toast';
 
 const SubscriberManager = () => {
   const { currentOrganization } = useOrganizations();
-  const { subscribers, lists, loading, addSubscriber, createList, importSubscribers } = useSubscribers(currentOrganization?.id);
-  const [isAddingSubscriber, setIsAddingSubscriber] = useState(false);
-  const [isCreatingList, setIsCreatingList] = useState(false);
-  const [isImporting, setIsImporting] = useState(false);
+  const { subscribers, loading: subscribersLoading, addSubscriber, updateSubscriber, deleteSubscriber, importSubscribers } = useSubscribers(currentOrganization?.id);
+  const { lists, loading: listsLoading, createList } = useEmailLists(currentOrganization?.id);
+  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
+  const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
+  const [isListDialogOpen, setIsListDialogOpen] = useState(false);
+  const [selectedStatus, setSelectedStatus] = useState<string>('all');
   const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
-
-  const filteredSubscribers = subscribers.filter(subscriber => {
-    const matchesSearch = 
-      subscriber.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      subscriber.first_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      subscriber.last_name?.toLowerCase().includes(searchTerm.toLowerCase());
-    
-    const matchesStatus = statusFilter === 'all' || subscriber.status === statusFilter;
-    
-    return matchesSearch && matchesStatus;
-  });
 
   const handleAddSubscriber = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    setIsAddingSubscriber(true);
-
+    
     const formData = new FormData(e.currentTarget);
-    const subscriberData = {
-      email: formData.get('email') as string,
-      first_name: formData.get('firstName') as string || undefined,
-      last_name: formData.get('lastName') as string || undefined,
-      phone: formData.get('phone') as string || undefined,
-      status: 'active' as const,
-      tags: [],
-      custom_fields: {},
-      subscribed_at: new Date().toISOString()
-    };
+    const email = formData.get('email') as string;
+    const firstName = formData.get('firstName') as string;
+    const lastName = formData.get('lastName') as string;
+    const phone = formData.get('phone') as string;
+    const tags = (formData.get('tags') as string).split(',').map(tag => tag.trim()).filter(Boolean);
 
     try {
-      await addSubscriber(subscriberData);
-      (e.target as HTMLFormElement).reset();
+      await addSubscriber({
+        email,
+        first_name: firstName || undefined,
+        last_name: lastName || undefined,
+        phone: phone || undefined,
+        tags,
+        status: 'active',
+        custom_fields: {},
+        source: 'manual'
+      });
+      setIsAddDialogOpen(false);
     } catch (error) {
       console.error('Error adding subscriber:', error);
-    } finally {
-      setIsAddingSubscriber(false);
+    }
+  };
+
+  const handleImportSubscribers = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    
+    const formData = new FormData(e.currentTarget);
+    const csvData = formData.get('csvData') as string;
+
+    if (!csvData.trim()) {
+      toast({
+        title: "Error",
+        description: "Please paste CSV data",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    try {
+      await importSubscribers(csvData);
+      setIsImportDialogOpen(false);
+    } catch (error) {
+      console.error('Error importing subscribers:', error);
     }
   };
 
   const handleCreateList = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    setIsCreatingList(true);
-
+    
     const formData = new FormData(e.currentTarget);
-    const listData = {
-      name: formData.get('name') as string,
-      description: formData.get('description') as string || undefined,
-      tags: [],
-      is_active: true
-    };
+    const name = formData.get('name') as string;
+    const description = formData.get('description') as string;
+    const tags = (formData.get('tags') as string).split(',').map(tag => tag.trim()).filter(Boolean);
 
     try {
-      await createList(listData);
-      (e.target as HTMLFormElement).reset();
+      await createList({
+        name,
+        description: description || undefined,
+        tags,
+        is_active: true
+      });
+      setIsListDialogOpen(false);
     } catch (error) {
       console.error('Error creating list:', error);
-    } finally {
-      setIsCreatingList(false);
     }
   };
 
-  const handleImportCSV = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    setIsImporting(true);
+  const filteredSubscribers = subscribers.filter(subscriber => {
+    const matchesStatus = selectedStatus === 'all' || subscriber.status === selectedStatus;
+    const matchesSearch = searchTerm === '' || 
+      subscriber.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (subscriber.first_name && subscriber.first_name.toLowerCase().includes(searchTerm.toLowerCase())) ||
+      (subscriber.last_name && subscriber.last_name.toLowerCase().includes(searchTerm.toLowerCase()));
+    
+    return matchesStatus && matchesSearch;
+  });
 
-    const formData = new FormData(e.currentTarget);
-    const csvData = formData.get('csvData') as string;
-    const listId = formData.get('listId') as string || undefined;
-
-    try {
-      await importSubscribers(csvData, listId);
-      (e.target as HTMLFormElement).reset();
-    } catch (error) {
-      console.error('Error importing subscribers:', error);
-    } finally {
-      setIsImporting(false);
-    }
-  };
-
-  const getStatusBadge = (status: string) => {
-    const variants = {
-      active: 'default',
-      unsubscribed: 'secondary',
-      bounced: 'destructive',
-      complained: 'outline'
-    };
-    return variants[status as keyof typeof variants] || 'outline';
-  };
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center p-8">
-        <Loader2 className="w-8 h-8 animate-spin" />
-      </div>
-    );
+  if (subscribersLoading || listsLoading) {
+    return <div className="flex items-center justify-center p-8">Loading...</div>;
   }
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <div>
-          <h2 className="text-2xl font-bold text-slate-800">Subscriber Management</h2>
-          <p className="text-slate-600">Manage your email lists and subscribers</p>
-        </div>
-        <div className="flex gap-2">
-          <Dialog>
-            <DialogTrigger asChild>
-              <Button>
-                <Plus className="w-4 h-4 mr-2" />
-                Add Subscriber
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Add New Subscriber</DialogTitle>
-                <DialogDescription>
-                  Add a single subscriber to your organization
-                </DialogDescription>
-              </DialogHeader>
-              <form onSubmit={handleAddSubscriber} className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="email">Email Address</Label>
-                  <Input
-                    id="email"
-                    name="email"
-                    type="email"
-                    placeholder="subscriber@example.com"
-                    required
-                  />
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="firstName">First Name</Label>
-                    <Input
-                      id="firstName"
-                      name="firstName"
-                      placeholder="John"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="lastName">Last Name</Label>
-                    <Input
-                      id="lastName"
-                      name="lastName"
-                      placeholder="Doe"
-                    />
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="phone">Phone (Optional)</Label>
-                  <Input
-                    id="phone"
-                    name="phone"
-                    placeholder="+1234567890"
-                  />
-                </div>
-                <Button type="submit" className="w-full" disabled={isAddingSubscriber}>
-                  {isAddingSubscriber ? 'Adding...' : 'Add Subscriber'}
-                </Button>
-              </form>
-            </DialogContent>
-          </Dialog>
-        </div>
+      {/* Header with stats */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <Card>
+          <CardContent className="p-6">
+            <div className="flex items-center">
+              <Users className="h-5 w-5 text-blue-600" />
+              <div className="ml-4">
+                <p className="text-sm font-medium text-gray-600">Total Subscribers</p>
+                <p className="text-2xl font-bold">{subscribers.length}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        
+        <Card>
+          <CardContent className="p-6">
+            <div className="flex items-center">
+              <Mail className="h-5 w-5 text-green-600" />
+              <div className="ml-4">
+                <p className="text-sm font-medium text-gray-600">Active</p>
+                <p className="text-2xl font-bold">
+                  {subscribers.filter(s => s.status === 'active').length}
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="p-6">
+            <div className="flex items-center">
+              <UserPlus className="h-5 w-5 text-purple-600" />
+              <div className="ml-4">
+                <p className="text-sm font-medium text-gray-600">This Month</p>
+                <p className="text-2xl font-bold">
+                  {subscribers.filter(s => {
+                    const createdDate = new Date(s.created_at);
+                    const now = new Date();
+                    return createdDate.getMonth() === now.getMonth() && 
+                           createdDate.getFullYear() === now.getFullYear();
+                  }).length}
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="p-6">
+            <div className="flex items-center">
+              <Tag className="h-5 w-5 text-orange-600" />
+              <div className="ml-4">
+                <p className="text-sm font-medium text-gray-600">Email Lists</p>
+                <p className="text-2xl font-bold">{lists.length}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
-      <Tabs defaultValue="subscribers" className="w-full">
-        <TabsList className="grid w-full grid-cols-3">
-          <TabsTrigger value="subscribers">
-            <Users className="w-4 h-4 mr-2" />
-            Subscribers ({subscribers.length})
-          </TabsTrigger>
-          <TabsTrigger value="lists">
-            <Mail className="w-4 h-4 mr-2" />
-            Lists ({lists.length})
-          </TabsTrigger>
-          <TabsTrigger value="import">
-            <Upload className="w-4 h-4 mr-2" />
-            Import
-          </TabsTrigger>
-        </TabsList>
+      {/* Controls */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle>Subscribers</CardTitle>
+              <CardDescription>Manage your email subscribers and lists</CardDescription>
+            </div>
+            <div className="flex gap-2">
+              <Dialog open={isListDialogOpen} onOpenChange={setIsListDialogOpen}>
+                <DialogTrigger asChild>
+                  <Button variant="outline">
+                    <Tag className="h-4 w-4 mr-2" />
+                    Create List
+                  </Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Create Email List</DialogTitle>
+                    <DialogDescription>
+                      Create a new email list to organize your subscribers
+                    </DialogDescription>
+                  </DialogHeader>
+                  <form onSubmit={handleCreateList} className="space-y-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="name">List Name</Label>
+                      <Input id="name" name="name" placeholder="e.g., Newsletter Subscribers" required />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="description">Description</Label>
+                      <Textarea id="description" name="description" placeholder="Brief description of this list" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="tags">Tags (comma-separated)</Label>
+                      <Input id="tags" name="tags" placeholder="newsletter, updates, promotions" />
+                    </div>
+                    <div className="flex justify-end gap-2">
+                      <Button type="button" variant="outline" onClick={() => setIsListDialogOpen(false)}>
+                        Cancel
+                      </Button>
+                      <Button type="submit">Create List</Button>
+                    </div>
+                  </form>
+                </DialogContent>
+              </Dialog>
 
-        <TabsContent value="subscribers" className="space-y-4">
+              <Dialog open={isImportDialogOpen} onOpenChange={setIsImportDialogOpen}>
+                <DialogTrigger asChild>
+                  <Button variant="outline">
+                    <Upload className="h-4 w-4 mr-2" />
+                    Import CSV
+                  </Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Import Subscribers</DialogTitle>
+                    <DialogDescription>
+                      Import subscribers from CSV data. Format: email, first_name, last_name
+                    </DialogDescription>
+                  </DialogHeader>
+                  <form onSubmit={handleImportSubscribers} className="space-y-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="csvData">CSV Data</Label>
+                      <Textarea 
+                        id="csvData" 
+                        name="csvData" 
+                        placeholder="email,first_name,last_name&#10;john@example.com,John,Doe&#10;jane@example.com,Jane,Smith"
+                        rows={10}
+                        required 
+                      />
+                    </div>
+                    <div className="flex justify-end gap-2">
+                      <Button type="button" variant="outline" onClick={() => setIsImportDialogOpen(false)}>
+                        Cancel
+                      </Button>
+                      <Button type="submit">Import Subscribers</Button>
+                    </div>
+                  </form>
+                </DialogContent>
+              </Dialog>
+
+              <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
+                <DialogTrigger asChild>
+                  <Button>
+                    <UserPlus className="h-4 w-4 mr-2" />
+                    Add Subscriber
+                  </Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Add New Subscriber</DialogTitle>
+                    <DialogDescription>
+                      Add a new subscriber to your email list
+                    </DialogDescription>
+                  </DialogHeader>
+                  <form onSubmit={handleAddSubscriber} className="space-y-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="email">Email Address *</Label>
+                      <Input id="email" name="email" type="email" placeholder="subscriber@example.com" required />
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="firstName">First Name</Label>
+                        <Input id="firstName" name="firstName" placeholder="John" />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="lastName">Last Name</Label>
+                        <Input id="lastName" name="lastName" placeholder="Doe" />
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="phone">Phone Number</Label>
+                      <Input id="phone" name="phone" type="tel" placeholder="+1234567890" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="tags">Tags (comma-separated)</Label>
+                      <Input id="tags" name="tags" placeholder="newsletter, customer, vip" />
+                    </div>
+                    <div className="flex justify-end gap-2">
+                      <Button type="button" variant="outline" onClick={() => setIsAddDialogOpen(false)}>
+                        Cancel
+                      </Button>
+                      <Button type="submit">Add Subscriber</Button>
+                    </div>
+                  </form>
+                </DialogContent>
+              </Dialog>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
           {/* Filters */}
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex gap-4">
-                <div className="flex-1 relative">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 w-4 h-4" />
-                  <Input
-                    placeholder="Search subscribers..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="pl-10"
-                  />
-                </div>
-                <Select value={statusFilter} onValueChange={setStatusFilter}>
-                  <SelectTrigger className="w-48">
-                    <SelectValue placeholder="Filter by status" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Statuses</SelectItem>
-                    <SelectItem value="active">Active</SelectItem>
-                    <SelectItem value="unsubscribed">Unsubscribed</SelectItem>
-                    <SelectItem value="bounced">Bounced</SelectItem>
-                    <SelectItem value="complained">Complained</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </CardContent>
-          </Card>
+          <div className="flex items-center gap-4 mb-6">
+            <div className="flex-1">
+              <Input
+                placeholder="Search subscribers..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="max-w-sm"
+              />
+            </div>
+            <Select value={selectedStatus} onValueChange={setSelectedStatus}>
+              <SelectTrigger className="w-[180px]">
+                <SelectValue placeholder="Filter by status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Status</SelectItem>
+                <SelectItem value="active">Active</SelectItem>
+                <SelectItem value="unsubscribed">Unsubscribed</SelectItem>
+                <SelectItem value="bounced">Bounced</SelectItem>
+                <SelectItem value="complained">Complained</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
 
           {/* Subscribers Table */}
-          <Card>
-            <CardContent className="p-0">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Email</TableHead>
-                    <TableHead>Name</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Subscribed</TableHead>
-                    <TableHead>Tags</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredSubscribers.map((subscriber) => (
-                    <TableRow key={subscriber.id}>
-                      <TableCell className="font-medium">{subscriber.email}</TableCell>
-                      <TableCell>
-                        {subscriber.first_name || subscriber.last_name ? 
-                          `${subscriber.first_name || ''} ${subscriber.last_name || ''}`.trim() 
-                          : '-'
+          <div className="rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Email</TableHead>
+                  <TableHead>Name</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Tags</TableHead>
+                  <TableHead>Subscribed</TableHead>
+                  <TableHead className="w-[50px]"></TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filteredSubscribers.map((subscriber) => (
+                  <TableRow key={subscriber.id}>
+                    <TableCell className="font-medium">{subscriber.email}</TableCell>
+                    <TableCell>
+                      {subscriber.first_name || subscriber.last_name 
+                        ? `${subscriber.first_name || ''} ${subscriber.last_name || ''}`.trim()
+                        : '-'
+                      }
+                    </TableCell>
+                    <TableCell>
+                      <Badge 
+                        variant={
+                          subscriber.status === 'active' ? 'default' :
+                          subscriber.status === 'unsubscribed' ? 'secondary' :
+                          subscriber.status === 'bounced' ? 'destructive' :
+                          'outline'
                         }
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant={getStatusBadge(subscriber.status) as any}>
-                          {subscriber.status}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        {new Date(subscriber.subscribed_at).toLocaleDateString()}
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex gap-1 flex-wrap">
-                          {subscriber.tags.map((tag, index) => (
-                            <Badge key={index} variant="outline" className="text-xs">
-                              {tag}
-                            </Badge>
-                          ))}
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-              {filteredSubscribers.length === 0 && (
-                <div className="text-center py-8 text-slate-500">
-                  No subscribers found
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="lists" className="space-y-4">
-          <div className="flex justify-between items-center">
-            <h3 className="text-lg font-semibold">Email Lists</h3>
-            <Dialog>
-              <DialogTrigger asChild>
-                <Button>
-                  <Plus className="w-4 h-4 mr-2" />
-                  Create List
-                </Button>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Create Email List</DialogTitle>
-                  <DialogDescription>
-                    Create a new email list to organize your subscribers
-                  </DialogDescription>
-                </DialogHeader>
-                <form onSubmit={handleCreateList} className="space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="name">List Name</Label>
-                    <Input
-                      id="name"
-                      name="name"
-                      placeholder="Newsletter Subscribers"
-                      required
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="description">Description</Label>
-                    <Textarea
-                      id="description"
-                      name="description"
-                      placeholder="Description of this email list..."
-                      rows={3}
-                    />
-                  </div>
-                  <Button type="submit" className="w-full" disabled={isCreatingList}>
-                    {isCreatingList ? 'Creating...' : 'Create List'}
-                  </Button>
-                </form>
-              </DialogContent>
-            </Dialog>
-          </div>
-
-          <div className="grid gap-4">
-            {lists.map((list) => (
-              <Card key={list.id}>
-                <CardHeader>
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <CardTitle>{list.name}</CardTitle>
-                      <CardDescription>{list.description}</CardDescription>
-                    </div>
-                    <Badge>{list.subscriber_count} subscribers</Badge>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex gap-1 flex-wrap">
-                    {list.tags.map((tag, index) => (
-                      <Badge key={index} variant="outline" className="text-xs">
-                        {tag}
+                      >
+                        {subscriber.status}
                       </Badge>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-            {lists.length === 0 && (
-              <Card>
-                <CardContent className="text-center py-8 text-slate-500">
-                  No email lists created yet
-                </CardContent>
-              </Card>
-            )}
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex flex-wrap gap-1">
+                        {subscriber.tags.slice(0, 3).map((tag, index) => (
+                          <Badge key={index} variant="outline" className="text-xs">
+                            {tag}
+                          </Badge>
+                        ))}
+                        {subscriber.tags.length > 3 && (
+                          <Badge variant="outline" className="text-xs">
+                            +{subscriber.tags.length - 3}
+                          </Badge>
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      {subscriber.subscribed_at 
+                        ? new Date(subscriber.subscribed_at).toLocaleDateString()
+                        : '-'
+                      }
+                    </TableCell>
+                    <TableCell>
+                      <Button variant="ghost" size="sm">
+                        <MoreHorizontal className="h-4 w-4" />
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
           </div>
-        </TabsContent>
 
-        <TabsContent value="import" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Import Subscribers from CSV</CardTitle>
-              <CardDescription>
-                Upload a CSV file with your subscriber data. Include headers: email, first_name, last_name, phone
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <form onSubmit={handleImportCSV} className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="listId">Add to List (Optional)</Label>
-                  <Select name="listId">
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select a list" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {lists.map((list) => (
-                        <SelectItem key={list.id} value={list.id}>
-                          {list.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="csvData">CSV Data</Label>
-                  <Textarea
-                    id="csvData"
-                    name="csvData"
-                    placeholder="email,first_name,last_name,phone
-john@example.com,John,Doe,+1234567890
-jane@example.com,Jane,Smith,+0987654321"
-                    rows={10}
-                    required
-                  />
-                </div>
-                <Button type="submit" className="w-full" disabled={isImporting}>
-                  {isImporting ? 'Importing...' : 'Import Subscribers'}
-                  <Upload className="ml-2 w-4 h-4" />
+          {filteredSubscribers.length === 0 && (
+            <div className="text-center py-12">
+              <Users className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+              <h3 className="text-lg font-medium text-gray-900 mb-2">No subscribers found</h3>
+              <p className="text-gray-500 mb-4">
+                {searchTerm || selectedStatus !== 'all' 
+                  ? 'Try adjusting your search or filter criteria.'
+                  : 'Get started by adding your first subscriber.'
+                }
+              </p>
+              {!searchTerm && selectedStatus === 'all' && (
+                <Button onClick={() => setIsAddDialogOpen(true)}>
+                  <UserPlus className="h-4 w-4 mr-2" />
+                  Add First Subscriber
                 </Button>
-              </form>
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 };

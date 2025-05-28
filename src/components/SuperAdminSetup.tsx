@@ -25,34 +25,26 @@ const SuperAdminSetup = () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('User not authenticated');
 
-      // Create the main organization
-      const { data: org, error: orgError } = await supabase
-        .from('organizations')
-        .insert([{
-          name: orgName,
+      console.log('Creating super admin organization for user:', user.id);
+
+      // Call the edge function to create super admin organization
+      const { data, error } = await supabase.functions.invoke('create-super-admin', {
+        body: {
+          orgName,
           subdomain: subdomain.toLowerCase().replace(/[^a-z0-9-]/g, ''),
-          domain: domain || undefined,
-          subscription_plan: 'enterprise',
-          monthly_email_limit: 1000000, // 1M emails for super admin
-          is_active: true
-        }])
-        .select()
-        .single();
+          domain: domain || null,
+          userId: user.id
+        }
+      });
 
-      if (orgError) throw orgError;
+      if (error) {
+        console.error('Edge function error:', error);
+        throw error;
+      }
 
-      // Add user as super admin
-      const { error: userError } = await supabase
-        .from('organization_users')
-        .insert([{
-          organization_id: org.id,
-          user_id: user.id,
-          role: 'super_admin',
-          joined_at: new Date().toISOString(),
-          is_active: true
-        }]);
-
-      if (userError) throw userError;
+      if (!data.success) {
+        throw new Error(data.error || 'Failed to create super admin organization');
+      }
 
       toast({
         title: "Success",
@@ -65,7 +57,7 @@ const SuperAdminSetup = () => {
       console.error('Super admin setup error:', error);
       toast({
         title: "Error",
-        description: "Failed to create super admin account",
+        description: `Failed to create super admin account: ${error.message}`,
         variant: "destructive"
       });
     } finally {
