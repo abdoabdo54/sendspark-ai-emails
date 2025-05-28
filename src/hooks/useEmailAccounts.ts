@@ -10,24 +10,27 @@ export interface EmailAccount {
   email: string;
   is_active: boolean;
   config: any;
+  organization_id: string;
   created_at: string;
   updated_at: string;
 }
 
-export const useEmailAccounts = () => {
+export const useEmailAccounts = (organizationId?: string) => {
   const [accounts, setAccounts] = useState<EmailAccount[]>([]);
   const [loading, setLoading] = useState(true);
 
   const fetchAccounts = async () => {
+    if (!organizationId) return;
+
     try {
       const { data, error } = await supabase
         .from('email_accounts')
         .select('*')
+        .eq('organization_id', organizationId)
         .order('created_at', { ascending: false });
 
       if (error) throw error;
       
-      // Type cast the data to ensure proper typing
       const typedData = (data || []).map(item => ({
         ...item,
         type: item.type as 'apps-script' | 'powermta' | 'smtp'
@@ -46,17 +49,21 @@ export const useEmailAccounts = () => {
     }
   };
 
-  const addAccount = async (accountData: Omit<EmailAccount, 'id' | 'created_at' | 'updated_at'>) => {
+  const addAccount = async (accountData: Omit<EmailAccount, 'id' | 'created_at' | 'updated_at' | 'organization_id'>) => {
+    if (!organizationId) return;
+
     try {
       const { data, error } = await supabase
         .from('email_accounts')
-        .insert([accountData])
+        .insert([{
+          ...accountData,
+          organization_id: organizationId
+        }])
         .select()
         .single();
 
       if (error) throw error;
 
-      // Type cast the returned data
       const typedData = {
         ...data,
         type: data.type as 'apps-script' | 'powermta' | 'smtp'
@@ -90,7 +97,6 @@ export const useEmailAccounts = () => {
 
       if (error) throw error;
 
-      // Type cast the returned data
       const typedData = {
         ...data,
         type: data.type as 'apps-script' | 'powermta' | 'smtp'
@@ -136,8 +142,10 @@ export const useEmailAccounts = () => {
   };
 
   useEffect(() => {
-    fetchAccounts();
-  }, []);
+    if (organizationId) {
+      fetchAccounts();
+    }
+  }, [organizationId]);
 
   return {
     accounts,

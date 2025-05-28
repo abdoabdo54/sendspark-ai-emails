@@ -14,24 +14,27 @@ export interface Campaign {
   status: 'draft' | 'sending' | 'sent' | 'failed';
   sent_count: number;
   total_recipients: number;
+  organization_id: string;
   created_at: string;
   sent_at?: string;
 }
 
-export const useCampaigns = () => {
+export const useCampaigns = (organizationId?: string) => {
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [loading, setLoading] = useState(true);
 
   const fetchCampaigns = async () => {
+    if (!organizationId) return;
+
     try {
       const { data, error } = await supabase
         .from('email_campaigns')
         .select('*')
+        .eq('organization_id', organizationId)
         .order('created_at', { ascending: false });
 
       if (error) throw error;
       
-      // Type cast the data to ensure proper typing
       const typedData = (data || []).map(item => ({
         ...item,
         status: item.status as 'draft' | 'sending' | 'sent' | 'failed'
@@ -50,7 +53,9 @@ export const useCampaigns = () => {
     }
   };
 
-  const createCampaign = async (campaignData: Omit<Campaign, 'id' | 'created_at' | 'status' | 'sent_count' | 'total_recipients'>) => {
+  const createCampaign = async (campaignData: Omit<Campaign, 'id' | 'created_at' | 'status' | 'sent_count' | 'total_recipients' | 'organization_id'>) => {
+    if (!organizationId) return;
+
     try {
       const recipientCount = campaignData.recipients.split(',').filter(email => email.trim()).length;
       
@@ -58,6 +63,7 @@ export const useCampaigns = () => {
         .from('email_campaigns')
         .insert([{
           ...campaignData,
+          organization_id: organizationId,
           total_recipients: recipientCount,
           status: 'draft'
         }])
@@ -66,7 +72,6 @@ export const useCampaigns = () => {
 
       if (error) throw error;
 
-      // Type cast the returned data
       const typedData = {
         ...data,
         status: data.status as 'draft' | 'sending' | 'sent' | 'failed'
@@ -91,7 +96,6 @@ export const useCampaigns = () => {
 
   const sendCampaign = async (campaignId: string) => {
     try {
-      // Update campaign status to sending
       const { error: updateError } = await supabase
         .from('email_campaigns')
         .update({ 
@@ -102,7 +106,6 @@ export const useCampaigns = () => {
 
       if (updateError) throw updateError;
 
-      // Call edge function to send emails
       const { data, error } = await supabase.functions.invoke('send-campaign', {
         body: { campaignId }
       });
@@ -114,7 +117,6 @@ export const useCampaigns = () => {
         description: "Campaign is being sent"
       });
 
-      // Refresh campaigns to get updated status
       fetchCampaigns();
     } catch (error) {
       console.error('Error sending campaign:', error);
@@ -127,8 +129,10 @@ export const useCampaigns = () => {
   };
 
   useEffect(() => {
-    fetchCampaigns();
-  }, []);
+    if (organizationId) {
+      fetchCampaigns();
+    }
+  }, [organizationId]);
 
   return {
     campaigns,

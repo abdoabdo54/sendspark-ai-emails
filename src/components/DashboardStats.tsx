@@ -3,12 +3,16 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Mail, Users, CheckCircle, Clock, Loader2 } from 'lucide-react';
 import { useEmailAccounts } from '@/hooks/useEmailAccounts';
 import { useCampaigns } from '@/hooks/useCampaigns';
+import { useSubscribers } from '@/hooks/useSubscribers';
+import { useOrganizations } from '@/hooks/useOrganizations';
 
 const DashboardStats = () => {
-  const { accounts, loading: accountsLoading } = useEmailAccounts();
-  const { campaigns, loading: campaignsLoading } = useCampaigns();
+  const { currentOrganization } = useOrganizations();
+  const { accounts, loading: accountsLoading } = useEmailAccounts(currentOrganization?.id);
+  const { campaigns, loading: campaignsLoading } = useCampaigns(currentOrganization?.id);
+  const { subscribers, loading: subscribersLoading } = useSubscribers(currentOrganization?.id);
 
-  const loading = accountsLoading || campaignsLoading;
+  const loading = accountsLoading || campaignsLoading || subscribersLoading;
 
   const stats = [
     {
@@ -19,10 +23,10 @@ const DashboardStats = () => {
       color: "text-blue-600"
     },
     {
-      title: "Active Accounts",
-      value: accounts.filter(a => a.is_active).length.toString(),
+      title: "Active Subscribers",
+      value: subscribers.filter(s => s.status === 'active').length.toString(),
       icon: Users,
-      trend: `${accounts.length} total`,
+      trend: `${subscribers.length} total`,
       color: "text-green-600"
     },
     {
@@ -33,10 +37,10 @@ const DashboardStats = () => {
       color: "text-purple-600"
     },
     {
-      title: "Sending",
-      value: campaigns.filter(c => c.status === 'sending').length.toString(),
+      title: "Email Accounts",
+      value: accounts.filter(a => a.is_active).length.toString(),
       icon: Clock,
-      trend: `${campaigns.filter(c => c.status === 'draft').length} drafts`,
+      trend: `${accounts.length} configured`,
       color: "text-orange-600"
     }
   ];
