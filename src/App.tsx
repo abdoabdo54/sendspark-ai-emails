@@ -8,15 +8,33 @@ import { AuthProvider, useAuth } from "@/hooks/useAuth";
 import { useOrganizations } from "@/hooks/useOrganizations";
 import AuthForm from "@/components/AuthForm";
 import OrganizationSetup from "@/components/OrganizationSetup";
+import SuperAdminSetup from "@/components/SuperAdminSetup";
 import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
 import { Loader2 } from "lucide-react";
+import { useState, useEffect } from "react";
 
 const queryClient = new QueryClient();
 
 const AppContent = () => {
   const { user, loading: authLoading } = useAuth();
   const { organizations, currentOrganization, loading: orgLoading } = useOrganizations();
+  const [showSuperAdminSetup, setShowSuperAdminSetup] = useState(false);
+
+  // Check if this is the first time setup (no organizations exist and user is authenticated)
+  useEffect(() => {
+    if (user && !orgLoading && organizations.length === 0) {
+      // Check if this should be super admin setup
+      // You can customize this logic based on your needs (e.g., check email domain, etc.)
+      const isSuperAdminEmail = user.email?.includes('admin') || 
+                               user.email?.includes('support') || 
+                               organizations.length === 0; // For demo purposes, first user becomes super admin
+      
+      if (isSuperAdminEmail) {
+        setShowSuperAdminSetup(true);
+      }
+    }
+  }, [user, organizations, orgLoading]);
 
   if (authLoading) {
     return (
@@ -36,6 +54,11 @@ const AppContent = () => {
         <Loader2 className="w-8 h-8 animate-spin" />
       </div>
     );
+  }
+
+  // Show super admin setup if needed
+  if (showSuperAdminSetup) {
+    return <SuperAdminSetup />;
   }
 
   if (organizations.length === 0) {

@@ -14,28 +14,14 @@ export interface Subscriber {
   status: 'active' | 'unsubscribed' | 'bounced' | 'complained';
   tags: string[];
   source?: string;
-  subscribed_at: string;
+  subscribed_at?: string;
   unsubscribed_at?: string;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface EmailList {
-  id: string;
-  organization_id: string;
-  name: string;
-  description?: string;
-  subscriber_count: number;
-  tags: string[];
-  is_active: boolean;
-  created_by?: string;
   created_at: string;
   updated_at: string;
 }
 
 export const useSubscribers = (organizationId?: string) => {
   const [subscribers, setSubscribers] = useState<Subscriber[]>([]);
-  const [lists, setLists] = useState<EmailList[]>([]);
   const [loading, setLoading] = useState(true);
 
   const fetchSubscribers = async () => {
@@ -49,7 +35,13 @@ export const useSubscribers = (organizationId?: string) => {
         .order('created_at', { ascending: false });
 
       if (error) throw error;
-      setSubscribers(data || []);
+      
+      const typedData = (data || []).map(item => ({
+        ...item,
+        status: item.status as 'active' | 'unsubscribed' | 'bounced' | 'complained'
+      })) as Subscriber[];
+      
+      setSubscribers(typedData);
     } catch (error) {
       console.error('Error fetching subscribers:', error);
       toast({
@@ -57,33 +49,12 @@ export const useSubscribers = (organizationId?: string) => {
         description: "Failed to load subscribers",
         variant: "destructive"
       });
+    } finally {
+      setLoading(false);
     }
   };
 
-  const fetchLists = async () => {
-    if (!organizationId) return;
-
-    try {
-      const { data, error } = await supabase
-        .from('email_lists')
-        .select('*')
-        .eq('organization_id', organizationId)
-        .eq('is_active', true)
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-      setLists(data || []);
-    } catch (error) {
-      console.error('Error fetching lists:', error);
-      toast({
-        title: "Error",
-        description: "Failed to load email lists",
-        variant: "destructive"
-      });
-    }
-  };
-
-  const addSubscriber = async (subscriberData: Omit<Subscriber, 'id' | 'organization_id' | 'created_at' | 'updated_at'>) => {
+  const addSubscriber = async (subscriberData: Omit<Subscriber, 'id' | 'created_at' | 'updated_at' | 'organization_id'>) => {
     if (!organizationId) return;
 
     try {
@@ -98,12 +69,17 @@ export const useSubscribers = (organizationId?: string) => {
 
       if (error) throw error;
 
-      setSubscribers(prev => [data, ...prev]);
+      const typedData = {
+        ...data,
+        status: data.status as 'active' | 'unsubscribed' | 'bounced' | 'complained'
+      } as Subscriber;
+
+      setSubscribers(prev => [typedData, ...prev]);
       toast({
         title: "Success",
         description: "Subscriber added successfully"
       });
-      return data;
+      return typedData;
     } catch (error) {
       console.error('Error adding subscriber:', error);
       toast({
@@ -115,105 +91,113 @@ export const useSubscribers = (organizationId?: string) => {
     }
   };
 
-  const createList = async (listData: Omit<EmailList, 'id' | 'organization_id' | 'subscriber_count' | 'created_at' | 'updated_at'>) => {
-    if (!organizationId) return;
-
+  const updateSubscriber = async (id: string, updates: Partial<Subscriber>) => {
     try {
       const { data, error } = await supabase
-        .from('email_lists')
-        .insert([{
-          ...listData,
-          organization_id: organizationId
-        }])
+        .from('subscribers')
+        .update(updates)
+        .eq('id', id)
         .select()
         .single();
 
       if (error) throw error;
 
-      setLists(prev => [data, ...prev]);
+      const typedData = {
+        ...data,
+        status: data.status as 'active' | 'unsubscribed' | 'bounced' | 'complained'
+      } as Subscriber;
+
+      setSubscribers(prev => prev.map(s => s.id === id ? typedData : s));
       toast({
         title: "Success",
-        description: "Email list created successfully"
+        description: "Subscriber updated successfully"
       });
-      return data;
     } catch (error) {
-      console.error('Error creating list:', error);
+      console.error('Error updating subscriber:', error);
       toast({
         title: "Error",
-        description: "Failed to create email list",
+        description: "Failed to update subscriber",
         variant: "destructive"
       });
-      throw error;
     }
   };
 
-  const importSubscribers = async (csvData: string, listId?: string) => {
-    // Parse CSV and add subscribers
-    const lines = csvData.split('\n');
-    const headers = lines[0].split(',').map(h => h.trim());
-    const subscribers = [];
+  const deleteSubscriber = async (id: string) => {
+    try {
+      const { error } = await supabase
+        .from('subscribers')
+        .delete()
+        .eq('id', id);
 
-    for (let i = 1; i < lines.length; i++) {
-      const values = lines[i].split(',').map(v => v.trim());
-      if (values.length === headers.length && values[0]) {
-        const subscriber: any = {
-          email: values[0],
-          status: 'active',
-          tags: [],
-          custom_fields: {}
-        };
+      if (error) throw error;
 
-        // Map additional fields
-        for (let j = 1; j < headers.length; j++) {
-          const header = headers[j].toLowerCase();
-          if (header.includes('first') && header.includes('name')) {
-            subscriber.first_name = values[j];
-          } else if (header.includes('last') && header.includes('name')) {
-            subscriber.last_name = values[j];
-          } else if (header.includes('phone')) {
-            subscriber.phone = values[j];
-          } else if (values[j]) {
-            subscriber.custom_fields[headers[j]] = values[j];
-          }
-        }
-
-        subscribers.push(subscriber);
-      }
+      setSubscribers(prev => prev.filter(s => s.id !== id));
+      toast({
+        title: "Success",
+        description: "Subscriber deleted successfully"
+      });
+    } catch (error) {
+      console.error('Error deleting subscriber:', error);
+      toast({
+        title: "Error",
+        description: "Failed to delete subscriber",
+        variant: "destructive"
+      });
     }
+  };
+
+  const importSubscribers = async (csvData: string) => {
+    if (!organizationId) return;
 
     try {
+      // Parse CSV data (simple implementation)
+      const lines = csvData.trim().split('\n');
+      const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
+      
+      const emailIndex = headers.findIndex(h => h.includes('email'));
+      const firstNameIndex = headers.findIndex(h => h.includes('first') || h.includes('name'));
+      const lastNameIndex = headers.findIndex(h => h.includes('last') || h.includes('surname'));
+      
+      if (emailIndex === -1) {
+        throw new Error('Email column not found in CSV');
+      }
+
+      const subscribersToImport = [];
+      
+      for (let i = 1; i < lines.length; i++) {
+        const values = lines[i].split(',').map(v => v.trim());
+        const email = values[emailIndex];
+        
+        if (email) {
+          subscribersToImport.push({
+            email,
+            first_name: firstNameIndex !== -1 ? values[firstNameIndex] : undefined,
+            last_name: lastNameIndex !== -1 ? values[lastNameIndex] : undefined,
+            organization_id: organizationId,
+            status: 'active' as const,
+            tags: [],
+            custom_fields: {},
+            source: 'csv_import'
+          });
+        }
+      }
+
       const { data, error } = await supabase
         .from('subscribers')
-        .upsert(
-          subscribers.map(s => ({
-            ...s,
-            organization_id: organizationId
-          })),
-          { onConflict: 'organization_id,email' }
-        )
+        .upsert(subscribersToImport, { 
+          onConflict: 'organization_id,email',
+          ignoreDuplicates: true 
+        })
         .select();
 
       if (error) throw error;
 
-      // Add to list if specified
-      if (listId && data) {
-        const listSubscribers = data.map(subscriber => ({
-          list_id: listId,
-          subscriber_id: subscriber.id
-        }));
-
-        await supabase
-          .from('list_subscribers')
-          .upsert(listSubscribers, { onConflict: 'list_id,subscriber_id' });
-      }
-
-      fetchSubscribers();
       toast({
         title: "Success",
-        description: `Imported ${data?.length || 0} subscribers`
+        description: `Imported ${data?.length || 0} subscribers successfully`
       });
-      
-      return data;
+
+      fetchSubscribers();
     } catch (error) {
       console.error('Error importing subscribers:', error);
       toast({
@@ -221,26 +205,22 @@ export const useSubscribers = (organizationId?: string) => {
         description: "Failed to import subscribers",
         variant: "destructive"
       });
-      throw error;
     }
   };
 
   useEffect(() => {
     if (organizationId) {
-      setLoading(true);
-      Promise.all([fetchSubscribers(), fetchLists()]).finally(() => {
-        setLoading(false);
-      });
+      fetchSubscribers();
     }
   }, [organizationId]);
 
   return {
     subscribers,
-    lists,
     loading,
     addSubscriber,
-    createList,
+    updateSubscriber,
+    deleteSubscriber,
     importSubscribers,
-    refetch: () => Promise.all([fetchSubscribers(), fetchLists()])
+    refetch: fetchSubscribers
   };
 };

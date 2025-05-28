@@ -71,6 +71,10 @@ export const useOrganizations = () => {
     domain?: string;
   }) => {
     try {
+      // Get current user
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('User not authenticated');
+
       // Create organization
       const { data: org, error: orgError } = await supabase
         .from('organizations')
@@ -85,6 +89,7 @@ export const useOrganizations = () => {
         .from('organization_users')
         .insert([{
           organization_id: org.id,
+          user_id: user.id,
           role: 'org_admin',
           joined_at: new Date().toISOString()
         }]);
