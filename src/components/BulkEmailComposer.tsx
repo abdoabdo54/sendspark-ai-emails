@@ -345,7 +345,9 @@ const BulkEmailComposer = ({ organizationId }: BulkEmailComposerProps) => {
                     className="font-mono text-sm"
                   />
                   <div className="flex gap-2 flex-wrap">
-                    <Badge variant="secondary">Available: {{'{'}firstname{'}'}}, {{'{'}lastname{'}'}}, {{'{'}company{'}'}}, {{'{'}fromname{'}'}}, {{'{'}to{'}'}}, {{'{'}date{'}'}}, {{'{'}rndn_10{'}'}}</Badge>
+                    <Badge variant="secondary">
+                      Available: {'{{'} firstname {'}}', {'{{'} lastname {'}}', {'{{'} company {'}}', {'{{'} fromname {'}}', {'{{'} to {'}}', {'{{'} date {'}}', {'{{'} rndn_10 {'}}'} 
+                    </Badge>
                   </div>
                 </div>
               </CardContent>
