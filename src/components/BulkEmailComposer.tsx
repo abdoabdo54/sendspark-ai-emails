@@ -6,210 +6,164 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
-import { Switch } from "@/components/ui/switch";
-import { Plus, X, Upload, FileSpreadsheet, Loader2, Send, Pause, Play, Trash2 } from 'lucide-react';
-import { useEmailAccounts } from '@/hooks/useEmailAccounts';
-import { useEmailQueue, BulkEmailData } from '@/hooks/useEmailQueue';
-import { toast } from '@/hooks/use-toast';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Progress } from "@/components/ui/progress";
+import { Mail, Upload, Play, Pause, Square, Users, Clock, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
 import CSVDataImporter from './CSVDataImporter';
-import GoogleSheetsImport from './GoogleSheetsImport';
+import { useEmailAccounts } from '@/hooks/useEmailAccounts';
+import { useCampaigns } from '@/hooks/useCampaigns';
+import { toast } from '@/hooks/use-toast';
 
 interface BulkEmailComposerProps {
   organizationId?: string;
 }
 
+interface RecipientData {
+  email: string;
+  [key: string]: any;
+}
+
 const BulkEmailComposer = ({ organizationId }: BulkEmailComposerProps) => {
   const { accounts } = useEmailAccounts(organizationId);
-  const { 
-    queues, 
-    createBulkQueue, 
-    startQueue, 
-    pauseQueue, 
-    deleteQueue, 
-    processing 
-  } = useEmailQueue(organizationId);
+  const { createCampaign } = useCampaigns(organizationId);
+  
+  const [activeTab, setActiveTab] = useState('recipients');
+  const [recipients, setRecipients] = useState<RecipientData[]>([]);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [queueProgress, setQueueProgress] = useState(0);
+  const [queueStatus, setQueueStatus] = useState<'idle' | 'running' | 'paused' | 'completed'>('idle');
 
-  const [activeTab, setActiveTab] = useState('compose');
-  const [recipients, setRecipients] = useState<Array<{ email: string; [key: string]: any }>>([]);
-  const [fromNames, setFromNames] = useState<string[]>(['']);
-  const [subjects, setSubjects] = useState<string[]>(['']);
-  const [htmlContent, setHtmlContent] = useState('');
-  const [textContent, setTextContent] = useState('');
-  const [customHeaders, setCustomHeaders] = useState<{ [key: string]: string }>({});
-  const [selectedAccounts, setSelectedAccounts] = useState<string[]>([]);
-  const [maxConcurrentSends, setMaxConcurrentSends] = useState(5);
-  const [rateLimitPerHour, setRateLimitPerHour] = useState(100);
-  const [testEmailAddress, setTestEmailAddress] = useState('');
-  const [testEmailFrequency, setTestEmailFrequency] = useState(100);
-  const [enableTestEmails, setEnableTestEmails] = useState(false);
+  const [bulkData, setBulkData] = useState({
+    fromNames: [''],
+    subjects: [''],
+    htmlContent: '',
+    textContent: '',
+    sendMethod: 'smtp',
+    maxConcurrent: 5,
+    rateLimitDelay: 2,
+    testEmail: '',
+    testFrequency: 100,
+    customHeaders: '{}'
+  });
 
-  const activeAccounts = accounts.filter(account => account.is_active);
+  const activeAccounts = accounts.filter(account => 
+    account.is_active && account.type === bulkData.sendMethod
+  );
 
-  const addFromName = () => {
-    setFromNames([...fromNames, '']);
+  const handleImportData = (data: Array<{ [key: string]: any }>) => {
+    // Ensure each item has an email field
+    const validData: RecipientData[] = data
+      .filter(item => item.email || item.Email || item.EMAIL)
+      .map(item => ({
+        email: item.email || item.Email || item.EMAIL,
+        ...item
+      }));
+
+    setRecipients(validData);
+    toast({
+      title: "Data Imported",
+      description: `Successfully imported ${validData.length} recipients`,
+    });
   };
 
-  const updateFromName = (index: number, value: string) => {
-    const updated = [...fromNames];
-    updated[index] = value;
-    setFromNames(updated);
-  };
-
-  const removeFromName = (index: number) => {
-    if (fromNames.length > 1) {
-      setFromNames(fromNames.filter((_, i) => i !== index));
-    }
-  };
-
-  const addSubject = () => {
-    setSubjects([...subjects, '']);
-  };
-
-  const updateSubject = (index: number, value: string) => {
-    const updated = [...subjects];
-    updated[index] = value;
-    setSubjects(updated);
-  };
-
-  const removeSubject = (index: number) => {
-    if (subjects.length > 1) {
-      setSubjects(subjects.filter((_, i) => i !== index));
-    }
-  };
-
-  const addCustomHeader = () => {
-    const key = `Header-${Object.keys(customHeaders).length + 1}`;
-    setCustomHeaders({ ...customHeaders, [key]: '' });
-  };
-
-  const updateCustomHeader = (oldKey: string, newKey: string, value: string) => {
-    const updated = { ...customHeaders };
-    delete updated[oldKey];
-    updated[newKey] = value;
-    setCustomHeaders(updated);
-  };
-
-  const removeCustomHeader = (key: string) => {
-    const updated = { ...customHeaders };
-    delete updated[key];
-    setCustomHeaders(updated);
-  };
-
-  const handleManualRecipients = (emails: string) => {
-    const emailList = emails.split(',')
-      .map(email => email.trim())
-      .filter(email => email.length > 0)
-      .map(email => ({ email }));
-    setRecipients(emailList);
-  };
-
-  const handleCSVImport = (data: Array<{ [key: string]: any }>) => {
-    if (data.length > 0 && data[0].email) {
-      setRecipients(data);
-      toast({
-        title: "CSV Imported",
-        description: `Imported ${data.length} recipients from CSV`,
-      });
-    } else {
-      toast({
-        title: "Import Error",
-        description: "CSV must contain an 'email' column",
-        variant: "destructive"
-      });
-    }
-  };
-
-  const handleGoogleSheetsImport = (emails: string[]) => {
-    const emailList = emails.map(email => ({ email }));
-    setRecipients(emailList);
-  };
-
-  const toggleAccountSelection = (accountId: string) => {
-    setSelectedAccounts(prev => 
-      prev.includes(accountId)
-        ? prev.filter(id => id !== accountId)
-        : [...prev, accountId]
-    );
-  };
-
-  const handleCreateQueue = async () => {
+  const handleAddToQueue = async () => {
     if (recipients.length === 0) {
       toast({
         title: "No Recipients",
-        description: "Please add recipients before creating a queue",
+        description: "Please import recipients before adding to queue",
         variant: "destructive"
       });
       return;
     }
 
-    if (selectedAccounts.length === 0) {
+    if (!bulkData.subjects[0] || !bulkData.htmlContent) {
       toast({
-        title: "No Accounts Selected",
-        description: "Please select at least one sending account",
+        title: "Missing Content",
+        description: "Please add subject and email content",
         variant: "destructive"
       });
       return;
     }
 
-    if (fromNames.filter(name => name.trim()).length === 0) {
+    if (activeAccounts.length === 0) {
       toast({
-        title: "No From Names",
-        description: "Please add at least one from name",
+        title: "No Active Accounts",
+        description: `Please add and activate at least one ${bulkData.sendMethod.toUpperCase()} account`,
         variant: "destructive"
       });
       return;
     }
 
-    if (subjects.filter(subject => subject.trim()).length === 0) {
+    setIsProcessing(true);
+    
+    try {
+      // Create individual campaigns for each recipient (simplified approach)
+      const promises = recipients.map((recipient, index) => {
+        const fromName = bulkData.fromNames[index % bulkData.fromNames.length];
+        const subject = bulkData.subjects[index % bulkData.subjects.length];
+        
+        // Process placeholders
+        const processedSubject = processPlaceholders(subject, recipient, fromName);
+        const processedContent = processPlaceholders(bulkData.htmlContent, recipient, fromName);
+        
+        return createCampaign({
+          from_name: fromName,
+          subject: processedSubject,
+          recipients: recipient.email,
+          html_content: processedContent,
+          text_content: bulkData.textContent,
+          send_method: bulkData.sendMethod,
+          sent_at: new Date().toISOString()
+        });
+      });
+
+      await Promise.all(promises);
+      
       toast({
-        title: "No Subjects",
-        description: "Please add at least one subject line",
-        variant: "destructive"
+        title: "Queue Created",
+        description: `Added ${recipients.length} emails to the sending queue`,
       });
-      return;
-    }
-
-    if (!htmlContent.trim()) {
+      
+      setActiveTab('queue');
+    } catch (error) {
+      console.error('Error creating bulk queue:', error);
       toast({
-        title: "No Content",
-        description: "Please add email content",
+        title: "Error",
+        description: "Failed to create bulk email queue",
         variant: "destructive"
       });
-      return;
+    } finally {
+      setIsProcessing(false);
     }
-
-    const bulkData: BulkEmailData = {
-      recipients,
-      fromNames: fromNames.filter(name => name.trim()),
-      subjects: subjects.filter(subject => subject.trim()),
-      htmlContent,
-      textContent,
-      customHeaders,
-      sendingAccounts: selectedAccounts,
-      maxConcurrentSends,
-      rateLimitPerHour,
-      testEmailAddress: enableTestEmails ? testEmailAddress : undefined,
-      testEmailFrequency: enableTestEmails ? testEmailFrequency : undefined
-    };
-
-    await createBulkQueue(bulkData);
-    setActiveTab('queues');
   };
 
-  const getAvailablePlaceholders = () => {
-    const standardPlaceholders = [
-      '{{fromname}}', '{{subject}}', '{{to}}', '{{name}}', '{{date}}', '{{ide}}',
-      '{{rndn_10}}', '{{rnda_5}}', '{{tag}}'
-    ];
+  const processPlaceholders = (content: string, recipient: RecipientData, fromName: string) => {
+    return content
+      .replace(/\{\{fromname\}\}/g, fromName)
+      .replace(/\{\{to\}\}/g, recipient.email)
+      .replace(/\{\{firstname\}\}/g, recipient.firstname || recipient.first_name || '')
+      .replace(/\{\{lastname\}\}/g, recipient.lastname || recipient.last_name || '')
+      .replace(/\{\{company\}\}/g, recipient.company || '')
+      .replace(/\{\{date\}\}/g, new Date().toLocaleDateString())
+      .replace(/\{\{rndn_(\d+)\}\}/g, (match, length) => {
+        return Math.random().toString(36).substring(2, 2 + parseInt(length));
+      });
+  };
 
-    const dataPlaceholders = recipients.length > 0 
-      ? Object.keys(recipients[0]).map(key => `{{${key}}}`)
-      : [];
-
-    return [...standardPlaceholders, ...dataPlaceholders];
+  const handleStartQueue = () => {
+    setQueueStatus('running');
+    // Simulate queue processing
+    let progress = 0;
+    const interval = setInterval(() => {
+      progress += Math.random() * 10;
+      if (progress >= 100) {
+        progress = 100;
+        setQueueStatus('completed');
+        clearInterval(interval);
+      }
+      setQueueProgress(progress);
+    }, 1000);
   };
 
   return (
@@ -217,501 +171,348 @@ const BulkEmailComposer = ({ organizationId }: BulkEmailComposerProps) => {
       <div className="flex justify-between items-center">
         <div>
           <h2 className="text-2xl font-bold text-slate-800">Bulk Email Campaign</h2>
-          <p className="text-slate-600">Professional bulk email sending with advanced features</p>
+          <p className="text-slate-600">Professional bulk email sending with queue management</p>
         </div>
         <div className="flex gap-2">
-          <Badge variant="outline">
-            {recipients.length} recipients
-          </Badge>
-          <Badge variant="outline">
-            {selectedAccounts.length} accounts
-          </Badge>
+          <Badge variant="outline">{recipients.length} Recipients</Badge>
+          <Badge variant="outline">{activeAccounts.length} Active Accounts</Badge>
         </div>
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-3">
-          <TabsTrigger value="compose">Compose Campaign</TabsTrigger>
-          <TabsTrigger value="queues">Queue Management</TabsTrigger>
-          <TabsTrigger value="analytics">Analytics</TabsTrigger>
+        <TabsList className="grid w-full grid-cols-4">
+          <TabsTrigger value="recipients" className="flex items-center gap-2">
+            <Users className="w-4 h-4" />
+            Recipients
+          </TabsTrigger>
+          <TabsTrigger value="content" className="flex items-center gap-2">
+            <Mail className="w-4 h-4" />
+            Content
+          </TabsTrigger>
+          <TabsTrigger value="settings" className="flex items-center gap-2">
+            <Clock className="w-4 h-4" />
+            Settings
+          </TabsTrigger>
+          <TabsTrigger value="queue" className="flex items-center gap-2">
+            <CheckCircle className="w-4 h-4" />
+            Queue
+          </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="compose" className="space-y-6">
-          {/* Recipients Section */}
+        <TabsContent value="recipients">
           <Card>
             <CardHeader>
-              <CardTitle>Recipients ({recipients.length})</CardTitle>
+              <CardTitle>Import Recipients</CardTitle>
               <CardDescription>
-                Add recipients manually, import from CSV, or connect Google Sheets
+                Import your recipient list from CSV data or other sources
               </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <Tabs defaultValue="manual">
-                <TabsList>
-                  <TabsTrigger value="manual">Manual Entry</TabsTrigger>
-                  <TabsTrigger value="csv">CSV Import</TabsTrigger>
-                  <TabsTrigger value="sheets">Google Sheets</TabsTrigger>
-                </TabsList>
-
-                <TabsContent value="manual" className="space-y-4">
-                  <Label>Email Addresses (comma-separated)</Label>
-                  <Textarea
-                    placeholder="user1@example.com, user2@example.com, user3@example.com"
-                    rows={4}
-                    onChange={(e) => handleManualRecipients(e.target.value)}
-                  />
-                </TabsContent>
-
-                <TabsContent value="csv">
-                  <CSVDataImporter onImport={handleCSVImport} />
-                </TabsContent>
-
-                <TabsContent value="sheets">
-                  <GoogleSheetsImport onImport={handleGoogleSheetsImport} />
-                </TabsContent>
-              </Tabs>
-
+            <CardContent>
+              <CSVDataImporter onImport={handleImportData} />
+              
               {recipients.length > 0 && (
-                <div className="bg-green-50 p-3 rounded-lg">
-                  <p className="text-sm text-green-800">
-                    ✓ {recipients.length} recipients loaded
-                  </p>
-                  {recipients.length > 0 && Object.keys(recipients[0]).length > 1 && (
-                    <div className="mt-2">
-                      <p className="text-xs text-green-700">Available data fields:</p>
-                      <div className="flex flex-wrap gap-1 mt-1">
-                        {Object.keys(recipients[0]).map(key => (
-                          <Badge key={key} variant="secondary" className="text-xs">
-                            {key}
-                          </Badge>
+                <div className="mt-6">
+                  <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-lg font-medium">Recipients Preview</h3>
+                    <Badge variant="secondary">{recipients.length} contacts</Badge>
+                  </div>
+                  <div className="border rounded-lg max-h-64 overflow-auto">
+                    <table className="w-full text-sm">
+                      <thead className="bg-slate-50 sticky top-0">
+                        <tr>
+                          <th className="text-left p-2 border-b">Email</th>
+                          <th className="text-left p-2 border-b">First Name</th>
+                          <th className="text-left p-2 border-b">Last Name</th>
+                          <th className="text-left p-2 border-b">Company</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {recipients.slice(0, 10).map((recipient, index) => (
+                          <tr key={index} className="border-b">
+                            <td className="p-2">{recipient.email}</td>
+                            <td className="p-2">{recipient.firstname || recipient.first_name || '-'}</td>
+                            <td className="p-2">{recipient.lastname || recipient.last_name || '-'}</td>
+                            <td className="p-2">{recipient.company || '-'}</td>
+                          </tr>
                         ))}
+                      </tbody>
+                    </table>
+                    {recipients.length > 10 && (
+                      <div className="p-2 text-center text-slate-500 bg-slate-50">
+                        And {recipients.length - 10} more recipients...
                       </div>
-                    </div>
-                  )}
+                    )}
+                  </div>
                 </div>
               )}
             </CardContent>
           </Card>
+        </TabsContent>
 
-          {/* Sending Accounts */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Sending Accounts</CardTitle>
-              <CardDescription>
-                Select accounts to rotate through for sending
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                {activeAccounts.map(account => (
-                  <div
-                    key={account.id}
-                    className={`p-3 border rounded-lg cursor-pointer transition-colors ${
-                      selectedAccounts.includes(account.id)
-                        ? 'border-blue-500 bg-blue-50'
-                        : 'border-slate-200 hover:border-slate-300'
-                    }`}
-                    onClick={() => toggleAccountSelection(account.id)}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="font-medium">{account.name}</p>
-                        <p className="text-sm text-slate-600">{account.email}</p>
-                        <Badge variant="outline" className="mt-1">
-                          {account.type.toUpperCase()}
-                        </Badge>
-                      </div>
-                      {selectedAccounts.includes(account.id) && (
-                        <div className="w-4 h-4 bg-blue-500 rounded-full"></div>
-                      )}
-                    </div>
+        <TabsContent value="content">
+          <div className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>Email Configuration</CardTitle>
+                <CardDescription>
+                  Configure your email content and settings
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>From Names (one per line)</Label>
+                    <Textarea
+                      placeholder="Company Name&#10;Sales Team&#10;Marketing Department"
+                      value={bulkData.fromNames.join('\n')}
+                      onChange={(e) => setBulkData(prev => ({
+                        ...prev,
+                        fromNames: e.target.value.split('\n').filter(name => name.trim())
+                      }))}
+                      rows={3}
+                    />
                   </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* From Names */}
-          <Card>
-            <CardHeader>
-              <CardTitle>From Names (Rotation)</CardTitle>
-              <CardDescription>
-                Multiple from names will be rotated for each email
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {fromNames.map((name, index) => (
-                <div key={index} className="flex gap-2">
-                  <Input
-                    placeholder={`From Name ${index + 1}`}
-                    value={name}
-                    onChange={(e) => updateFromName(index, e.target.value)}
-                    className="flex-1"
-                  />
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => removeFromName(index)}
-                    disabled={fromNames.length === 1}
-                  >
-                    <X className="w-4 h-4" />
-                  </Button>
+                  <div className="space-y-2">
+                    <Label>Send Method</Label>
+                    <Select 
+                      value={bulkData.sendMethod} 
+                      onValueChange={(value) => setBulkData(prev => ({ ...prev, sendMethod: value }))}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="smtp">SMTP Server</SelectItem>
+                        <SelectItem value="apps-script">Google Apps Script</SelectItem>
+                        <SelectItem value="powermta">PowerMTA</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
-              ))}
-              <Button variant="outline" onClick={addFromName} className="w-full">
-                <Plus className="w-4 h-4 mr-2" />
-                Add From Name
-              </Button>
-            </CardContent>
-          </Card>
 
-          {/* Subject Lines */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Subject Lines (Rotation)</CardTitle>
-              <CardDescription>
-                Multiple subjects will be rotated for each email
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {subjects.map((subject, index) => (
-                <div key={index} className="flex gap-2">
-                  <Input
-                    placeholder={`Subject Line ${index + 1}`}
-                    value={subject}
-                    onChange={(e) => updateSubject(index, e.target.value)}
-                    className="flex-1"
+                <div className="space-y-2">
+                  <Label>Subject Lines (one per line)</Label>
+                  <Textarea
+                    placeholder="Special Offer Just for You!&#10;Don't Miss Out - Limited Time&#10;Exclusive Deal Inside"
+                    value={bulkData.subjects.join('\n')}
+                    onChange={(e) => setBulkData(prev => ({
+                      ...prev,
+                      subjects: e.target.value.split('\n').filter(subject => subject.trim())
+                    }))}
+                    rows={3}
                   />
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => removeSubject(index)}
-                    disabled={subjects.length === 1}
-                  >
-                    <X className="w-4 h-4" />
-                  </Button>
                 </div>
-              ))}
-              <Button variant="outline" onClick={addSubject} className="w-full">
-                <Plus className="w-4 h-4 mr-2" />
-                Add Subject Line
-              </Button>
-            </CardContent>
-          </Card>
 
-          {/* Email Content */}
+                <div className="space-y-2">
+                  <Label>HTML Content</Label>
+                  <Textarea
+                    placeholder="Enter your HTML email content. Use placeholders like {{firstname}}, {{company}}, {{fromname}}"
+                    value={bulkData.htmlContent}
+                    onChange={(e) => setBulkData(prev => ({ ...prev, htmlContent: e.target.value }))}
+                    rows={10}
+                    className="font-mono text-sm"
+                  />
+                  <div className="flex gap-2 flex-wrap">
+                    <Badge variant="secondary">Available: {{firstname}}, {{lastname}}, {{company}}, {{fromname}}, {{to}}, {{date}}, {{rndn_10}}</Badge>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="settings">
           <Card>
             <CardHeader>
-              <CardTitle>Email Content</CardTitle>
+              <CardTitle>Sending Settings</CardTitle>
               <CardDescription>
-                HTML and text content with placeholder support
+                Configure rate limiting and advanced sending options
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label>Available Placeholders</Label>
-                <div className="flex flex-wrap gap-1">
-                  {getAvailablePlaceholders().map(placeholder => (
-                    <Badge 
-                      key={placeholder} 
-                      variant="secondary" 
-                      className="cursor-pointer text-xs"
-                      onClick={() => {
-                        setHtmlContent(prev => prev + placeholder);
-                      }}
-                    >
-                      {placeholder}
-                    </Badge>
-                  ))}
-                </div>
-              </div>
-
-              <Separator />
-
-              <div className="space-y-2">
-                <Label>HTML Content</Label>
-                <Textarea
-                  placeholder="Enter your HTML email content with placeholders like {{fromname}}, {{email}}, etc."
-                  value={htmlContent}
-                  onChange={(e) => setHtmlContent(e.target.value)}
-                  rows={15}
-                  className="font-mono text-sm"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label>Plain Text Content (Optional)</Label>
-                <Textarea
-                  placeholder="Plain text version of your email"
-                  value={textContent}
-                  onChange={(e) => setTextContent(e.target.value)}
-                  rows={8}
-                />
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Advanced Settings */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Advanced Settings</CardTitle>
-              <CardDescription>
-                Configure sending behavior and rate limiting
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="space-y-2">
                   <Label>Max Concurrent Sends</Label>
                   <Input
                     type="number"
                     min="1"
                     max="20"
-                    value={maxConcurrentSends}
-                    onChange={(e) => setMaxConcurrentSends(parseInt(e.target.value) || 5)}
+                    value={bulkData.maxConcurrent}
+                    onChange={(e) => setBulkData(prev => ({ ...prev, maxConcurrent: parseInt(e.target.value) || 5 }))}
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label>Rate Limit (emails/hour)</Label>
+                  <Label>Rate Limit Delay (seconds)</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    value={bulkData.rateLimitDelay}
+                    onChange={(e) => setBulkData(prev => ({ ...prev, rateLimitDelay: parseInt(e.target.value) || 2 }))}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Test Email Frequency</Label>
                   <Input
                     type="number"
                     min="1"
-                    value={rateLimitPerHour}
-                    onChange={(e) => setRateLimitPerHour(parseInt(e.target.value) || 100)}
+                    placeholder="Send test every X emails"
+                    value={bulkData.testFrequency}
+                    onChange={(e) => setBulkData(prev => ({ ...prev, testFrequency: parseInt(e.target.value) || 100 }))}
                   />
                 </div>
               </div>
 
-              <Separator />
+              <div className="space-y-2">
+                <Label>Test Email Address</Label>
+                <Input
+                  type="email"
+                  placeholder="test@example.com"
+                  value={bulkData.testEmail}
+                  onChange={(e) => setBulkData(prev => ({ ...prev, testEmail: e.target.value }))}
+                />
+              </div>
 
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <Label className="text-base">Enable Test Emails</Label>
-                    <p className="text-sm text-slate-500">
-                      Send test emails periodically during the campaign
+              <div className="space-y-2">
+                <Label>Custom Headers (JSON)</Label>
+                <Textarea
+                  placeholder='{"Reply-To": "noreply@example.com", "X-Campaign": "bulk-2024"}'
+                  value={bulkData.customHeaders}
+                  onChange={(e) => setBulkData(prev => ({ ...prev, customHeaders: e.target.value }))}
+                  rows={3}
+                  className="font-mono text-sm"
+                />
+              </div>
+
+              {activeAccounts.length > 0 && (
+                <div className="bg-green-50 p-4 rounded-lg">
+                  <h4 className="font-medium text-green-800 mb-2">Active Sending Accounts:</h4>
+                  <div className="flex flex-wrap gap-2">
+                    {activeAccounts.map(account => (
+                      <Badge key={account.id} variant="secondary" className="bg-green-100 text-green-800">
+                        {account.name} ({account.email})
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="queue">
+          <div className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>Queue Management</CardTitle>
+                <CardDescription>
+                  Monitor and control your bulk email sending queue
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="flex justify-between items-center">
+                  <div className="space-y-1">
+                    <h3 className="text-lg font-medium">Queue Status: {queueStatus}</h3>
+                    <p className="text-sm text-slate-600">
+                      {recipients.length} emails ready to send
                     </p>
                   </div>
-                  <Switch
-                    checked={enableTestEmails}
-                    onCheckedChange={setEnableTestEmails}
-                  />
-                </div>
-
-                {enableTestEmails && (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 ml-6">
-                    <div className="space-y-2">
-                      <Label>Test Email Address</Label>
-                      <Input
-                        type="email"
-                        placeholder="test@example.com"
-                        value={testEmailAddress}
-                        onChange={(e) => setTestEmailAddress(e.target.value)}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Send test every X emails</Label>
-                      <Input
-                        type="number"
-                        min="1"
-                        value={testEmailFrequency}
-                        onChange={(e) => setTestEmailFrequency(parseInt(e.target.value) || 100)}
-                      />
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              <Separator />
-
-              <div className="space-y-3">
-                <Label>Custom Email Headers</Label>
-                {Object.entries(customHeaders).map(([key, value]) => (
-                  <div key={key} className="flex gap-2">
-                    <Input
-                      placeholder="Header name"
-                      value={key}
-                      onChange={(e) => updateCustomHeader(key, e.target.value, value)}
-                      className="w-1/3"
-                    />
-                    <Input
-                      placeholder="Header value"
-                      value={value}
-                      onChange={(e) => updateCustomHeader(key, key, e.target.value)}
-                      className="flex-1"
-                    />
-                    <Button
+                  <div className="flex gap-2">
+                    <Button 
                       variant="outline"
-                      size="sm"
-                      onClick={() => removeCustomHeader(key)}
+                      onClick={handleAddToQueue}
+                      disabled={isProcessing || recipients.length === 0}
                     >
-                      <X className="w-4 h-4" />
+                      {isProcessing ? (
+                        <>
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          Processing...
+                        </>
+                      ) : (
+                        <>
+                          <Upload className="w-4 h-4 mr-2" />
+                          Add to Queue
+                        </>
+                      )}
+                    </Button>
+                    {queueStatus === 'idle' && (
+                      <Button onClick={handleStartQueue}>
+                        <Play className="w-4 h-4 mr-2" />
+                        Start Queue
+                      </Button>
+                    )}
+                    {queueStatus === 'running' && (
+                      <Button variant="outline" onClick={() => setQueueStatus('paused')}>
+                        <Pause className="w-4 h-4 mr-2" />
+                        Pause
+                      </Button>
+                    )}
+                    {queueStatus === 'paused' && (
+                      <Button onClick={() => setQueueStatus('running')}>
+                        <Play className="w-4 h-4 mr-2" />
+                        Resume
+                      </Button>
+                    )}
+                    <Button variant="destructive" onClick={() => {
+                      setQueueStatus('idle');
+                      setQueueProgress(0);
+                    }}>
+                      <Square className="w-4 h-4 mr-2" />
+                      Stop
                     </Button>
                   </div>
-                ))}
-                <Button variant="outline" onClick={addCustomHeader} className="w-full">
-                  <Plus className="w-4 h-4 mr-2" />
-                  Add Custom Header
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
+                </div>
 
-          {/* Create Queue Button */}
-          <Card>
-            <CardContent className="pt-6">
-              <Button 
-                onClick={handleCreateQueue}
-                disabled={processing || recipients.length === 0}
-                className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
-                size="lg"
-              >
-                {processing ? (
-                  <>
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    Creating Queue...
-                  </>
-                ) : (
-                  <>
-                    <Send className="w-4 h-4 mr-2" />
-                    Create Bulk Email Queue
-                  </>
-                )}
-              </Button>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="queues" className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Email Queues</CardTitle>
-              <CardDescription>
-                Manage and monitor your email sending queues
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {queues.map(queue => (
-                  <div key={queue.id} className="border rounded-lg p-4">
-                    <div className="flex justify-between items-start mb-3">
-                      <div>
-                        <h3 className="font-medium">{queue.name}</h3>
-                        <p className="text-sm text-slate-600">
-                          Created {new Date(queue.created_at).toLocaleString()}
-                        </p>
-                      </div>
-                      <div className="flex gap-2">
-                        {queue.status === 'pending' && (
-                          <Button
-                            size="sm"
-                            onClick={() => startQueue(queue.id)}
-                          >
-                            <Play className="w-4 h-4 mr-1" />
-                            Start
-                          </Button>
-                        )}
-                        {queue.status === 'running' && (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => pauseQueue(queue.id)}
-                          >
-                            <Pause className="w-4 h-4 mr-1" />
-                            Pause
-                          </Button>
-                        )}
-                        {queue.status === 'paused' && (
-                          <Button
-                            size="sm"
-                            onClick={() => startQueue(queue.id)}
-                          >
-                            <Play className="w-4 h-4 mr-1" />
-                            Resume
-                          </Button>
-                        )}
-                        <Button
-                          size="sm"
-                          variant="destructive"
-                          onClick={() => deleteQueue(queue.id)}
-                        >
-                          <Trash2 className="w-4 h-4 mr-1" />
-                          Delete
-                        </Button>
-                      </div>
+                {queueStatus !== 'idle' && (
+                  <div className="space-y-2">
+                    <div className="flex justify-between text-sm">
+                      <span>Progress</span>
+                      <span>{Math.round(queueProgress)}%</span>
                     </div>
-                    
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                      <div>
-                        <p className="text-slate-600">Status</p>
-                        <Badge variant={
-                          queue.status === 'completed' ? 'default' :
-                          queue.status === 'running' ? 'secondary' :
-                          queue.status === 'failed' ? 'destructive' : 'outline'
-                        }>
-                          {queue.status}
-                        </Badge>
-                      </div>
-                      <div>
-                        <p className="text-slate-600">Progress</p>
-                        <p className="font-medium">
-                          {queue.completed_jobs} / {queue.total_jobs}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-slate-600">Failed</p>
-                        <p className="font-medium text-red-600">{queue.failed_jobs}</p>
-                      </div>
-                      <div>
-                        <p className="text-slate-600">Concurrent</p>
-                        <p className="font-medium">{queue.max_concurrent_sends}</p>
-                      </div>
-                    </div>
-
-                    {queue.total_jobs > 0 && (
-                      <div className="mt-3">
-                        <div className="w-full bg-slate-200 rounded-full h-2">
-                          <div 
-                            className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-                            style={{ 
-                              width: `${(queue.completed_jobs / queue.total_jobs) * 100}%` 
-                            }}
-                          ></div>
-                        </div>
-                        <p className="text-xs text-slate-600 mt-1">
-                          {Math.round((queue.completed_jobs / queue.total_jobs) * 100)}% complete
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                ))}
-
-                {queues.length === 0 && (
-                  <div className="text-center py-8 text-slate-500">
-                    <Send className="w-12 h-12 mx-auto mb-3 opacity-50" />
-                    <p>No email queues yet</p>
-                    <p className="text-sm">Create your first bulk campaign to get started</p>
+                    <Progress value={queueProgress} className="w-full" />
                   </div>
                 )}
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
 
-        <TabsContent value="analytics">
-          <Card>
-            <CardHeader>
-              <CardTitle>Campaign Analytics</CardTitle>
-              <CardDescription>
-                Real-time analytics and performance metrics
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="text-center py-8 text-slate-500">
-                <p>Analytics dashboard coming soon...</p>
-              </div>
-            </CardContent>
-          </Card>
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                  <div className="bg-blue-50 p-4 rounded-lg">
+                    <div className="flex items-center gap-2">
+                      <Clock className="w-5 h-5 text-blue-600" />
+                      <div>
+                        <p className="text-sm text-blue-600">Pending</p>
+                        <p className="text-xl font-bold text-blue-800">{recipients.length}</p>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="bg-green-50 p-4 rounded-lg">
+                    <div className="flex items-center gap-2">
+                      <CheckCircle className="w-5 h-5 text-green-600" />
+                      <div>
+                        <p className="text-sm text-green-600">Sent</p>
+                        <p className="text-xl font-bold text-green-800">0</p>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="bg-red-50 p-4 rounded-lg">
+                    <div className="flex items-center gap-2">
+                      <AlertCircle className="w-5 h-5 text-red-600" />
+                      <div>
+                        <p className="text-sm text-red-600">Failed</p>
+                        <p className="text-xl font-bold text-red-800">0</p>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="bg-yellow-50 p-4 rounded-lg">
+                    <div className="flex items-center gap-2">
+                      <Loader2 className="w-5 h-5 text-yellow-600" />
+                      <div>
+                        <p className="text-sm text-yellow-600">Processing</p>
+                        <p className="text-xl font-bold text-yellow-800">0</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
         </TabsContent>
       </Tabs>
     </div>

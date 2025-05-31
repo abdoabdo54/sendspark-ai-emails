@@ -21,7 +21,6 @@ export interface EmailJob {
   sent_at?: string;
   error_message?: string;
   retry_count: number;
-  queue_id?: string;
   created_at: string;
   updated_at: string;
 }
@@ -41,38 +40,43 @@ export interface SendingQueue {
   updated_at: string;
 }
 
-export interface BulkEmailData {
-  recipients: Array<{ email: string; [key: string]: any }>;
-  fromNames: string[];
-  subjects: string[];
-  htmlContent: string;
-  textContent?: string;
-  customHeaders: { [key: string]: string };
-  sendingAccounts: string[];
-  maxConcurrentSends: number;
-  rateLimitPerHour: number;
-  testEmailAddress?: string;
-  testEmailFrequency?: number;
-}
-
 export const useEmailQueue = (organizationId?: string) => {
   const [queues, setQueues] = useState<SendingQueue[]>([]);
   const [jobs, setJobs] = useState<EmailJob[]>([]);
   const [loading, setLoading] = useState(true);
-  const [processing, setProcessing] = useState(false);
 
   const fetchQueues = async () => {
     if (!organizationId) return;
 
     try {
+      // For now, we'll use the existing campaigns table as a fallback
+      // until the new tables are available in the database schema
       const { data, error } = await supabase
-        .from('sending_queues')
+        .from('email_campaigns')
         .select('*')
         .eq('organization_id', organizationId)
         .order('created_at', { ascending: false });
 
       if (error) throw error;
-      setQueues(data || []);
+      
+      // Transform campaigns to queue format for backwards compatibility
+      const transformedQueues: SendingQueue[] = (data || []).map(campaign => ({
+        id: campaign.id,
+        organization_id: campaign.organization_id,
+        name: `Campaign: ${campaign.subject}`,
+        total_jobs: campaign.total_recipients || 0,
+        completed_jobs: campaign.sent_count || 0,
+        failed_jobs: 0,
+        status: campaign.status === 'sent' ? 'completed' : 
+                campaign.status === 'sending' ? 'running' : 'pending',
+        max_concurrent_sends: 5,
+        started_at: campaign.sent_at,
+        completed_at: campaign.status === 'sent' ? campaign.sent_at : undefined,
+        created_at: campaign.created_at,
+        updated_at: campaign.created_at
+      }));
+      
+      setQueues(transformedQueues);
     } catch (error) {
       console.error('Error fetching queues:', error);
       toast({
@@ -80,6 +84,8 @@ export const useEmailQueue = (organizationId?: string) => {
         description: "Failed to load sending queues",
         variant: "destructive"
       });
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -87,19 +93,39 @@ export const useEmailQueue = (organizationId?: string) => {
     if (!organizationId) return;
 
     try {
-      let query = supabase
-        .from('email_jobs')
+      // For now, we'll create placeholder jobs based on campaigns
+      const { data, error } = await supabase
+        .from('email_campaigns')
         .select('*')
         .eq('organization_id', organizationId);
 
-      if (queueId) {
-        query = query.eq('queue_id', queueId);
-      }
-
-      const { data, error } = await query.order('created_at', { ascending: false });
-
       if (error) throw error;
-      setJobs(data || []);
+      
+      // Transform campaigns to jobs format for backwards compatibility
+      const transformedJobs: EmailJob[] = (data || []).flatMap(campaign => {
+        const recipients = campaign.recipients.split(',').map((email: string) => email.trim());
+        return recipients.map((email: string, index: number) => ({
+          id: `${campaign.id}-${index}`,
+          organization_id: campaign.organization_id,
+          campaign_id: campaign.id,
+          recipient_email: email,
+          recipient_data: {},
+          from_name: campaign.from_name,
+          subject: campaign.subject,
+          html_content: campaign.html_content,
+          text_content: campaign.text_content,
+          custom_headers: {},
+          status: campaign.status === 'sent' ? 'sent' : 'pending' as any,
+          priority: 1,
+          scheduled_at: campaign.created_at,
+          sent_at: campaign.sent_at,
+          retry_count: 0,
+          created_at: campaign.created_at,
+          updated_at: campaign.created_at
+        }));
+      });
+      
+      setJobs(queueId ? transformedJobs.filter(job => job.campaign_id === queueId) : transformedJobs);
     } catch (error) {
       console.error('Error fetching jobs:', error);
       toast({
@@ -107,172 +133,100 @@ export const useEmailQueue = (organizationId?: string) => {
         description: "Failed to load email jobs",
         variant: "destructive"
       });
-    } finally {
-      setLoading(false);
     }
   };
 
-  const createBulkQueue = async (data: BulkEmailData): Promise<string | null> => {
-    if (!organizationId) return null;
+  const createQueue = async (queueData: Omit<SendingQueue, 'id' | 'created_at' | 'updated_at' | 'organization_id'>) => {
+    if (!organizationId) return;
 
     try {
-      setProcessing(true);
-
-      // Create the queue
-      const { data: queue, error: queueError } = await supabase
-        .from('sending_queues')
+      // For now, create a campaign instead of a queue
+      const { data, error } = await supabase
+        .from('email_campaigns')
         .insert([{
           organization_id: organizationId,
-          name: `Bulk Campaign ${new Date().toLocaleString()}`,
-          total_jobs: data.recipients.length,
-          max_concurrent_sends: data.maxConcurrentSends,
-          status: 'pending'
+          from_name: 'Bulk Sender',
+          subject: queueData.name,
+          recipients: '',
+          status: 'draft',
+          send_method: 'smtp'
         }])
         .select()
         .single();
 
-      if (queueError) throw queueError;
-
-      // Create individual email jobs
-      const emailJobs = [];
-      let fromNameIndex = 0;
-      let subjectIndex = 0;
-      let accountIndex = 0;
-
-      for (let i = 0; i < data.recipients.length; i++) {
-        const recipient = data.recipients[i];
-        
-        // Rotate through from names, subjects, and accounts
-        const fromName = data.fromNames[fromNameIndex % data.fromNames.length];
-        const subject = data.subjects[subjectIndex % data.subjects.length];
-        const accountId = data.sendingAccounts[accountIndex % data.sendingAccounts.length];
-
-        // Process placeholders and spintax
-        const processedContent = processEmailContent(
-          data.htmlContent,
-          recipient,
-          fromName,
-          subject,
-          recipient.email
-        );
-
-        const processedSubject = processEmailContent(
-          subject,
-          recipient,
-          fromName,
-          subject,
-          recipient.email
-        );
-
-        emailJobs.push({
-          organization_id: organizationId,
-          queue_id: queue.id,
-          recipient_email: recipient.email,
-          recipient_data: recipient,
-          from_name: fromName,
-          subject: processedSubject,
-          html_content: processedContent,
-          text_content: data.textContent ? processEmailContent(
-            data.textContent,
-            recipient,
-            fromName,
-            subject,
-            recipient.email
-          ) : undefined,
-          custom_headers: data.customHeaders,
-          account_id: accountId,
-          status: 'pending',
-          priority: 1,
-          scheduled_at: new Date().toISOString(),
-          retry_count: 0
-        });
-
-        fromNameIndex++;
-        subjectIndex++;
-        accountIndex++;
-      }
-
-      const { error: jobsError } = await supabase
-        .from('email_jobs')
-        .insert(emailJobs);
-
-      if (jobsError) throw jobsError;
+      if (error) throw error;
 
       toast({
-        title: "Queue Created",
-        description: `Created bulk queue with ${data.recipients.length} email jobs`,
+        title: "Success",
+        description: "Sending queue created successfully"
       });
-
-      await fetchQueues();
-      return queue.id;
-
+      
+      fetchQueues();
+      return data;
     } catch (error) {
-      console.error('Error creating bulk queue:', error);
+      console.error('Error creating queue:', error);
       toast({
         title: "Error",
-        description: "Failed to create bulk email queue",
+        description: "Failed to create sending queue",
         variant: "destructive"
       });
-      return null;
-    } finally {
-      setProcessing(false);
+      throw error;
     }
   };
 
-  const startQueue = async (queueId: string) => {
+  const addJobsToQueue = async (queueId: string, jobsData: Omit<EmailJob, 'id' | 'created_at' | 'updated_at' | 'organization_id'>[]) => {
     try {
-      // Update queue status
-      const { error: updateError } = await supabase
-        .from('sending_queues')
-        .update({ 
-          status: 'running',
-          started_at: new Date().toISOString()
-        })
-        .eq('id', queueId);
-
-      if (updateError) throw updateError;
-
-      // Start processing jobs
-      await supabase.functions.invoke('process-email-queue', {
-        body: { queueId }
-      });
-
-      toast({
-        title: "Queue Started",
-        description: "Email queue processing has started",
-      });
-
-      await fetchQueues();
-    } catch (error) {
-      console.error('Error starting queue:', error);
-      toast({
-        title: "Error",
-        description: "Failed to start email queue",
-        variant: "destructive"
-      });
-    }
-  };
-
-  const pauseQueue = async (queueId: string) => {
-    try {
+      // For now, we'll update the campaign with recipient information
+      const recipients = jobsData.map(job => job.recipient_email).join(', ');
+      
       const { error } = await supabase
-        .from('sending_queues')
-        .update({ status: 'paused' })
+        .from('email_campaigns')
+        .update({ 
+          recipients,
+          total_recipients: jobsData.length
+        })
         .eq('id', queueId);
 
       if (error) throw error;
 
       toast({
-        title: "Queue Paused",
-        description: "Email queue has been paused",
+        title: "Success",
+        description: `Added ${jobsData.length} emails to the queue`
       });
-
-      await fetchQueues();
+      
+      fetchQueues();
+      fetchJobs(queueId);
     } catch (error) {
-      console.error('Error pausing queue:', error);
+      console.error('Error adding jobs to queue:', error);
       toast({
         title: "Error",
-        description: "Failed to pause email queue",
+        description: "Failed to add jobs to queue",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const updateQueueStatus = async (queueId: string, status: SendingQueue['status']) => {
+    try {
+      const campaignStatus = status === 'running' ? 'sending' : 
+                           status === 'completed' ? 'sent' : 'draft';
+      
+      const { error } = await supabase
+        .from('email_campaigns')
+        .update({ 
+          status: campaignStatus,
+          sent_at: status === 'running' ? new Date().toISOString() : null
+        })
+        .eq('id', queueId);
+
+      if (error) throw error;
+
+      fetchQueues();
+    } catch (error) {
+      console.error('Error updating queue status:', error);
+      toast({
+        title: "Error",
+        description: "Failed to update queue status",
         variant: "destructive"
       });
     }
@@ -280,33 +234,24 @@ export const useEmailQueue = (organizationId?: string) => {
 
   const deleteQueue = async (queueId: string) => {
     try {
-      // Delete associated jobs first
-      const { error: jobsError } = await supabase
-        .from('email_jobs')
-        .delete()
-        .eq('queue_id', queueId);
-
-      if (jobsError) throw jobsError;
-
-      // Delete the queue
-      const { error: queueError } = await supabase
-        .from('sending_queues')
+      const { error } = await supabase
+        .from('email_campaigns')
         .delete()
         .eq('id', queueId);
 
-      if (queueError) throw queueError;
+      if (error) throw error;
 
       toast({
-        title: "Queue Deleted",
-        description: "Email queue and all associated jobs have been deleted",
+        title: "Success",
+        description: "Queue deleted successfully"
       });
-
-      await fetchQueues();
+      
+      fetchQueues();
     } catch (error) {
       console.error('Error deleting queue:', error);
       toast({
         title: "Error",
-        description: "Failed to delete email queue",
+        description: "Failed to delete queue",
         variant: "destructive"
       });
     }
@@ -323,60 +268,11 @@ export const useEmailQueue = (organizationId?: string) => {
     queues,
     jobs,
     loading,
-    processing,
-    createBulkQueue,
-    startQueue,
-    pauseQueue,
+    createQueue,
+    addJobsToQueue,
+    updateQueueStatus,
     deleteQueue,
-    fetchQueues,
-    fetchJobs
+    fetchJobs,
+    refetch: fetchQueues
   };
 };
-
-// Helper function to process email content with placeholders and spintax
-function processEmailContent(
-  content: string,
-  recipientData: any,
-  fromName: string,
-  subject: string,
-  toEmail: string
-): string {
-  let processed = content;
-
-  // Process recipient data placeholders
-  Object.keys(recipientData).forEach(key => {
-    const regex = new RegExp(`{{${key}}}`, 'gi');
-    processed = processed.replace(regex, recipientData[key] || '');
-  });
-
-  // Process standard placeholders
-  processed = processed
-    .replace(/{{fromname}}/gi, fromName)
-    .replace(/{{subject}}/gi, subject)
-    .replace(/{{to}}/gi, toEmail)
-    .replace(/{{name}}/gi, toEmail.split('@')[0])
-    .replace(/{{date}}/gi, new Date().toLocaleDateString())
-    .replace(/{{ide}}/gi, Math.random().toString(36).substring(2, 15));
-
-  // Process random string placeholders
-  processed = processed.replace(/{{rndn_(\d+)}}/gi, (match, length) => {
-    return Math.random().toString(36).substring(2, 2 + parseInt(length));
-  });
-
-  processed = processed.replace(/{{rnda_(\d+)}}/gi, (match, length) => {
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-    let result = '';
-    for (let i = 0; i < parseInt(length); i++) {
-      result += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
-    return result;
-  });
-
-  // Process spintax {option1|option2|option3}
-  processed = processed.replace(/\{([^}]+)\}/g, (match, options) => {
-    const choices = options.split('|');
-    return choices[Math.floor(Math.random() * choices.length)];
-  });
-
-  return processed;
-}

@@ -7,20 +7,20 @@ import { Badge } from "@/components/ui/badge";
 import { Mail, Zap, BarChart3, Settings } from 'lucide-react';
 import BulkEmailComposer from './BulkEmailComposer';
 import SingleEmailComposer from './SingleEmailComposer';
-import { useAuth } from '@/hooks/useAuth';
+import { useOrganizations } from '@/hooks/useOrganizations';
 
 const EmailComposer = () => {
-  const { user, organizations, currentOrganization } = useAuth();
+  const { currentOrganization } = useOrganizations();
   const [activeTab, setActiveTab] = useState('bulk');
 
-  if (!user || !currentOrganization) {
+  if (!currentOrganization) {
     return (
       <Card>
         <CardContent className="pt-6">
           <div className="text-center py-8">
             <Mail className="w-12 h-12 mx-auto mb-4 text-slate-400" />
-            <h3 className="text-lg font-medium text-slate-900 mb-2">Authentication Required</h3>
-            <p className="text-slate-600">Please sign in to access the email composer.</p>
+            <h3 className="text-lg font-medium text-slate-900 mb-2">Organization Required</h3>
+            <p className="text-slate-600">Please select or create an organization to access the email composer.</p>
           </div>
         </CardContent>
       </Card>
