@@ -11,8 +11,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
 import { Mail, Upload, Play, Pause, Square, Users, Clock, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
 import CSVDataImporter from './CSVDataImporter';
+import TagPreviewTool from './TagPreviewTool';
 import { useEmailAccounts } from '@/hooks/useEmailAccounts';
 import { useCampaigns } from '@/hooks/useCampaigns';
+import { useEmailQueue } from '@/hooks/useEmailQueue';
 import { toast } from '@/hooks/use-toast';
 
 interface BulkEmailComposerProps {
@@ -27,6 +29,7 @@ interface RecipientData {
 const BulkEmailComposer = ({ organizationId }: BulkEmailComposerProps) => {
   const { accounts } = useEmailAccounts(organizationId);
   const { createCampaign } = useCampaigns(organizationId);
+  const { queues, createQueue, addJobsToQueue, updateQueueStatus } = useEmailQueue(organizationId);
   
   const [activeTab, setActiveTab] = useState('recipients');
   const [recipients, setRecipients] = useState<RecipientData[]>([]);
@@ -98,34 +101,51 @@ const BulkEmailComposer = ({ organizationId }: BulkEmailComposerProps) => {
     setIsProcessing(true);
     
     try {
-      // Create individual campaigns for each recipient (simplified approach)
-      const promises = recipients.map((recipient, index) => {
-        const fromName = bulkData.fromNames[index % bulkData.fromNames.length];
-        const subject = bulkData.subjects[index % bulkData.subjects.length];
-        
-        // Process placeholders
-        const processedSubject = processPlaceholders(subject, recipient, fromName);
-        const processedContent = processPlaceholders(bulkData.htmlContent, recipient, fromName);
-        
-        return createCampaign({
-          from_name: fromName,
-          subject: processedSubject,
-          recipients: recipient.email,
-          html_content: processedContent,
-          text_content: bulkData.textContent,
-          send_method: bulkData.sendMethod,
-          sent_at: new Date().toISOString()
-        });
+      // Create a new queue
+      const queueName = `Bulk Campaign - ${new Date().toLocaleString()}`;
+      const queue = await createQueue({
+        name: queueName,
+        total_jobs: recipients.length,
+        completed_jobs: 0,
+        failed_jobs: 0,
+        status: 'pending',
+        max_concurrent_sends: bulkData.maxConcurrent
       });
 
-      await Promise.all(promises);
-      
-      toast({
-        title: "Queue Created",
-        description: `Added ${recipients.length} emails to the sending queue`,
-      });
-      
-      setActiveTab('queue');
+      if (queue) {
+        // Create jobs for each recipient
+        const jobs = recipients.map((recipient, index) => {
+          const fromName = bulkData.fromNames[index % bulkData.fromNames.length];
+          const subject = bulkData.subjects[index % bulkData.subjects.length];
+          
+          // Process placeholders
+          const processedSubject = processPlaceholders(subject, recipient, fromName);
+          const processedContent = processPlaceholders(bulkData.htmlContent, recipient, fromName);
+          
+          return {
+            recipient_email: recipient.email,
+            recipient_data: recipient,
+            from_name: fromName,
+            subject: processedSubject,
+            html_content: processedContent,
+            text_content: bulkData.textContent,
+            custom_headers: JSON.parse(bulkData.customHeaders || '{}'),
+            status: 'pending' as const,
+            priority: 1,
+            scheduled_at: new Date().toISOString(),
+            retry_count: 0
+          };
+        });
+
+        await addJobsToQueue(queue.id, jobs);
+        
+        toast({
+          title: "Queue Created",
+          description: `Added ${recipients.length} emails to the sending queue`,
+        });
+        
+        setActiveTab('queue');
+      }
     } catch (error) {
       console.error('Error creating bulk queue:', error);
       toast({
@@ -151,7 +171,8 @@ const BulkEmailComposer = ({ organizationId }: BulkEmailComposerProps) => {
       });
   };
 
-  const handleStartQueue = () => {
+  const handleStartQueue = (queueId: string) => {
+    updateQueueStatus(queueId, 'running');
     setQueueStatus('running');
     // Simulate queue processing
     let progress = 0;
@@ -160,10 +181,18 @@ const BulkEmailComposer = ({ organizationId }: BulkEmailComposerProps) => {
       if (progress >= 100) {
         progress = 100;
         setQueueStatus('completed');
+        updateQueueStatus(queueId, 'completed');
         clearInterval(interval);
       }
       setQueueProgress(progress);
     }, 1000);
+  };
+
+  const insertTag = (tag: string) => {
+    setBulkData(prev => ({
+      ...prev,
+      htmlContent: prev.htmlContent + tag
+    }));
   };
 
   return (
@@ -304,7 +333,10 @@ const BulkEmailComposer = ({ organizationId }: BulkEmailComposerProps) => {
                 </div>
 
                 <div className="space-y-2">
-                  <Label>HTML Content</Label>
+                  <div className="flex items-center justify-between">
+                    <Label>HTML Content</Label>
+                    <TagPreviewTool onTagInsert={insertTag} />
+                  </div>
                   <Textarea
                     placeholder="Enter your HTML email content. Use placeholders like {{firstname}}, {{company}}, {{fromname}}"
                     value={bulkData.htmlContent}
@@ -313,7 +345,7 @@ const BulkEmailComposer = ({ organizationId }: BulkEmailComposerProps) => {
                     className="font-mono text-sm"
                   />
                   <div className="flex gap-2 flex-wrap">
-                    <Badge variant="secondary">Available: {{firstname}}, {{lastname}}, {{company}}, {{fromname}}, {{to}}, {{date}}, {{rndn_10}}</Badge>
+                    <Badge variant="secondary">Available: {{'{'}firstname{'}'}}, {{'{'}lastname{'}'}}, {{'{'}company{'}'}}, {{'{'}fromname{'}'}}, {{'{'}to{'}'}}, {{'{'}date{'}'}}, {{'{'}rndn_10{'}'}}</Badge>
                   </div>
                 </div>
               </CardContent>
@@ -434,8 +466,8 @@ const BulkEmailComposer = ({ organizationId }: BulkEmailComposerProps) => {
                         </>
                       )}
                     </Button>
-                    {queueStatus === 'idle' && (
-                      <Button onClick={handleStartQueue}>
+                    {queueStatus === 'idle' && queues.length > 0 && (
+                      <Button onClick={() => handleStartQueue(queues[0].id)}>
                         <Play className="w-4 h-4 mr-2" />
                         Start Queue
                       </Button>
@@ -510,6 +542,27 @@ const BulkEmailComposer = ({ organizationId }: BulkEmailComposerProps) => {
                     </div>
                   </div>
                 </div>
+
+                {queues.length > 0 && (
+                  <div className="mt-6">
+                    <h4 className="text-lg font-medium mb-4">Recent Queues</h4>
+                    <div className="space-y-2">
+                      {queues.slice(0, 5).map((queue) => (
+                        <div key={queue.id} className="flex items-center justify-between p-3 border rounded-lg">
+                          <div>
+                            <p className="font-medium">{queue.name}</p>
+                            <p className="text-sm text-slate-600">
+                              {queue.completed_jobs}/{queue.total_jobs} completed
+                            </p>
+                          </div>
+                          <Badge variant={queue.status === 'completed' ? 'default' : 'secondary'}>
+                            {queue.status}
+                          </Badge>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </div>
