@@ -1,4 +1,3 @@
-
 import { useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -13,10 +12,9 @@ const Campaigns = () => {
 
   const getStatusIcon = (status: string) => {
     switch (status) {
-      case 'ready': return <Play className="w-4 h-4 text-blue-600" />;
+      case 'draft': return <Play className="w-4 h-4 text-blue-600" />;
       case 'sending': return <Pause className="w-4 h-4 text-green-600" />;
       case 'sent': return <Mail className="w-4 h-4 text-slate-600" />;
-      case 'paused': return <Pause className="w-4 h-4 text-orange-600" />;
       case 'failed': return <Trash2 className="w-4 h-4 text-red-600" />;
       default: return <Mail className="w-4 h-4 text-slate-600" />;
     }
@@ -24,10 +22,9 @@ const Campaigns = () => {
 
   const getStatusBadge = (status: string) => {
     const variants = {
-      ready: 'secondary',
+      draft: 'secondary',
       sending: 'default',
       sent: 'outline',
-      paused: 'secondary',
       failed: 'destructive'
     };
     return variants[status as keyof typeof variants] || 'outline';
@@ -160,10 +157,10 @@ const Campaigns = () => {
 
                   {/* Action Buttons */}
                   <div className="flex flex-wrap gap-2">
-                    {campaign.status === 'ready' && (
+                    {campaign.status === 'draft' && (
                       <Button className="flex items-center gap-2">
                         <Play className="w-4 h-4" />
-                        Resume
+                        Start Campaign
                       </Button>
                     )}
                     

@@ -31,6 +31,7 @@ interface AppsScriptConfig {
   deployment_id: string;
   api_key: string;
   daily_quota: number;
+  exec_url: string;
 }
 
 interface PowerMTAConfig {
@@ -90,8 +91,8 @@ const AccountManager = () => {
         return {
           script_id: '',
           deployment_id: '',
-          api_key: '',
-          daily_quota: 100
+          daily_quota: 100,
+          exec_url: ''
         };
       case 'powermta':
         return {
