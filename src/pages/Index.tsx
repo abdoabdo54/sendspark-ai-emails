@@ -12,7 +12,7 @@ import SubscriberManager from "@/components/SubscriberManager";
 import DashboardStats from "@/components/DashboardStats";
 import AccountManager from "@/components/AccountManager";
 import { useOrganizations } from '@/hooks/useOrganizations';
-import { Mail, Settings, History, Users, Server, Building2 } from 'lucide-react';
+import { Mail, Settings, History, Users, Server, Building2, TestTube, Target } from 'lucide-react';
 
 const Index = () => {
   const [activeTab, setActiveTab] = useState("compose");
@@ -72,6 +72,26 @@ const Index = () => {
               {currentOrganization.emails_sent_this_month.toLocaleString()} / {currentOrganization.monthly_email_limit.toLocaleString()} emails
             </Badge>
           </div>
+        </div>
+
+        {/* Quick Navigation */}
+        <div className="mb-6 flex flex-wrap gap-3">
+          <Button 
+            variant="outline" 
+            onClick={() => window.location.href = '/tools'}
+            className="flex items-center gap-2"
+          >
+            <TestTube className="w-4 h-4" />
+            Testing Tools
+          </Button>
+          <Button 
+            variant="outline" 
+            onClick={() => window.location.href = '/campaigns'}
+            className="flex items-center gap-2"
+          >
+            <Target className="w-4 h-4" />
+            Campaign Manager
+          </Button>
         </div>
 
         {/* Dashboard Stats */}

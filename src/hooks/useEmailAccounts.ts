@@ -32,7 +32,13 @@ export const useEmailAccounts = (organizationId?: string) => {
 
       if (error) throw error;
       
-      setAccounts(data || []);
+      // Type cast the data to ensure compatibility
+      const typedAccounts: EmailAccount[] = (data || []).map(account => ({
+        ...account,
+        type: account.type as 'apps-script' | 'powermta' | 'smtp'
+      }));
+      
+      setAccounts(typedAccounts);
     } catch (error) {
       console.error('Error fetching email accounts:', error);
       toast({
@@ -60,12 +66,17 @@ export const useEmailAccounts = (organizationId?: string) => {
 
       if (error) throw error;
 
-      setAccounts(prev => [data, ...prev]);
+      const typedAccount: EmailAccount = {
+        ...data,
+        type: data.type as 'apps-script' | 'powermta' | 'smtp'
+      };
+
+      setAccounts(prev => [typedAccount, ...prev]);
       toast({
         title: "Success",
         description: `${accountData.name} has been added successfully`
       });
-      return data;
+      return typedAccount;
     } catch (error) {
       console.error('Error adding account:', error);
       toast({
@@ -88,8 +99,13 @@ export const useEmailAccounts = (organizationId?: string) => {
 
       if (error) throw error;
 
+      const typedAccount: EmailAccount = {
+        ...data,
+        type: data.type as 'apps-script' | 'powermta' | 'smtp'
+      };
+
       setAccounts(prev => prev.map(account => 
-        account.id === id ? data : account
+        account.id === id ? typedAccount : account
       ));
       
       toast({
@@ -97,7 +113,7 @@ export const useEmailAccounts = (organizationId?: string) => {
         description: "Email account updated successfully"
       });
       
-      return data;
+      return typedAccount;
     } catch (error) {
       console.error('Error updating account:', error);
       toast({
