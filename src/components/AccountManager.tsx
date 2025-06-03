@@ -8,8 +8,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
-import { Plus, Edit, Trash2, Mail, Server, Shield, Loader2, TestTube } from 'lucide-react';
+import { Plus, Edit, Trash2, Mail, Server, Shield, Loader2, TestTube, AlertCircle } from 'lucide-react';
 import { useEmailAccounts } from '@/hooks/useEmailAccounts';
+import { useOrganizations } from '@/hooks/useOrganizations';
 import { toast } from '@/hooks/use-toast';
 import SMTPConfigForm from './SMTPConfigForm';
 import AppsScriptConfigForm from './AppsScriptConfigForm';
@@ -43,7 +44,8 @@ interface PowerMTAConfig {
 }
 
 const AccountManager = () => {
-  const { accounts, loading, addAccount, updateAccount, deleteAccount } = useEmailAccounts();
+  const { currentOrganization } = useOrganizations();
+  const { accounts, loading, addAccount, updateAccount, deleteAccount } = useEmailAccounts(currentOrganization?.id);
   const [selectedTab, setSelectedTab] = useState('list');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [editingAccount, setEditingAccount] = useState<string | null>(null);
@@ -302,6 +304,18 @@ const AccountManager = () => {
         return null;
     }
   };
+
+  if (!currentOrganization) {
+    return (
+      <div className="flex items-center justify-center p-8">
+        <div className="text-center">
+          <AlertCircle className="w-12 h-12 text-amber-500 mx-auto mb-4" />
+          <h3 className="text-lg font-medium text-slate-600 mb-2">Organization Required</h3>
+          <p className="text-slate-500">Please set up an organization first.</p>
+        </div>
+      </div>
+    );
+  }
 
   if (loading) {
     return (

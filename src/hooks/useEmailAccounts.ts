@@ -1,5 +1,6 @@
 
 import { useState, useEffect } from 'react';
+import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
 
 export interface EmailAccount {
@@ -14,48 +15,57 @@ export interface EmailAccount {
   updated_at: string;
 }
 
-// Mock data for demo mode
-const mockAccounts: EmailAccount[] = [
-  {
-    id: 'demo-smtp-1',
-    name: 'Demo SMTP Account',
-    type: 'smtp',
-    email: 'demo@example.com',
-    is_active: true,
-    config: {
-      host: 'smtp.gmail.com',
-      port: 587,
-      username: 'demo@example.com',
-      password: '****',
-      encryption: 'tls',
-      auth_required: true
-    },
-    organization_id: 'demo-org',
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString()
-  }
-];
-
 export const useEmailAccounts = (organizationId?: string) => {
-  const [accounts, setAccounts] = useState<EmailAccount[]>(mockAccounts);
+  const [accounts, setAccounts] = useState<EmailAccount[]>([]);
   const [loading, setLoading] = useState(false);
 
-  const addAccount = async (accountData: Omit<EmailAccount, 'id' | 'created_at' | 'updated_at' | 'organization_id'>) => {
-    try {
-      const newAccount: EmailAccount = {
-        ...accountData,
-        id: `demo-${Date.now()}`,
-        organization_id: organizationId || 'demo-org',
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      };
+  const fetchAccounts = async () => {
+    if (!organizationId) return;
 
-      setAccounts(prev => [newAccount, ...prev]);
+    try {
+      setLoading(true);
+      const { data, error } = await supabase
+        .from('email_accounts')
+        .select('*')
+        .eq('organization_id', organizationId)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      
+      setAccounts(data || []);
+    } catch (error) {
+      console.error('Error fetching email accounts:', error);
+      toast({
+        title: "Error",
+        description: "Failed to load email accounts",
+        variant: "destructive"
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const addAccount = async (accountData: Omit<EmailAccount, 'id' | 'created_at' | 'updated_at' | 'organization_id'>) => {
+    if (!organizationId) return;
+
+    try {
+      const { data, error } = await supabase
+        .from('email_accounts')
+        .insert([{
+          ...accountData,
+          organization_id: organizationId
+        }])
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      setAccounts(prev => [data, ...prev]);
       toast({
         title: "Success",
         description: `${accountData.name} has been added successfully`
       });
-      return newAccount;
+      return data;
     } catch (error) {
       console.error('Error adding account:', error);
       toast({
@@ -69,14 +79,25 @@ export const useEmailAccounts = (organizationId?: string) => {
 
   const updateAccount = async (id: string, updates: Partial<EmailAccount>) => {
     try {
-      const updatedAccount = accounts.find(acc => acc.id === id);
-      if (!updatedAccount) throw new Error('Account not found');
+      const { data, error } = await supabase
+        .from('email_accounts')
+        .update(updates)
+        .eq('id', id)
+        .select()
+        .single();
 
-      const newAccount = { ...updatedAccount, ...updates, updated_at: new Date().toISOString() };
+      if (error) throw error;
+
       setAccounts(prev => prev.map(account => 
-        account.id === id ? newAccount : account
+        account.id === id ? data : account
       ));
-      return newAccount;
+      
+      toast({
+        title: "Success",
+        description: "Email account updated successfully"
+      });
+      
+      return data;
     } catch (error) {
       console.error('Error updating account:', error);
       toast({
@@ -90,6 +111,13 @@ export const useEmailAccounts = (organizationId?: string) => {
 
   const deleteAccount = async (id: string) => {
     try {
+      const { error } = await supabase
+        .from('email_accounts')
+        .delete()
+        .eq('id', id);
+
+      if (error) throw error;
+
       setAccounts(prev => prev.filter(account => account.id !== id));
       toast({
         title: "Success",
@@ -105,16 +133,10 @@ export const useEmailAccounts = (organizationId?: string) => {
     }
   };
 
-  const fetchAccounts = async () => {
-    setLoading(true);
-    // Simulate API call
-    setTimeout(() => {
-      setLoading(false);
-    }, 500);
-  };
-
   useEffect(() => {
-    fetchAccounts();
+    if (organizationId) {
+      fetchAccounts();
+    }
   }, [organizationId]);
 
   return {
