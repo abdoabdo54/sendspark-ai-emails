@@ -1,4 +1,3 @@
-
 import { useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -346,7 +345,7 @@ const BulkEmailComposer = ({ organizationId }: BulkEmailComposerProps) => {
                   />
                   <div className="flex gap-2 flex-wrap">
                     <Badge variant="secondary">
-                      Available: {'{{'} firstname {'}}', {'{{'} lastname {'}}', {'{{'} company {'}}', {'{{'} fromname {'}}', {'{{'} to {'}}', {'{{'} date {'}}', {'{{'} rndn_10 {'}}'} 
+                      Available: {"{{firstname}}, {{lastname}}, {{company}}, {{fromname}}, {{to}}, {{date}}, {{rndn_10}}"}
                     </Badge>
                   </div>
                 </div>
