@@ -1,3 +1,4 @@
+
 import { useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -8,12 +9,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
-import { Mail, Upload, Play, Pause, Square, Users, Clock, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
+import { Mail, Upload, Play, Pause, Square, Users, Clock, CheckCircle, AlertCircle, Loader2, Calendar } from 'lucide-react';
 import CSVDataImporter from './CSVDataImporter';
 import TagPreviewTool from './TagPreviewTool';
+import CampaignScheduler from './CampaignScheduler';
 import { useEmailAccounts } from '@/hooks/useEmailAccounts';
-import { useCampaigns } from '@/hooks/useCampaigns';
-import { useEmailQueue } from '@/hooks/useEmailQueue';
 import { toast } from '@/hooks/use-toast';
 
 interface BulkEmailComposerProps {
@@ -25,22 +25,40 @@ interface RecipientData {
   [key: string]: any;
 }
 
+interface ScheduleOptions {
+  enabled: boolean;
+  scheduleType: 'immediate' | 'scheduled' | 'recurring';
+  scheduledDate: string;
+  scheduledTime: string;
+  timezone: string;
+  recurringPattern: 'daily' | 'weekly' | 'monthly';
+  recurringInterval: number;
+  endDate?: string;
+}
+
 const BulkEmailComposer = ({ organizationId }: BulkEmailComposerProps) => {
   const { accounts } = useEmailAccounts(organizationId);
-  const { createCampaign } = useCampaigns(organizationId);
-  const { queues, createQueue, addJobsToQueue, updateQueueStatus } = useEmailQueue(organizationId);
   
   const [activeTab, setActiveTab] = useState('recipients');
   const [recipients, setRecipients] = useState<RecipientData[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [queueProgress, setQueueProgress] = useState(0);
   const [queueStatus, setQueueStatus] = useState<'idle' | 'running' | 'paused' | 'completed'>('idle');
+  const [schedule, setSchedule] = useState<ScheduleOptions>({
+    enabled: false,
+    scheduleType: 'immediate',
+    scheduledDate: '',
+    scheduledTime: '',
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    recurringPattern: 'weekly',
+    recurringInterval: 1
+  });
 
   const [bulkData, setBulkData] = useState({
-    fromNames: [''],
-    subjects: [''],
-    htmlContent: '',
-    textContent: '',
+    fromNames: ['Demo Campaign'],
+    subjects: ['Welcome to our newsletter!'],
+    htmlContent: '<h1>Hello {{firstname}}!</h1><p>Welcome to our newsletter from {{fromname}}.</p><p>We hope you enjoy our content.</p>',
+    textContent: 'Hello {{firstname}}! Welcome to our newsletter from {{fromname}}. We hope you enjoy our content.',
     sendMethod: 'smtp',
     maxConcurrent: 5,
     rateLimitDelay: 2,
@@ -54,7 +72,6 @@ const BulkEmailComposer = ({ organizationId }: BulkEmailComposerProps) => {
   );
 
   const handleImportData = (data: Array<{ [key: string]: any }>) => {
-    // Ensure each item has an email field
     const validData: RecipientData[] = data
       .filter(item => item.email || item.Email || item.EMAIL)
       .map(item => ({
@@ -69,11 +86,15 @@ const BulkEmailComposer = ({ organizationId }: BulkEmailComposerProps) => {
     });
   };
 
-  const handleAddToQueue = async () => {
+  const handleScheduleChange = (newSchedule: ScheduleOptions) => {
+    setSchedule(newSchedule);
+  };
+
+  const handleSendCampaign = async () => {
     if (recipients.length === 0) {
       toast({
         title: "No Recipients",
-        description: "Please import recipients before adding to queue",
+        description: "Please import recipients before sending",
         variant: "destructive"
       });
       return;
@@ -97,59 +118,52 @@ const BulkEmailComposer = ({ organizationId }: BulkEmailComposerProps) => {
       return;
     }
 
+    if (schedule.enabled && schedule.scheduleType !== 'immediate') {
+      if (!schedule.scheduledDate || !schedule.scheduledTime) {
+        toast({
+          title: "Schedule Incomplete",
+          description: "Please set both date and time for scheduled campaigns",
+          variant: "destructive"
+        });
+        return;
+      }
+    }
+
     setIsProcessing(true);
     
     try {
-      // Create a new queue
-      const queueName = `Bulk Campaign - ${new Date().toLocaleString()}`;
-      const queue = await createQueue({
-        name: queueName,
-        total_jobs: recipients.length,
-        completed_jobs: 0,
-        failed_jobs: 0,
-        status: 'pending',
-        max_concurrent_sends: bulkData.maxConcurrent
-      });
-
-      if (queue) {
-        // Create jobs for each recipient
-        const jobs = recipients.map((recipient, index) => {
-          const fromName = bulkData.fromNames[index % bulkData.fromNames.length];
-          const subject = bulkData.subjects[index % bulkData.subjects.length];
-          
-          // Process placeholders
-          const processedSubject = processPlaceholders(subject, recipient, fromName);
-          const processedContent = processPlaceholders(bulkData.htmlContent, recipient, fromName);
-          
-          return {
-            recipient_email: recipient.email,
-            recipient_data: recipient,
-            from_name: fromName,
-            subject: processedSubject,
-            html_content: processedContent,
-            text_content: bulkData.textContent,
-            custom_headers: JSON.parse(bulkData.customHeaders || '{}'),
-            status: 'pending' as const,
-            priority: 1,
-            scheduled_at: new Date().toISOString(),
-            retry_count: 0
-          };
-        });
-
-        await addJobsToQueue(queue.id, jobs);
-        
+      // Simulate campaign creation
+      const campaignName = `Bulk Campaign - ${new Date().toLocaleString()}`;
+      
+      if (schedule.enabled && schedule.scheduleType !== 'immediate') {
         toast({
-          title: "Queue Created",
-          description: `Added ${recipients.length} emails to the sending queue`,
+          title: "Campaign Scheduled",
+          description: `Campaign "${campaignName}" has been scheduled successfully`,
         });
+      } else {
+        // Simulate sending progress
+        let progress = 0;
+        const interval = setInterval(() => {
+          progress += Math.random() * 15;
+          if (progress >= 100) {
+            progress = 100;
+            setQueueStatus('completed');
+            clearInterval(interval);
+            toast({
+              title: "Campaign Sent",
+              description: `Successfully sent ${recipients.length} emails`,
+            });
+          }
+          setQueueProgress(progress);
+        }, 1000);
         
-        setActiveTab('queue');
+        setQueueStatus('running');
       }
     } catch (error) {
-      console.error('Error creating bulk queue:', error);
+      console.error('Error sending campaign:', error);
       toast({
         title: "Error",
-        description: "Failed to create bulk email queue",
+        description: "Failed to send campaign",
         variant: "destructive"
       });
     } finally {
@@ -170,23 +184,6 @@ const BulkEmailComposer = ({ organizationId }: BulkEmailComposerProps) => {
       });
   };
 
-  const handleStartQueue = (queueId: string) => {
-    updateQueueStatus(queueId, 'running');
-    setQueueStatus('running');
-    // Simulate queue processing
-    let progress = 0;
-    const interval = setInterval(() => {
-      progress += Math.random() * 10;
-      if (progress >= 100) {
-        progress = 100;
-        setQueueStatus('completed');
-        updateQueueStatus(queueId, 'completed');
-        clearInterval(interval);
-      }
-      setQueueProgress(progress);
-    }, 1000);
-  };
-
   const insertTag = (tag: string) => {
     setBulkData(prev => ({
       ...prev,
@@ -198,17 +195,21 @@ const BulkEmailComposer = ({ organizationId }: BulkEmailComposerProps) => {
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <div>
-          <h2 className="text-2xl font-bold text-slate-800">Bulk Email Campaign</h2>
-          <p className="text-slate-600">Professional bulk email sending with queue management</p>
+          <h2 className="text-3xl font-bold text-slate-800">Bulk Email Campaign</h2>
+          <p className="text-slate-600">Professional bulk email sending with advanced scheduling</p>
         </div>
         <div className="flex gap-2">
-          <Badge variant="outline">{recipients.length} Recipients</Badge>
-          <Badge variant="outline">{activeAccounts.length} Active Accounts</Badge>
+          <Badge variant="outline" className="bg-blue-50 text-blue-700">
+            {recipients.length} Recipients
+          </Badge>
+          <Badge variant="outline" className="bg-green-50 text-green-700">
+            {activeAccounts.length} Active Accounts
+          </Badge>
         </div>
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-4">
+        <TabsList className="grid w-full grid-cols-5">
           <TabsTrigger value="recipients" className="flex items-center gap-2">
             <Users className="w-4 h-4" />
             Recipients
@@ -217,13 +218,17 @@ const BulkEmailComposer = ({ organizationId }: BulkEmailComposerProps) => {
             <Mail className="w-4 h-4" />
             Content
           </TabsTrigger>
+          <TabsTrigger value="schedule" className="flex items-center gap-2">
+            <Calendar className="w-4 h-4" />
+            Schedule
+          </TabsTrigger>
           <TabsTrigger value="settings" className="flex items-center gap-2">
             <Clock className="w-4 h-4" />
             Settings
           </TabsTrigger>
-          <TabsTrigger value="queue" className="flex items-center gap-2">
+          <TabsTrigger value="send" className="flex items-center gap-2">
             <CheckCircle className="w-4 h-4" />
-            Queue
+            Send
           </TabsTrigger>
         </TabsList>
 
@@ -343,15 +348,20 @@ const BulkEmailComposer = ({ organizationId }: BulkEmailComposerProps) => {
                     rows={10}
                     className="font-mono text-sm"
                   />
-                  <div className="flex gap-2 flex-wrap">
-                    <Badge variant="secondary">
-                      Available: {"{{firstname}}, {{lastname}}, {{company}}, {{fromname}}, {{to}}, {{date}}, {{rndn_10}}"}
-                    </Badge>
+                  <div className="text-xs text-slate-500">
+                    Available placeholders: firstname, lastname, company, fromname, to, date, rndn_10
                   </div>
                 </div>
               </CardContent>
             </Card>
           </div>
+        </TabsContent>
+
+        <TabsContent value="schedule">
+          <CampaignScheduler 
+            onScheduleChange={handleScheduleChange}
+            initialSchedule={schedule}
+          />
         </TabsContent>
 
         <TabsContent value="settings">
@@ -405,17 +415,6 @@ const BulkEmailComposer = ({ organizationId }: BulkEmailComposerProps) => {
                 />
               </div>
 
-              <div className="space-y-2">
-                <Label>Custom Headers (JSON)</Label>
-                <Textarea
-                  placeholder='{"Reply-To": "noreply@example.com", "X-Campaign": "bulk-2024"}'
-                  value={bulkData.customHeaders}
-                  onChange={(e) => setBulkData(prev => ({ ...prev, customHeaders: e.target.value }))}
-                  rows={3}
-                  className="font-mono text-sm"
-                />
-              </div>
-
               {activeAccounts.length > 0 && (
                 <div className="bg-green-50 p-4 rounded-lg">
                   <h4 className="font-medium text-green-800 mb-2">Active Sending Accounts:</h4>
@@ -432,141 +431,87 @@ const BulkEmailComposer = ({ organizationId }: BulkEmailComposerProps) => {
           </Card>
         </TabsContent>
 
-        <TabsContent value="queue">
-          <div className="space-y-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>Queue Management</CardTitle>
-                <CardDescription>
-                  Monitor and control your bulk email sending queue
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                <div className="flex justify-between items-center">
-                  <div className="space-y-1">
-                    <h3 className="text-lg font-medium">Queue Status: {queueStatus}</h3>
+        <TabsContent value="send">
+          <Card>
+            <CardHeader>
+              <CardTitle>Campaign Summary & Send</CardTitle>
+              <CardDescription>
+                Review your campaign details and send when ready
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-4">
+                  <div>
+                    <h4 className="font-medium mb-2">Recipients</h4>
+                    <p className="text-sm text-slate-600">{recipients.length} recipients imported</p>
+                  </div>
+                  <div>
+                    <h4 className="font-medium mb-2">Content</h4>
                     <p className="text-sm text-slate-600">
-                      {recipients.length} emails ready to send
+                      {bulkData.subjects.length} subject line(s), HTML content ready
                     </p>
                   </div>
-                  <div className="flex gap-2">
-                    <Button 
-                      variant="outline"
-                      onClick={handleAddToQueue}
-                      disabled={isProcessing || recipients.length === 0}
-                    >
-                      {isProcessing ? (
-                        <>
-                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                          Processing...
-                        </>
-                      ) : (
-                        <>
-                          <Upload className="w-4 h-4 mr-2" />
-                          Add to Queue
-                        </>
-                      )}
-                    </Button>
-                    {queueStatus === 'idle' && queues.length > 0 && (
-                      <Button onClick={() => handleStartQueue(queues[0].id)}>
-                        <Play className="w-4 h-4 mr-2" />
-                        Start Queue
-                      </Button>
-                    )}
-                    {queueStatus === 'running' && (
-                      <Button variant="outline" onClick={() => setQueueStatus('paused')}>
-                        <Pause className="w-4 h-4 mr-2" />
-                        Pause
-                      </Button>
-                    )}
-                    {queueStatus === 'paused' && (
-                      <Button onClick={() => setQueueStatus('running')}>
-                        <Play className="w-4 h-4 mr-2" />
-                        Resume
-                      </Button>
-                    )}
-                    <Button variant="destructive" onClick={() => {
-                      setQueueStatus('idle');
-                      setQueueProgress(0);
-                    }}>
-                      <Square className="w-4 h-4 mr-2" />
-                      Stop
-                    </Button>
+                  <div>
+                    <h4 className="font-medium mb-2">Sending Method</h4>
+                    <p className="text-sm text-slate-600">
+                      {bulkData.sendMethod.toUpperCase()} ({activeAccounts.length} active accounts)
+                    </p>
                   </div>
                 </div>
-
-                {queueStatus !== 'idle' && (
-                  <div className="space-y-2">
-                    <div className="flex justify-between text-sm">
-                      <span>Progress</span>
-                      <span>{Math.round(queueProgress)}%</span>
-                    </div>
-                    <Progress value={queueProgress} className="w-full" />
+                <div className="space-y-4">
+                  <div>
+                    <h4 className="font-medium mb-2">Schedule</h4>
+                    <p className="text-sm text-slate-600">
+                      {schedule.enabled 
+                        ? schedule.scheduleType === 'immediate' 
+                          ? 'Send immediately'
+                          : `Scheduled for ${schedule.scheduledDate} at ${schedule.scheduledTime}`
+                        : 'Send immediately'
+                      }
+                    </p>
                   </div>
-                )}
-
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                  <div className="bg-blue-50 p-4 rounded-lg">
-                    <div className="flex items-center gap-2">
-                      <Clock className="w-5 h-5 text-blue-600" />
-                      <div>
-                        <p className="text-sm text-blue-600">Pending</p>
-                        <p className="text-xl font-bold text-blue-800">{recipients.length}</p>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="bg-green-50 p-4 rounded-lg">
-                    <div className="flex items-center gap-2">
-                      <CheckCircle className="w-5 h-5 text-green-600" />
-                      <div>
-                        <p className="text-sm text-green-600">Sent</p>
-                        <p className="text-xl font-bold text-green-800">0</p>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="bg-red-50 p-4 rounded-lg">
-                    <div className="flex items-center gap-2">
-                      <AlertCircle className="w-5 h-5 text-red-600" />
-                      <div>
-                        <p className="text-sm text-red-600">Failed</p>
-                        <p className="text-xl font-bold text-red-800">0</p>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="bg-yellow-50 p-4 rounded-lg">
-                    <div className="flex items-center gap-2">
-                      <Loader2 className="w-5 h-5 text-yellow-600" />
-                      <div>
-                        <p className="text-sm text-yellow-600">Processing</p>
-                        <p className="text-xl font-bold text-yellow-800">0</p>
-                      </div>
-                    </div>
+                  <div>
+                    <h4 className="font-medium mb-2">Rate Limiting</h4>
+                    <p className="text-sm text-slate-600">
+                      Max {bulkData.maxConcurrent} concurrent, {bulkData.rateLimitDelay}s delay
+                    </p>
                   </div>
                 </div>
+              </div>
 
-                {queues.length > 0 && (
-                  <div className="mt-6">
-                    <h4 className="text-lg font-medium mb-4">Recent Queues</h4>
-                    <div className="space-y-2">
-                      {queues.slice(0, 5).map((queue) => (
-                        <div key={queue.id} className="flex items-center justify-between p-3 border rounded-lg">
-                          <div>
-                            <p className="font-medium">{queue.name}</p>
-                            <p className="text-sm text-slate-600">
-                              {queue.completed_jobs}/{queue.total_jobs} completed
-                            </p>
-                          </div>
-                          <Badge variant={queue.status === 'completed' ? 'default' : 'secondary'}>
-                            {queue.status}
-                          </Badge>
-                        </div>
-                      ))}
-                    </div>
+              {queueStatus === 'running' && (
+                <div className="space-y-2">
+                  <div className="flex justify-between text-sm">
+                    <span>Sending Progress</span>
+                    <span>{Math.round(queueProgress)}%</span>
                   </div>
-                )}
-              </CardContent>
-            </Card>
-          </div>
+                  <Progress value={queueProgress} className="w-full" />
+                </div>
+              )}
+
+              <div className="flex gap-3">
+                <Button 
+                  onClick={handleSendCampaign}
+                  disabled={isProcessing || recipients.length === 0 || !bulkData.htmlContent}
+                  className="flex-1"
+                  size="lg"
+                >
+                  {isProcessing ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      {schedule.enabled && schedule.scheduleType !== 'immediate' ? 'Scheduling...' : 'Sending...'}
+                    </>
+                  ) : (
+                    <>
+                      <Play className="w-4 h-4 mr-2" />
+                      {schedule.enabled && schedule.scheduleType !== 'immediate' ? 'Schedule Campaign' : 'Send Campaign'}
+                    </>
+                  )}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
         </TabsContent>
       </Tabs>
     </div>

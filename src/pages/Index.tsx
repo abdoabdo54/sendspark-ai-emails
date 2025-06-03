@@ -8,28 +8,32 @@ import CampaignHistory from "@/components/CampaignHistory";
 import SettingsPanel from "@/components/SettingsPanel";
 import SubscriberManager from "@/components/SubscriberManager";
 import DashboardStats from "@/components/DashboardStats";
-import { Mail, Settings, History, Users } from 'lucide-react';
+import AccountManager from "@/components/AccountManager";
+import { Mail, Settings, History, Users, Server } from 'lucide-react';
 
 const Index = () => {
   const [activeTab, setActiveTab] = useState("compose");
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-slate-100">
       <div className="container mx-auto p-6">
         {/* Header */}
         <div className="mb-8 flex justify-between items-center">
           <div>
-            <h1 className="text-4xl font-bold text-slate-800 mb-2">
+            <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent mb-2">
               Email Campaign Pro
             </h1>
-            <p className="text-slate-600">
-              Professional email marketing platform
+            <p className="text-slate-600 text-lg">
+              Professional email marketing platform with advanced scheduling
             </p>
           </div>
           
           <div className="flex items-center gap-4">
-            <Badge variant="outline" className="text-sm">
+            <Badge variant="outline" className="text-sm bg-green-50 text-green-700 border-green-200">
               Demo Mode
+            </Badge>
+            <Badge variant="outline" className="text-sm bg-blue-50 text-blue-700 border-blue-200">
+              Pro Features Available
             </Badge>
           </div>
         </div>
@@ -38,22 +42,29 @@ const Index = () => {
         <DashboardStats />
 
         {/* Main Interface */}
-        <Card className="mt-6">
+        <Card className="mt-6 shadow-lg">
           <CardHeader className="bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-t-lg">
-            <CardTitle className="text-2xl">Campaign Management</CardTitle>
+            <CardTitle className="text-2xl">Campaign Management Center</CardTitle>
             <CardDescription className="text-blue-100">
-              Create, manage, and send professional email campaigns
+              Create, schedule, and manage professional email campaigns with advanced features
             </CardDescription>
           </CardHeader>
           <CardContent className="p-0">
             <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-              <TabsList className="grid w-full grid-cols-4 bg-white border-b">
+              <TabsList className="grid w-full grid-cols-5 bg-white border-b">
                 <TabsTrigger 
                   value="compose" 
                   className="flex items-center gap-2 data-[state=active]:bg-blue-50 data-[state=active]:text-blue-700"
                 >
                   <Mail className="w-4 h-4" />
                   Compose
+                </TabsTrigger>
+                <TabsTrigger 
+                  value="accounts" 
+                  className="flex items-center gap-2 data-[state=active]:bg-blue-50 data-[state=active]:text-blue-700"
+                >
+                  <Server className="w-4 h-4" />
+                  Accounts
                 </TabsTrigger>
                 <TabsTrigger 
                   value="subscribers" 
@@ -80,6 +91,10 @@ const Index = () => {
 
               <TabsContent value="compose" className="p-6">
                 <EmailComposer />
+              </TabsContent>
+
+              <TabsContent value="accounts" className="p-6">
+                <AccountManager />
               </TabsContent>
 
               <TabsContent value="subscribers" className="p-6">
