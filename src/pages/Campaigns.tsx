@@ -1,3 +1,4 @@
+
 import { useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -5,9 +6,11 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Play, Pause, Copy, Trash2, BarChart3, Users, Mail, Calendar, TestTube } from 'lucide-react';
 import { useCampaigns } from '@/hooks/useCampaigns';
+import { useOrganizations } from '@/hooks/useOrganizations';
 
 const Campaigns = () => {
-  const { campaigns, loading } = useCampaigns();
+  const { currentOrganization } = useOrganizations();
+  const { campaigns, loading, sendCampaign } = useCampaigns(currentOrganization?.id);
   const [selectedCampaign, setSelectedCampaign] = useState<string | null>(null);
 
   const getStatusIcon = (status: string) => {
@@ -43,6 +46,29 @@ const Campaigns = () => {
       hour: '2-digit',
       minute: '2-digit'
     });
+  };
+
+  const handleStartCampaign = async (campaignId: string) => {
+    try {
+      await sendCampaign(campaignId);
+    } catch (error) {
+      console.error('Failed to start campaign:', error);
+    }
+  };
+
+  const handleTestCampaign = (campaignId: string) => {
+    console.log('Testing campaign:', campaignId);
+    // TODO: Implement test functionality
+  };
+
+  const handleDuplicateCampaign = (campaignId: string) => {
+    console.log('Duplicating campaign:', campaignId);
+    // TODO: Implement duplicate functionality
+  };
+
+  const handleDeleteCampaign = (campaignId: string) => {
+    console.log('Deleting campaign:', campaignId);
+    // TODO: Implement delete functionality
   };
 
   if (loading) {
@@ -158,7 +184,10 @@ const Campaigns = () => {
                   {/* Action Buttons */}
                   <div className="flex flex-wrap gap-2">
                     {campaign.status === 'draft' && (
-                      <Button className="flex items-center gap-2">
+                      <Button 
+                        className="flex items-center gap-2"
+                        onClick={() => handleStartCampaign(campaign.id)}
+                      >
                         <Play className="w-4 h-4" />
                         Start Campaign
                       </Button>
@@ -171,17 +200,29 @@ const Campaigns = () => {
                       </Button>
                     )}
                     
-                    <Button variant="outline" className="flex items-center gap-2">
+                    <Button 
+                      variant="outline" 
+                      className="flex items-center gap-2"
+                      onClick={() => handleTestCampaign(campaign.id)}
+                    >
                       <TestTube className="w-4 h-4" />
                       Test
                     </Button>
                     
-                    <Button variant="outline" className="flex items-center gap-2">
+                    <Button 
+                      variant="outline" 
+                      className="flex items-center gap-2"
+                      onClick={() => handleDuplicateCampaign(campaign.id)}
+                    >
                       <Copy className="w-4 h-4" />
                       Duplicate
                     </Button>
                     
-                    <Button variant="outline" className="flex items-center gap-2 text-red-600 hover:text-red-700">
+                    <Button 
+                      variant="outline" 
+                      className="flex items-center gap-2 text-red-600 hover:text-red-700"
+                      onClick={() => handleDeleteCampaign(campaign.id)}
+                    >
                       <Trash2 className="w-4 h-4" />
                       Delete
                     </Button>

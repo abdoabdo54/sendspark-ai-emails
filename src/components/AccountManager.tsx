@@ -1,3 +1,4 @@
+
 import { useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -91,6 +92,7 @@ const AccountManager = () => {
         return {
           script_id: '',
           deployment_id: '',
+          api_key: '',
           daily_quota: 100,
           exec_url: ''
         };

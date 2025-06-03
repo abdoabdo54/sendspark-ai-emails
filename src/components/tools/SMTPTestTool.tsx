@@ -8,10 +8,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
-import { TestTube, Loader2, CheckCircle, XCircle, Eye, EyeOff, FileText } from 'lucide-react';
+import { TestTube, Loader2, CheckCircle, XCircle, Eye, EyeOff, FileText, Mail } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import SMTPLogViewer from '@/components/SMTPLogViewer';
+import { sendEmailViaSMTP, testSMTPConnection } from '@/utils/emailSender';
 
 interface SMTPTestConfig {
   host: string;
@@ -48,7 +49,7 @@ const SMTPTestTool = () => {
     setConfig(prev => ({ ...prev, [field]: value }));
   };
 
-  const testSMTPConnection = async () => {
+  const testSMTPConnectionHandler = async () => {
     if (!config.host || !config.port || !config.username || !config.password) {
       toast({
         title: "Missing Information",
@@ -62,25 +63,15 @@ const SMTPTestTool = () => {
     setTestResult(null);
 
     try {
-      const response = await fetch('https://kzatxttazxwqawefumed.supabase.co/functions/v1/smtp-test', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt6YXR4dHRhenh3cWF3ZWZ1bWVkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDgyNzE1NTAsImV4cCI6MjA2Mzg0NzU1MH0.2hJNt57jErh8GgjbXc8vNg94F0FFBZS7tXxmdQvRG_w`
-        },
-        body: JSON.stringify({
-          config: {
-            host: config.host,
-            port: config.port,
-            username: config.username,
-            password: config.password,
-            encryption: config.encryption,
-            auth_required: config.auth_required
-          }
-        })
+      const result = await testSMTPConnection({
+        host: config.host,
+        port: config.port,
+        username: config.username,
+        password: config.password,
+        encryption: config.encryption,
+        auth_required: config.auth_required
       });
 
-      const result = await response.json();
       setTestResult(result);
 
       if (result.success) {
@@ -130,32 +121,22 @@ const SMTPTestTool = () => {
     setIsTesting(true);
 
     try {
-      const response = await fetch('https://kzatxttazxwqawefumed.supabase.co/functions/v1/send-smtp-email', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt6YXR4dHRhenh3cWF3ZWZ1bWVkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDgyNzE1NTAsImV4cCI6MjA2Mzg0NzU1MH0.2hJNt57jErh8GgjbXc8vNg94F0FFBZS7tXxmdQvRG_w`
+      const result = await sendEmailViaSMTP(
+        {
+          host: config.host,
+          port: config.port,
+          username: config.username,
+          password: config.password,
+          encryption: config.encryption,
+          auth_required: config.auth_required
         },
-        body: JSON.stringify({
-          config: {
-            host: config.host,
-            port: config.port,
-            username: config.username,
-            password: config.password,
-            encryption: config.encryption,
-            auth_required: config.auth_required
-          },
-          emailData: {
-            from: { email: config.username, name: 'SMTP Test' },
-            to: config.test_email,
-            subject: config.test_subject,
-            text: config.test_message,
-            html: `<p>${config.test_message}</p>`
-          }
-        })
-      });
-
-      const result = await response.json();
+        config.username,
+        'SMTP Test',
+        config.test_email,
+        config.test_subject,
+        `<p>${config.test_message}</p>`,
+        config.test_message
+      );
 
       if (result.success) {
         toast({
@@ -186,7 +167,7 @@ const SMTPTestTool = () => {
         <div className="text-center">
           <h3 className="text-lg font-semibold text-slate-800 mb-2">SMTP Connection Tester</h3>
           <p className="text-slate-600">
-            Test your SMTP server configuration without saving credentials
+            Test your SMTP server configuration and send test emails
           </p>
         </div>
 
@@ -306,7 +287,7 @@ const SMTPTestTool = () => {
             )}
 
             <Button 
-              onClick={testSMTPConnection} 
+              onClick={testSMTPConnectionHandler} 
               variant="outline" 
               className="w-full"
               disabled={isTesting}
@@ -379,7 +360,7 @@ const SMTPTestTool = () => {
                   </>
                 ) : (
                   <>
-                    <TestTube className="w-4 h-4 mr-2" />
+                    <Mail className="w-4 h-4 mr-2" />
                     Send Test Email
                   </>
                 )}
