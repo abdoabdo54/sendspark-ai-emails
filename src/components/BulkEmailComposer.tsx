@@ -313,11 +313,11 @@ const BulkEmailComposer = ({ organizationId }: BulkEmailComposerProps) => {
               </TabsContent>
 
               <TabsContent value="csv">
-                <CSVDataImporter onDataImport={handleCSVImport} />
+                <CSVDataImporter onImport={handleCSVImport} />
               </TabsContent>
 
               <TabsContent value="sheets">
-                <GoogleSheetsImport onDataImport={handleGoogleSheetsImport} />
+                <GoogleSheetsImport onImport={handleGoogleSheetsImport} />
               </TabsContent>
             </Tabs>
 
@@ -467,7 +467,7 @@ const BulkEmailComposer = ({ organizationId }: BulkEmailComposerProps) => {
                     onChange={(e) => setSubject(e.target.value)}
                     className="flex-1"
                   />
-                  <AISubjectGenerator onSubjectGenerated={setSubject} />
+                  <AISubjectGenerator onGenerate={setSubject} />
                 </div>
               </div>
             </div>
@@ -477,7 +477,7 @@ const BulkEmailComposer = ({ organizationId }: BulkEmailComposerProps) => {
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <Label className="text-base font-medium">Email Templates</Label>
-                <EmailTemplateLibrary onTemplateSelect={handleTemplateSelect} />
+                <EmailTemplateLibrary onSelect={handleTemplateSelect} />
               </div>
               
               <Tabs defaultValue="html" className="space-y-4">
@@ -514,9 +514,7 @@ const BulkEmailComposer = ({ organizationId }: BulkEmailComposerProps) => {
 
                 <TabsContent value="preview">
                   <TagPreviewTool
-                    htmlContent={htmlContent}
-                    textContent={textContent}
-                    subject={subject}
+                    content={htmlContent}
                     recipients={recipients}
                   />
                 </TabsContent>

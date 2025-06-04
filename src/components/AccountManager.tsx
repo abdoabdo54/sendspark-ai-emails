@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -43,11 +42,12 @@ interface PowerMTAConfig {
   virtual_mta: string;
   job_pool: string;
   rate_limit: number;
+  max_hourly_rate: number;
 }
 
 const AccountManager = () => {
   const { currentOrganization } = useOrganizations();
-  const { accounts, loading, createAccount, updateAccount, deleteAccount, testAccount } = useEmailAccounts(currentOrganization?.id);
+  const { accounts, loading, addAccount, updateAccount, deleteAccount, refetch } = useEmailAccounts(currentOrganization?.id);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingAccount, setEditingAccount] = useState<EmailAccount | null>(null);
   const [accountType, setAccountType] = useState<'smtp' | 'apps-script' | 'powermta'>('smtp');
@@ -78,7 +78,8 @@ const AccountManager = () => {
     password: '',
     virtual_mta: '',
     job_pool: '',
-    rate_limit: 100
+    rate_limit: 100,
+    max_hourly_rate: 1000
   });
 
   const resetForm = () => {
@@ -106,7 +107,8 @@ const AccountManager = () => {
       password: '',
       virtual_mta: '',
       job_pool: '',
-      rate_limit: 100
+      rate_limit: 100,
+      max_hourly_rate: 1000
     });
   };
 
@@ -145,12 +147,12 @@ const AccountManager = () => {
           description: "Account updated successfully"
         });
       } else {
-        await createAccount({
+        await addAccount({
           name: accountName,
           type: accountType,
           email: accountEmail,
           config,
-          organization_id: currentOrganization.id
+          is_active: true
         });
         toast({
           title: "Success",
@@ -203,15 +205,27 @@ const AccountManager = () => {
 
   const handleTest = async (account: EmailAccount) => {
     try {
-      await testAccount(account.id);
+      const testEmail = {
+        to: account.email,
+        subject: 'Test Email from Email Campaign Platform',
+        html: '<h1>Test Email</h1><p>This is a test email to verify your email account configuration.</p>',
+        text: 'Test Email\n\nThis is a test email to verify your email account configuration.'
+      };
+
+      if (account.type === 'apps-script') {
+        await sendEmailViaAppsScript(account.config as any, testEmail);
+      } else if (account.type === 'smtp') {
+        await sendEmailViaSMTP(account.config as any, testEmail);
+      }
+
       toast({
         title: "Test Successful",
-        description: "Email account is working correctly"
+        description: "Test email sent successfully"
       });
     } catch (error) {
       toast({
         title: "Test Failed",
-        description: "Email account test failed",
+        description: "Failed to send test email",
         variant: "destructive"
       });
     }
@@ -334,14 +348,14 @@ const AccountManager = () => {
                 <SMTPConfigForm
                   config={smtpConfig}
                   onChange={setSMTPConfig}
-                  onTest={handleSMTPTest}
+                  onTest={() => handleSMTPTest(smtpConfig)}
                 />
               )}
 
               {accountType === 'powermta' && (
                 <PowerMTAConfigForm
                   config={powerMTAConfig}
-                  onChange={setPowerMTAConfig}
+                  onChange={(config) => setPowerMTAConfig(config)}
                 />
               )}
 
