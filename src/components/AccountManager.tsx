@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -83,6 +82,7 @@ const AccountManager = () => {
     max_hourly_rate: 1000
   });
 
+  // ... keep existing code (resetForm function)
   const resetForm = () => {
     setAccountName('');
     setAccountEmail('');
@@ -113,6 +113,7 @@ const AccountManager = () => {
     });
   };
 
+  // ... keep existing code (handleSave function)
   const handleSave = async () => {
     if (!accountName.trim() || !accountEmail.trim() || !currentOrganization) {
       toast({
@@ -171,6 +172,7 @@ const AccountManager = () => {
     }
   };
 
+  // ... keep existing code (handleEdit function)
   const handleEdit = (account: EmailAccount) => {
     setEditingAccount(account);
     setAccountName(account.name);
@@ -209,6 +211,7 @@ const AccountManager = () => {
     setIsDialogOpen(true);
   };
 
+  // ... keep existing code (handleDelete function)
   const handleDelete = async (accountId: string) => {
     try {
       await deleteAccount(accountId);
@@ -225,6 +228,7 @@ const AccountManager = () => {
     }
   };
 
+  // ... keep existing code (handleTest function)
   const handleTest = async (account: EmailAccount) => {
     try {
       const testEmail = {
@@ -269,6 +273,7 @@ const AccountManager = () => {
     }
   };
 
+  // ... keep existing code (handleSMTPTest function)
   const handleSMTPTest = async () => {
     try {
       const result = await testSMTPConnection(smtpConfig);
@@ -293,6 +298,7 @@ const AccountManager = () => {
     }
   };
 
+  // ... keep existing code (helper functions)
   const getStatusIcon = (account: EmailAccount) => {
     if (account.is_active) {
       return <CheckCircle className="w-4 h-4 text-green-600" />;
@@ -393,7 +399,7 @@ const AccountManager = () => {
               {accountType === 'powermta' && (
                 <PowerMTAConfigForm
                   config={powerMTAConfig}
-                  onChange={setPowerMTAConfig}
+                  onChange={(config: PowerMTAConfig) => setPowerMTAConfig(config)}
                 />
               )}
 
@@ -410,6 +416,7 @@ const AccountManager = () => {
         </Dialog>
       </div>
 
+      {/* ... keep existing code (accounts display section) */}
       <div className="grid gap-4">
         {accounts.length === 0 ? (
           <Card>

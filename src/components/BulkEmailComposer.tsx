@@ -649,7 +649,7 @@ const BulkEmailComposer = ({ organizationId }: BulkEmailComposerProps) => {
                     onChange={(e) => setSubject(e.target.value)}
                     className="flex-1"
                   />
-                  <AISubjectGenerator onGenerated={setSubject} />
+                  <AISubjectGenerator onSubjectSelect={setSubject} />
                 </div>
               )}
             </div>
