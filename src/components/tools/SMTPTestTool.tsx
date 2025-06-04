@@ -1,4 +1,3 @@
-
 import { useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -109,10 +108,10 @@ const SMTPTestTool = () => {
       return;
     }
 
-    if (!testResult?.success) {
+    if (!config.host || !config.username || !config.password) {
       toast({
-        title: "Connection Required",
-        description: "Please test the SMTP connection first",
+        title: "Missing SMTP Config",
+        description: "Please configure SMTP settings first",
         variant: "destructive"
       });
       return;
@@ -167,7 +166,7 @@ const SMTPTestTool = () => {
         <div className="text-center">
           <h3 className="text-lg font-semibold text-slate-800 mb-2">SMTP Connection Tester</h3>
           <p className="text-slate-600">
-            Test your SMTP server configuration and send test emails
+            Test your SMTP server configuration and send test emails to verify delivery
           </p>
         </div>
 
@@ -257,6 +256,43 @@ const SMTPTestTool = () => {
               <Label htmlFor="auth-required">Authentication Required</Label>
             </div>
 
+            <Separator />
+
+            <div className="space-y-2">
+              <Label htmlFor="test-email">Test Recipient Email</Label>
+              <Input
+                id="test-email"
+                type="email"
+                placeholder="recipient@example.com"
+                value={config.test_email}
+                onChange={(e) => updateConfig('test_email', e.target.value)}
+              />
+              <p className="text-xs text-slate-500">
+                Email address to receive the test message
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="test-subject">Test Email Subject</Label>
+              <Input
+                id="test-subject"
+                placeholder="SMTP Test Email"
+                value={config.test_subject}
+                onChange={(e) => updateConfig('test_subject', e.target.value)}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="test-message">Test Email Message</Label>
+              <Textarea
+                id="test-message"
+                placeholder="This is a test email to verify SMTP configuration."
+                value={config.test_message}
+                onChange={(e) => updateConfig('test_message', e.target.value)}
+                rows={3}
+              />
+            </div>
+
             {/* Test Result Display */}
             {testResult && (
               <div className={`p-3 rounded-lg flex items-center justify-between ${
@@ -286,24 +322,44 @@ const SMTPTestTool = () => {
               </div>
             )}
 
-            <Button 
-              onClick={testSMTPConnectionHandler} 
-              variant="outline" 
-              className="w-full"
-              disabled={isTesting}
-            >
-              {isTesting ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Testing Connection...
-                </>
-              ) : (
-                <>
-                  <TestTube className="w-4 h-4 mr-2" />
-                  Test SMTP Connection
-                </>
-              )}
-            </Button>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <Button 
+                onClick={testSMTPConnectionHandler} 
+                variant="outline" 
+                className="w-full"
+                disabled={isTesting}
+              >
+                {isTesting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Testing Connection...
+                  </>
+                ) : (
+                  <>
+                    <TestTube className="w-4 h-4 mr-2" />
+                    Test Connection
+                  </>
+                )}
+              </Button>
+
+              <Button 
+                onClick={sendTestEmail} 
+                className="w-full"
+                disabled={isTesting || !config.test_email}
+              >
+                {isTesting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Sending Email...
+                  </>
+                ) : (
+                  <>
+                    <Mail className="w-4 h-4 mr-2" />
+                    Send Test Email
+                  </>
+                )}
+              </Button>
+            </div>
           </CardContent>
         </Card>
 

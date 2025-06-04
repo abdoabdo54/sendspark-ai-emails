@@ -1,23 +1,29 @@
-
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
-import { Plus, Edit, Trash2, Mail, Server, Shield, Loader2, TestTube, AlertCircle } from 'lucide-react';
-import { useEmailAccounts } from '@/hooks/useEmailAccounts';
-import { useOrganizations } from '@/hooks/useOrganizations';
+import { TestTube, Loader2, CheckCircle, XCircle, Eye, EyeOff, FileText, Mail, CopyPlus, Plus, Pencil, Trash2 } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
-import SMTPConfigForm from './SMTPConfigForm';
-import AppsScriptConfigForm from './AppsScriptConfigForm';
-import PowerMTAConfigForm from './PowerMTAConfigForm';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { useEmailAccounts, EmailAccount } from '@/hooks/useEmailAccounts';
+import { AppsScriptConfigForm } from '@/components/AppsScriptConfigForm';
+import { SMTPConfigForm } from '@/components/SMTPConfigForm';
+import { PowerMTAConfigForm } from '@/components/PowerMTAConfigForm';
+import { useOrganizations } from '@/hooks/useOrganizations';
+import { sendEmailViaAppsScript } from '@/utils/appsScriptSender';
 
-// Define the config interfaces
+interface AppsScriptConfig {
+  exec_url: string;
+  script_id?: string;
+  deployment_id?: string;
+  daily_quota: number;
+}
+
 interface SMTPConfig {
   host: string;
   port: number;
@@ -27,472 +33,454 @@ interface SMTPConfig {
   auth_required: boolean;
 }
 
-interface AppsScriptConfig {
-  script_id: string;
-  deployment_id: string;
-  api_key: string;
-  daily_quota: number;
-  exec_url: string;
-}
-
 interface PowerMTAConfig {
-  server_host: string;
-  api_port: number;
-  username: string;
-  password: string;
-  virtual_mta: string;
-  job_pool: string;
-  max_hourly_rate: number;
+  api_url: string;
+  api_key: string;
 }
 
 const AccountManager = () => {
   const { currentOrganization } = useOrganizations();
-  const { accounts, loading, addAccount, updateAccount, deleteAccount } = useEmailAccounts(currentOrganization?.id);
-  const [selectedTab, setSelectedTab] = useState('list');
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [editingAccount, setEditingAccount] = useState<string | null>(null);
-
+  const { accounts, loading, addAccount, updateAccount, deleteAccount, refetch } = useEmailAccounts(currentOrganization?.id);
+  const [open, setOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [selectedAccount, setSelectedAccount] = useState<EmailAccount | null>(null);
   const [newAccount, setNewAccount] = useState<{
     name: string;
-    type: 'smtp' | 'apps-script' | 'powermta';
+    type: 'apps-script' | 'powermta' | 'smtp';
     email: string;
     is_active: boolean;
-    config: SMTPConfig | AppsScriptConfig | PowerMTAConfig;
+    config: AppsScriptConfig | SMTPConfig | PowerMTAConfig;
   }>({
     name: '',
-    type: 'smtp',
+    type: 'apps-script',
     email: '',
     is_active: true,
     config: {
-      host: '',
-      port: 587,
-      username: '',
-      password: '',
-      encryption: 'tls' as const,
-      auth_required: true
+      exec_url: '',
+      daily_quota: 100
     }
   });
 
-  const handleConfigChange = (config: any) => {
-    setNewAccount(prev => ({ ...prev, config }));
-  };
-
-  const getDefaultConfig = (type: 'smtp' | 'apps-script' | 'powermta'): SMTPConfig | AppsScriptConfig | PowerMTAConfig => {
-    switch (type) {
-      case 'smtp':
-        return {
-          host: '',
-          port: 587,
-          username: '',
-          password: '',
-          encryption: 'tls' as const,
-          auth_required: true
-        };
-      case 'apps-script':
-        return {
-          script_id: '',
-          deployment_id: '',
-          api_key: '',
-          daily_quota: 100,
-          exec_url: ''
-        };
-      case 'powermta':
-        return {
-          server_host: '',
-          api_port: 25,
-          username: '',
-          password: '',
-          virtual_mta: 'default',
-          job_pool: 'default',
-          max_hourly_rate: 10000
-        };
-    }
-  };
-
-  const handleTypeChange = (type: 'smtp' | 'apps-script' | 'powermta') => {
-    setNewAccount(prev => ({
-      ...prev,
-      type,
-      config: getDefaultConfig(type)
-    }));
-  };
-
-  const handleTestConnection = async () => {
-    toast({
-      title: "Testing Connection",
-      description: "Testing SMTP connection...",
-    });
-    
-    // Simulate connection test
-    setTimeout(() => {
-      toast({
-        title: "Connection Successful",
-        description: "SMTP connection test passed!",
-      });
-    }, 2000);
-  };
-
-  const validateConfig = (type: string, config: any) => {
-    switch (type) {
-      case 'smtp':
-        return config.host && config.port && config.username && config.password;
-      case 'apps-script':
-        return config.script_id && config.deployment_id;
-      case 'powermta':
-        return config.server_host && config.username && config.password;
-      default:
-        return true;
-    }
-  };
-
   const handleAddAccount = async () => {
-    if (!newAccount.name || !newAccount.email) {
-      toast({
-        title: "Missing Information",
-        description: "Please fill in account name and email",
-        variant: "destructive"
-      });
-      return;
-    }
-
-    if (!validateConfig(newAccount.type, newAccount.config)) {
-      toast({
-        title: "Invalid Configuration",
-        description: "Please fill in all required configuration fields",
-        variant: "destructive"
-      });
-      return;
-    }
-
-    setIsSubmitting(true);
     try {
-      await addAccount(newAccount);
-      setNewAccount({ 
-        name: '', 
-        type: 'smtp', 
-        email: '', 
-        is_active: true, 
-        config: getDefaultConfig('smtp') 
+      await addAccount({
+        ...newAccount,
+        config: newAccount.config
       });
-      setSelectedTab('list');
-    } finally {
-      setIsSubmitting(false);
+      setNewAccount({
+        name: '',
+        type: 'apps-script',
+        email: '',
+        is_active: true,
+        config: {
+          exec_url: '',
+          daily_quota: 100
+        }
+      });
+      setOpen(false);
+    } catch (error) {
+      console.error('Failed to add account:', error);
     }
   };
 
-  const handleEditAccount = (account: any) => {
-    setEditingAccount(account.id);
-    setNewAccount({
-      name: account.name,
-      type: account.type,
-      email: account.email,
-      is_active: account.is_active,
-      config: account.config
-    });
-    setSelectedTab('add');
-  };
-
-  const handleSaveAccount = async () => {
-    if (!newAccount.name || !newAccount.email) {
-      toast({
-        title: "Missing Information",
-        description: "Please fill in account name and email",
-        variant: "destructive"
-      });
-      return;
-    }
-
-    if (!validateConfig(newAccount.type, newAccount.config)) {
-      toast({
-        title: "Invalid Configuration",
-        description: "Please fill in all required configuration fields",
-        variant: "destructive"
-      });
-      return;
-    }
-
-    setIsSubmitting(true);
+  const handleUpdateAccount = async () => {
+    if (!selectedAccount) return;
     try {
-      if (editingAccount) {
-        await updateAccount(editingAccount, newAccount);
-        setEditingAccount(null);
-        toast({
-          title: "Success",
-          description: "Account updated successfully"
-        });
-      } else {
-        await addAccount(newAccount);
-        toast({
-          title: "Success", 
-          description: "Account added successfully"
-        });
-      }
-      
-      setNewAccount({ 
-        name: '', 
-        type: 'smtp', 
-        email: '', 
-        is_active: true, 
-        config: getDefaultConfig('smtp') 
+      await updateAccount(selectedAccount.id, {
+        ...selectedAccount,
+        config: selectedAccount.config
       });
-      setSelectedTab('list');
-    } finally {
-      setIsSubmitting(false);
+      setEditOpen(false);
+      setSelectedAccount(null);
+    } catch (error) {
+      console.error('Failed to update account:', error);
     }
-  };
-
-  const handleCancelEdit = () => {
-    setEditingAccount(null);
-    setNewAccount({ 
-      name: '', 
-      type: 'smtp', 
-      email: '', 
-      is_active: true, 
-      config: getDefaultConfig('smtp') 
-    });
-    setSelectedTab('list');
-  };
-
-  const toggleAccount = async (id: string, currentStatus: boolean) => {
-    await updateAccount(id, { is_active: !currentStatus });
   };
 
   const handleDeleteAccount = async (id: string) => {
-    await deleteAccount(id);
-  };
-
-  const getAccountIcon = (type: string) => {
-    switch (type) {
-      case 'apps-script': return <Mail className="w-4 h-4" />;
-      case 'powermta': return <Server className="w-4 h-4" />;
-      case 'smtp': return <Shield className="w-4 h-4" />;
-      default: return <Mail className="w-4 h-4" />;
+    try {
+      await deleteAccount(id);
+    } catch (error) {
+      console.error('Failed to delete account:', error);
     }
   };
 
-  const getAccountTypeName = (type: string) => {
-    switch (type) {
-      case 'apps-script': return 'Google Apps Script';
-      case 'powermta': return 'PowerMTA';
-      case 'smtp': return 'SMTP Server';
-      default: return type;
+  const handleSendTestEmail = async (account: EmailAccount) => {
+    if (!account) {
+      toast({
+        title: "Missing Account",
+        description: "Please select an email account",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    if (!account.email) {
+      toast({
+        title: "Missing Email",
+        description: "Please enter a sender email address",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    const toEmail = prompt("Enter recipient email address:");
+    if (!toEmail) return;
+
+    const fromName = account.name || 'Test Sender';
+    const subject = 'Test Email';
+    const htmlContent = '<p>This is a test email</p>';
+    const textContent = 'This is a test email';
+
+    if (account.type === 'apps-script') {
+      await sendEmailViaAppsScript(account, account.email, fromName, toEmail, subject, htmlContent, textContent);
+    } else {
+      toast({
+        title: "Not Implemented",
+        description: "Sending test email is not implemented for this account type",
+        variant: "destructive"
+      });
     }
   };
 
-  const renderConfigForm = () => {
-    switch (newAccount.type) {
-      case 'smtp':
-        return (
-          <SMTPConfigForm
-            config={newAccount.config as SMTPConfig}
-            onChange={handleConfigChange}
-            onTest={handleTestConnection}
-          />
-        );
-      case 'apps-script':
-        return (
-          <AppsScriptConfigForm
-            config={newAccount.config as AppsScriptConfig}
-            onChange={handleConfigChange}
-          />
-        );
-      case 'powermta':
-        return (
-          <PowerMTAConfigForm
-            config={newAccount.config as PowerMTAConfig}
-            onChange={handleConfigChange}
-          />
-        );
-      default:
-        return null;
-    }
-  };
-
-  if (!currentOrganization) {
-    return (
-      <div className="flex items-center justify-center p-8">
-        <div className="text-center">
-          <AlertCircle className="w-12 h-12 text-amber-500 mx-auto mb-4" />
-          <h3 className="text-lg font-medium text-slate-600 mb-2">Organization Required</h3>
-          <p className="text-slate-500">Please set up an organization first.</p>
-        </div>
-      </div>
+  const sendEmailViaAppsScript = async (account: EmailAccount, fromEmail: string, fromName: string, toEmail: string, subject: string, htmlContent: string, textContent?: string) => {
+  try {
+    console.log('Sending email via Apps Script account:', account.name);
+    
+    const result = await sendEmailViaAppsScript(
+      account.config,
+      fromEmail,
+      fromName,
+      toEmail,
+      subject,
+      htmlContent,
+      textContent
     );
+
+    if (result.success) {
+      console.log('✓ Email sent successfully via Apps Script');
+      toast({
+        title: "Email Sent",
+        description: `Email sent successfully via ${account.name}`,
+      });
+      return { success: true };
+    } else {
+      console.error('✗ Apps Script sending failed:', result.error);
+      toast({
+        title: "Send Failed",
+        description: result.error || "Failed to send email via Apps Script",
+        variant: "destructive"
+      });
+      return { success: false, error: result.error };
+    }
+  } catch (error) {
+    console.error('✗ Apps Script error:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    toast({
+      title: "Send Error",
+      description: errorMessage,
+      variant: "destructive"
+    });
+    return { success: false, error: errorMessage };
   }
+};
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center p-8">
-        <Loader2 className="w-8 h-8 animate-spin" />
-      </div>
-    );
+    return <div>Loading email accounts...</div>;
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <div>
-          <h2 className="text-2xl font-bold text-slate-800">Email Accounts</h2>
-          <p className="text-slate-600">Manage your email sending accounts and configurations</p>
+    <>
+      <div className="space-y-6">
+        <div className="text-center">
+          <h3 className="text-lg font-semibold text-slate-800 mb-2">Email Account Management</h3>
+          <p className="text-slate-600">
+            Manage your email accounts for sending campaigns
+          </p>
         </div>
-        <Button onClick={() => setSelectedTab('add')} className="flex items-center gap-2">
-          <Plus className="w-4 h-4" />
-          Add Account
-        </Button>
-      </div>
 
-      <Tabs value={selectedTab} onValueChange={setSelectedTab}>
-        <TabsList>
-          <TabsTrigger value="list">Account List</TabsTrigger>
-          <TabsTrigger value="add">{editingAccount ? 'Edit Account' : 'Add New'}</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="list" className="space-y-4">
-          {accounts.length === 0 ? (
-            <Card>
-              <CardContent className="flex flex-col items-center justify-center py-10">
-                <Mail className="w-12 h-12 text-slate-300 mb-4" />
-                <h3 className="text-lg font-medium text-slate-600 mb-2">No accounts configured</h3>
-                <p className="text-slate-500 text-center mb-4">
-                  Add your first email account to start sending campaigns
-                </p>
-                <Button onClick={() => setSelectedTab('add')}>
-                  <Plus className="w-4 h-4 mr-2" />
-                  Add Account
-                </Button>
-              </CardContent>
-            </Card>
-          ) : (
-            <div className="grid gap-4">
-              {accounts.map((account) => (
-                <Card key={account.id} className={`transition-all duration-200 ${account.is_active ? 'border-green-200 bg-green-50/30' : 'border-slate-200'}`}>
-                  <CardHeader>
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className={`p-2 rounded-lg ${account.is_active ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-600'}`}>
-                          {getAccountIcon(account.type)}
+        <Card>
+          <CardHeader>
+            <CardTitle>Email Accounts</CardTitle>
+            <CardDescription>
+              Manage your email accounts for sending campaigns
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {accounts.length === 0 ? (
+              <div className="text-center py-4 text-slate-500">
+                <Mail className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                <p>No email accounts found</p>
+              </div>
+            ) : (
+              <div className="grid gap-4">
+                {accounts.map((account) => (
+                  <Card key={account.id} className="shadow-sm hover:shadow-md transition-shadow duration-200">
+                    <CardHeader>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <Mail className="w-5 h-5 text-blue-600" />
+                          <div>
+                            <CardTitle className="text-lg">{account.name}</CardTitle>
+                            <CardDescription className="text-sm">{account.email}</CardDescription>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Switch 
+                            id={`account-active-${account.id}`}
+                            checked={account.is_active}
+                            onCheckedChange={async (checked) => {
+                              try {
+                                await updateAccount(account.id, { is_active: checked });
+                              } catch (error) {
+                                console.error('Failed to update account status:', error);
+                              }
+                            }}
+                          />
+                          <Label htmlFor={`account-active-${account.id}`} className="text-sm">
+                            {account.is_active ? 'Active' : 'Inactive'}
+                          </Label>
+                        </div>
+                      </div>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-slate-600">
+                        <div>
+                          <span className="font-medium">Type:</span> {account.type}
                         </div>
                         <div>
-                          <CardTitle className="text-lg">{account.name}</CardTitle>
-                          <CardDescription>{account.email}</CardDescription>
+                          <span className="font-medium">Created:</span> {new Date(account.created_at).toLocaleDateString()}
                         </div>
                       </div>
-                      <div className="flex items-center gap-3">
-                        <Badge variant={account.is_active ? 'default' : 'secondary'}>
-                          {getAccountTypeName(account.type)}
-                        </Badge>
-                        <Switch
-                          checked={account.is_active}
-                          onCheckedChange={() => toggleAccount(account.id, account.is_active)}
-                        />
-                      </div>
-                    </div>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="flex justify-between items-center">
-                      <div className="text-sm text-slate-600">
-                        Status: <span className={account.is_active ? 'text-green-600' : 'text-slate-500'}>
-                          {account.is_active ? 'Active' : 'Inactive'}
-                        </span>
-                      </div>
-                      <div className="flex gap-2">
-                        <Button variant="outline" size="sm" onClick={() => handleEditAccount(account)}>
-                          <Edit className="w-4 h-4 mr-1" />
+                      <div className="flex flex-wrap gap-2 mt-4">
+                        <Button 
+                          variant="outline" 
+                          size="sm"
+                          onClick={() => handleSendTestEmail(account)}
+                        >
+                          <TestTube className="w-4 h-4 mr-2" />
+                          Test
+                        </Button>
+                        <Button 
+                          variant="outline" 
+                          size="sm"
+                          onClick={() => {
+                            setSelectedAccount(account);
+                            setEditOpen(true);
+                          }}
+                        >
+                          <Pencil className="w-4 h-4 mr-2" />
                           Edit
                         </Button>
                         <Button 
                           variant="outline" 
-                          size="sm" 
-                          onClick={() => handleDeleteAccount(account.id)}
+                          size="sm"
                           className="text-red-600 hover:text-red-700"
+                          onClick={() => handleDeleteAccount(account.id)}
                         >
-                          <Trash2 className="w-4 h-4 mr-1" />
+                          <Trash2 className="w-4 h-4 mr-2" />
                           Delete
                         </Button>
                       </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          )}
-        </TabsContent>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
 
-        <TabsContent value="add" className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>{editingAccount ? 'Edit Email Account' : 'Add New Email Account'}</CardTitle>
-              <CardDescription>
-                {editingAccount ? 'Update your email account configuration' : 'Configure a new email sending account for your campaigns'}
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
+            <Button onClick={() => setOpen(true)} className="w-full">
+              <Plus className="w-4 h-4 mr-2" />
+              Add Email Account
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Add Account Dialog */}
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Add Email Account</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="account-name">Account Name</Label>
+                <Input
+                  id="account-name"
+                  placeholder="My Email Account"
+                  value={newAccount.name}
+                  onChange={(e) => setNewAccount({ ...newAccount, name: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="account-email">Email Address</Label>
+                <Input
+                  id="account-email"
+                  type="email"
+                  placeholder="email@example.com"
+                  value={newAccount.email}
+                  onChange={(e) => setNewAccount({ ...newAccount, email: e.target.value })}
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="account-type">Account Type</Label>
+              <Select onValueChange={(value: any) => setNewAccount({ 
+                ...newAccount, 
+                type: value,
+                config: value === 'apps-script' ? { exec_url: '', daily_quota: 100 } : 
+                        value === 'smtp' ? { host: '', port: 587, username: '', password: '', encryption: 'tls', auth_required: true } :
+                        { api_url: '', api_key: '' }
+              })}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select account type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="apps-script">Google Apps Script</SelectItem>
+                  <SelectItem value="smtp">SMTP</SelectItem>
+                  <SelectItem value="powermta">PowerMTA</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {newAccount.type === 'apps-script' && (
+              <AppsScriptConfigForm
+                config={newAccount.config as AppsScriptConfig}
+                onChange={(config: AppsScriptConfig) => setNewAccount({ ...newAccount, config: config })}
+              />
+            )}
+
+            {newAccount.type === 'smtp' && (
+              <SMTPConfigForm
+                config={newAccount.config as SMTPConfig}
+                onChange={(config: SMTPConfig) => setNewAccount({ ...newAccount, config: config })}
+              />
+            )}
+
+            {newAccount.type === 'powermta' && (
+              <PowerMTAConfigForm
+                config={newAccount.config as PowerMTAConfig}
+                onChange={(config: PowerMTAConfig) => setNewAccount({ ...newAccount, config: config })}
+              />
+            )}
+
+            <div className="flex items-center space-x-2">
+              <Switch
+                id="account-active"
+                checked={newAccount.is_active}
+                onCheckedChange={(checked) => setNewAccount({ ...newAccount, is_active: checked })}
+              />
+              <Label htmlFor="account-active">Account Active</Label>
+            </div>
+          </div>
+          <div className="flex justify-end gap-2 mt-4">
+            <Button type="button" variant="secondary" onClick={() => setOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="button" onClick={handleAddAccount}>
+              Add Account
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Account Dialog */}
+      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Edit Email Account</DialogTitle>
+          </DialogHeader>
+          {selectedAccount && (
+            <div className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="accountName">Account Name</Label>
+                  <Label htmlFor="account-name">Account Name</Label>
                   <Input
-                    id="accountName"
-                    placeholder="e.g., Primary Gmail, Company SMTP"
-                    value={newAccount.name}
-                    onChange={(e) => setNewAccount(prev => ({ ...prev, name: e.target.value }))}
+                    id="account-name"
+                    placeholder="My Email Account"
+                    value={selectedAccount.name}
+                    onChange={(e) => setSelectedAccount({ ...selectedAccount, name: e.target.value })}
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="accountType">Account Type</Label>
-                  <Select value={newAccount.type} onValueChange={handleTypeChange}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="smtp">SMTP Server</SelectItem>
-                      <SelectItem value="apps-script">Google Apps Script</SelectItem>
-                      <SelectItem value="powermta">PowerMTA</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <Label htmlFor="account-email">Email Address</Label>
+                  <Input
+                    id="account-email"
+                    type="email"
+                    placeholder="email@example.com"
+                    value={selectedAccount.email}
+                    onChange={(e) => setSelectedAccount({ ...selectedAccount, email: e.target.value })}
+                  />
                 </div>
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="email">From Email Address</Label>
-                <Input
-                  id="email"
-                  type="email"
-                  placeholder="sender@example.com"
-                  value={newAccount.email}
-                  onChange={(e) => setNewAccount(prev => ({ ...prev, email: e.target.value }))}
-                />
-              </div>
-
-              <Separator />
-
-              {renderConfigForm()}
-
-              <Separator />
-
-              <div className="flex gap-3 pt-4">
-                <Button 
-                  onClick={handleSaveAccount} 
-                  className="flex-1"
-                  disabled={isSubmitting || !newAccount.name || !newAccount.email}
+                <Label htmlFor="account-type">Account Type</Label>
+                <Select 
+                  value={selectedAccount.type}
+                  onValueChange={(value: any) => setSelectedAccount({ 
+                    ...selectedAccount, 
+                    type: value,
+                    config: value === 'apps-script' ? { exec_url: '', daily_quota: 100 } : 
+                            value === 'smtp' ? { host: '', port: 587, username: '', password: '', encryption: 'tls', auth_required: true } :
+                            { api_url: '', api_key: '' }
+                  })}
                 >
-                  {isSubmitting ? (
-                    <>
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      {editingAccount ? 'Updating...' : 'Adding...'}
-                    </>
-                  ) : (
-                    editingAccount ? 'Update Account' : 'Add Account'
-                  )}
-                </Button>
-                <Button variant="outline" onClick={handleCancelEdit}>
-                  Cancel
-                </Button>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select account type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="apps-script">Google Apps Script</SelectItem>
+                    <SelectItem value="smtp">SMTP</SelectItem>
+                    <SelectItem value="powermta">PowerMTA</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
-    </div>
+
+              {selectedAccount.type === 'apps-script' && (
+                <AppsScriptConfigForm
+                  config={selectedAccount.config as AppsScriptConfig}
+                  onChange={(config: AppsScriptConfig) => setSelectedAccount({ ...selectedAccount, config: config })}
+                />
+              )}
+
+              {selectedAccount.type === 'smtp' && (
+                <SMTPConfigForm
+                  config={selectedAccount.config as SMTPConfig}
+                  onChange={(config: SMTPConfig) => setSelectedAccount({ ...selectedAccount, config: config })}
+                />
+              )}
+
+              {selectedAccount.type === 'powermta' && (
+                <PowerMTAConfigForm
+                  config={selectedAccount.config as PowerMTAConfig}
+                  onChange={(config: PowerMTAConfig) => setSelectedAccount({ ...selectedAccount, config: config })}
+                />
+              )}
+
+              <div className="flex items-center space-x-2">
+                <Switch
+                  id="account-active"
+                  checked={selectedAccount.is_active}
+                  onCheckedChange={(checked) => setSelectedAccount({ ...selectedAccount, is_active: checked })}
+                />
+                <Label htmlFor="account-active">Account Active</Label>
+              </div>
+            </div>
+          )}
+          <div className="flex justify-end gap-2 mt-4">
+            <Button type="button" variant="secondary" onClick={() => setEditOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="button" onClick={handleUpdateAccount}>
+              Update Account
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 };
 

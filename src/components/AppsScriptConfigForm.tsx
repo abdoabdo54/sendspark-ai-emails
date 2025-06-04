@@ -1,4 +1,3 @@
-
 import { useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -9,6 +8,7 @@ import { Separator } from "@/components/ui/separator";
 import { TestTube, Loader2, CheckCircle, XCircle, ExternalLink, Code } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { testAppsScriptConnection } from '@/utils/appsScriptSender';
 
 interface AppsScriptConfig {
   script_id: string;
@@ -24,7 +24,7 @@ interface AppsScriptConfigFormProps {
 
 const AppsScriptConfigForm = ({ config, onChange }: AppsScriptConfigFormProps) => {
   const [isTesting, setIsTesting] = useState(false);
-  const [testResult, setTestResult] = useState<{ success: boolean; error?: string; quota?: number } | null>(null);
+  const [testResult, setTestResult] = useState<{ success: boolean; error?: string; remainingQuota?: number } | null>(null);
 
   const updateConfig = (field: keyof AppsScriptConfig, value: any) => {
     setTestResult(null);
@@ -48,26 +48,20 @@ const AppsScriptConfigForm = ({ config, onChange }: AppsScriptConfigFormProps) =
     setTestResult(null);
 
     try {
-      // Test the Apps Script connection
-      const response = await fetch(`${config.exec_url}?action=status`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      });
+      const result = await testAppsScriptConnection(config);
+      setTestResult(result);
 
-      if (response.ok) {
-        const result = await response.json();
-        setTestResult({ 
-          success: true, 
-          quota: result.remainingQuota 
-        });
+      if (result.success) {
         toast({
           title: "Connection Successful",
           description: `Google Apps Script is active. Remaining quota: ${result.remainingQuota}`,
         });
       } else {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        toast({
+          title: "Connection Failed",
+          description: result.error || "Apps Script connection failed",
+          variant: "destructive"
+        });
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
