@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -11,9 +12,9 @@ import { TestTube, Loader2, CheckCircle, XCircle, Eye, EyeOff, FileText, Mail, C
 import { toast } from '@/hooks/use-toast';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useEmailAccounts, EmailAccount } from '@/hooks/useEmailAccounts';
-import { AppsScriptConfigForm } from '@/components/AppsScriptConfigForm';
-import { SMTPConfigForm } from '@/components/SMTPConfigForm';
-import { PowerMTAConfigForm } from '@/components/PowerMTAConfigForm';
+import AppsScriptConfigForm from '@/components/AppsScriptConfigForm';
+import SMTPConfigForm from '@/components/SMTPConfigForm';
+import PowerMTAConfigForm from '@/components/PowerMTAConfigForm';
 import { useOrganizations } from '@/hooks/useOrganizations';
 import { sendEmailViaAppsScript } from '@/utils/appsScriptSender';
 

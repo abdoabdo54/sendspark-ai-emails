@@ -342,7 +342,7 @@ function createErrorResponse(message, mimeType, httpStatusCode) {
             )}
             <span className="text-sm">
               {testResult.success 
-                ? `Connection successful! Remaining quota: ${testResult.quota}` 
+                ? `Connection successful! Remaining quota: ${testResult.remainingQuota}` 
                 : testResult.error
               }
             </span>
