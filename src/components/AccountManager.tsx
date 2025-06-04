@@ -177,11 +177,20 @@ const AccountManager = () => {
     setAccountType(account.type as 'smtp' | 'apps-script' | 'powermta');
     
     if (account.type === 'apps-script') {
-      setAppsScriptConfig(account.config as AppsScriptConfig);
+      setAppsScriptConfig({
+        ...appsScriptConfig,
+        ...account.config
+      });
     } else if (account.type === 'smtp') {
-      setSMTPConfig(account.config as SMTPConfig);
+      setSMTPConfig({
+        ...smtpConfig,
+        ...account.config
+      });
     } else if (account.type === 'powermta') {
-      setPowerMTAConfig(account.config as PowerMTAConfig);
+      setPowerMTAConfig({
+        ...powerMTAConfig,
+        ...account.config
+      });
     }
     
     setIsDialogOpen(true);
@@ -213,9 +222,25 @@ const AccountManager = () => {
       };
 
       if (account.type === 'apps-script') {
-        await sendEmailViaAppsScript(account.config as any, testEmail);
+        await sendEmailViaAppsScript(
+          account.config as any,
+          account.email,
+          'Test Sender',
+          account.email,
+          testEmail.subject,
+          testEmail.html,
+          testEmail.text
+        );
       } else if (account.type === 'smtp') {
-        await sendEmailViaSMTP(account.config as any, testEmail);
+        await sendEmailViaSMTP(
+          account.config as any,
+          account.email,
+          'Test Sender',
+          account.email,
+          testEmail.subject,
+          testEmail.html,
+          testEmail.text
+        );
       }
 
       toast({
@@ -231,9 +256,9 @@ const AccountManager = () => {
     }
   };
 
-  const handleSMTPTest = async (config: SMTPConfig) => {
+  const handleSMTPTest = async () => {
     try {
-      const result = await testSMTPConnection(config);
+      const result = await testSMTPConnection(smtpConfig);
       if (result.success) {
         toast({
           title: "SMTP Test Successful",
@@ -348,14 +373,14 @@ const AccountManager = () => {
                 <SMTPConfigForm
                   config={smtpConfig}
                   onChange={setSMTPConfig}
-                  onTest={() => handleSMTPTest(smtpConfig)}
+                  onTest={handleSMTPTest}
                 />
               )}
 
               {accountType === 'powermta' && (
                 <PowerMTAConfigForm
                   config={powerMTAConfig}
-                  onChange={(config) => setPowerMTAConfig(config)}
+                  onChange={setPowerMTAConfig}
                 />
               )}
 

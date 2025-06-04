@@ -2,17 +2,19 @@
 import { useState } from 'react';
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { 
   Mail, 
-  TestTube, 
-  BarChart3, 
   Settings, 
+  BarChart3, 
+  TestTube, 
   Users, 
-  Calendar,
-  Zap,
-  Eye
+  Send,
+  Wrench
 } from 'lucide-react';
+import OrganizationSetup from './OrganizationSetup';
 import { useOrganizations } from '@/hooks/useOrganizations';
+import { useNavigate, useLocation } from 'react-router-dom';
 
 interface HeaderProps {
   activeTab: string;
@@ -20,104 +22,121 @@ interface HeaderProps {
 }
 
 const Header = ({ activeTab, onTabChange }: HeaderProps) => {
+  const navigate = useNavigate();
+  const location = useLocation();
   const { currentOrganization } = useOrganizations();
 
-  const navigationItems = [
-    {
-      id: 'bulk',
-      label: 'Email Composer',
-      icon: Mail,
-      description: 'Create and send bulk email campaigns'
-    },
-    {
-      id: 'testing',
-      label: 'Campaign Testing',
-      icon: TestTube,
-      description: 'Test campaigns before sending'
-    },
-    {
-      id: 'campaigns',
-      label: 'Manage Campaigns',
-      icon: Calendar,
-      description: 'View and manage your campaigns'
-    },
-    {
-      id: 'analytics',
-      label: 'Analytics',
-      icon: BarChart3,
-      description: 'Campaign performance and insights'
-    },
-    {
-      id: 'accounts',
-      label: 'Email Accounts',
-      icon: Settings,
-      description: 'Manage sending accounts'
-    },
-    {
-      id: 'tools',
-      label: 'Testing Tools',
-      icon: Zap,
-      description: 'SMTP and DNS testing tools'
+  const handleTabClick = (tab: string) => {
+    console.log('Tab clicked:', tab);
+    
+    // Handle navigation based on tab
+    switch (tab) {
+      case 'bulk':
+      case 'single':
+      case 'accounts':
+      case 'testing':
+      case 'analytics':
+        navigate('/');
+        onTabChange(tab);
+        break;
+      case 'campaigns':
+        navigate('/campaigns');
+        break;
+      case 'tools':
+        navigate('/tools');
+        break;
+      default:
+        onTabChange(tab);
     }
-  ];
+  };
+
+  // Determine active tab based on current route
+  const getCurrentTab = () => {
+    if (location.pathname === '/campaigns') return 'campaigns';
+    if (location.pathname === '/tools') return 'tools';
+    return activeTab;
+  };
 
   return (
     <header className="bg-white border-b border-slate-200 sticky top-0 z-50">
-      <div className="container mx-auto px-6">
-        <div className="flex items-center justify-between py-4">
+      <div className="container mx-auto px-6 py-4">
+        <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-4">
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 bg-gradient-to-r from-blue-600 to-purple-600 rounded-lg flex items-center justify-center">
-                <Mail className="w-5 h-5 text-white" />
-              </div>
-              <div>
-                <h1 className="text-xl font-bold text-slate-800">Email Campaign Platform</h1>
-                {currentOrganization && (
-                  <p className="text-sm text-slate-600">{currentOrganization.name}</p>
-                )}
-              </div>
+            <div className="flex items-center gap-2">
+              <Mail className="w-8 h-8 text-blue-600" />
+              <h1 className="text-2xl font-bold text-slate-900">EmailCampaign Pro</h1>
             </div>
+            <Badge variant="outline" className="text-blue-600 border-blue-200">
+              Professional Edition
+            </Badge>
           </div>
-
-          <div className="flex items-center gap-2">
+          
+          <div className="flex items-center gap-4">
             {currentOrganization && (
-              <>
-                <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
-                  {currentOrganization.name}
-                </Badge>
-                <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
-                  {currentOrganization.subscription_plan.toUpperCase()}
-                </Badge>
-              </>
+              <div className="text-right">
+                <p className="text-sm text-slate-600">Organization</p>
+                <p className="font-medium text-slate-900">{currentOrganization.name}</p>
+              </div>
             )}
+            <OrganizationSetup />
           </div>
         </div>
-
-        {/* Navigation */}
-        <nav className="border-t border-slate-100">
-          <div className="flex items-center gap-1 py-2 overflow-x-auto">
-            {navigationItems.map((item) => {
-              const Icon = item.icon;
-              const isActive = activeTab === item.id;
-              
-              return (
-                <Button
-                  key={item.id}
-                  variant={isActive ? "default" : "ghost"}
-                  size="sm"
-                  className={`flex items-center gap-2 whitespace-nowrap ${
-                    isActive ? 'bg-blue-600 text-white' : 'text-slate-600 hover:text-slate-800'
-                  }`}
-                  onClick={() => onTabChange(item.id)}
-                  title={item.description}
-                >
-                  <Icon className="w-4 h-4" />
-                  {item.label}
-                </Button>
-              );
-            })}
-          </div>
-        </nav>
+        
+        <div className="flex items-center justify-between">
+          <Tabs value={getCurrentTab()} onValueChange={handleTabClick} className="flex-1">
+            <TabsList className="grid w-full grid-cols-7 bg-slate-50">
+              <TabsTrigger 
+                value="bulk" 
+                className="flex items-center gap-2 data-[state=active]:bg-blue-600 data-[state=active]:text-white"
+              >
+                <Send className="w-4 h-4" />
+                Bulk Email
+              </TabsTrigger>
+              <TabsTrigger 
+                value="single" 
+                className="flex items-center gap-2 data-[state=active]:bg-blue-600 data-[state=active]:text-white"
+              >
+                <Mail className="w-4 h-4" />
+                Single Email
+              </TabsTrigger>
+              <TabsTrigger 
+                value="testing" 
+                className="flex items-center gap-2 data-[state=active]:bg-blue-600 data-[state=active]:text-white"
+              >
+                <TestTube className="w-4 h-4" />
+                Testing
+              </TabsTrigger>
+              <TabsTrigger 
+                value="campaigns" 
+                className="flex items-center gap-2 data-[state=active]:bg-blue-600 data-[state=active]:text-white"
+              >
+                <BarChart3 className="w-4 h-4" />
+                Campaigns
+              </TabsTrigger>
+              <TabsTrigger 
+                value="analytics" 
+                className="flex items-center gap-2 data-[state=active]:bg-blue-600 data-[state=active]:text-white"
+              >
+                <BarChart3 className="w-4 h-4" />
+                Analytics
+              </TabsTrigger>
+              <TabsTrigger 
+                value="accounts" 
+                className="flex items-center gap-2 data-[state=active]:bg-blue-600 data-[state=active]:text-white"
+              >
+                <Settings className="w-4 h-4" />
+                Accounts
+              </TabsTrigger>
+              <TabsTrigger 
+                value="tools" 
+                className="flex items-center gap-2 data-[state=active]:bg-blue-600 data-[state=active]:text-white"
+              >
+                <Wrench className="w-4 h-4" />
+                Tools
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
+        </div>
       </div>
     </header>
   );

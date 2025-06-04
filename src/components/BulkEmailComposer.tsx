@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Separator } from "@/components/ui/separator";
-import { Upload, Users, Mail, Send, Eye, Save, Settings, AlertCircle } from 'lucide-react';
+import { Upload, Users, Mail, Send, Eye, Save, Settings, AlertCircle, Shuffle, RotateCw } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { useCampaigns } from '@/hooks/useCampaigns';
 import { useEmailAccounts } from '@/hooks/useEmailAccounts';
@@ -30,6 +30,12 @@ interface RecipientData {
   [key: string]: any;
 }
 
+interface RotationConfig {
+  fromNames: string[];
+  subjects: string[];
+  useRotation: boolean;
+}
+
 const BulkEmailComposer = ({ organizationId }: BulkEmailComposerProps) => {
   const { createCampaign } = useCampaigns(organizationId);
   const { accounts } = useEmailAccounts(organizationId);
@@ -44,6 +50,13 @@ const BulkEmailComposer = ({ organizationId }: BulkEmailComposerProps) => {
   const [htmlContent, setHtmlContent] = useState('');
   const [textContent, setTextContent] = useState('');
   
+  // Rotation settings
+  const [rotationConfig, setRotationConfig] = useState<RotationConfig>({
+    fromNames: [''],
+    subjects: [''],
+    useRotation: false
+  });
+  
   // Sender selection
   const [selectedAccounts, setSelectedAccounts] = useState<string[]>([]);
   const [sendingMethod, setSendingMethod] = useState<'single' | 'multiple' | 'round-robin'>('single');
@@ -54,6 +67,68 @@ const BulkEmailComposer = ({ organizationId }: BulkEmailComposerProps) => {
   const [previewRecipient, setPreviewRecipient] = useState<RecipientData | null>(null);
 
   const activeAccounts = accounts.filter(acc => acc.is_active);
+
+  // Generate random values for tags
+  const generateRandomValue = (type: string, length: number): string => {
+    const chars = {
+      'n': '0123456789',
+      'a': 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789',
+      'l': 'abcdefghijklmnopqrstuvwxyz',
+      'u': 'ABCDEFGHIJKLMNOPQRSTUVWXYZ',
+      's': '*-_#!@$%&',
+      'lu': 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz',
+      'ln': 'abcdefghijklmnopqrstuvwxyz0123456789',
+      'un': 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+    };
+    
+    const charset = chars[type] || chars['a'];
+    let result = '';
+    for (let i = 0; i < length; i++) {
+      result += charset.charAt(Math.floor(Math.random() * charset.length));
+    }
+    return result;
+  };
+
+  // Process tags in content
+  const processTags = (content: string, recipient: RecipientData, accountData?: any): string => {
+    let processed = content;
+    
+    // Basic tags
+    processed = processed.replace(/\[from\]/g, rotationConfig.useRotation 
+      ? rotationConfig.fromNames[Math.floor(Math.random() * rotationConfig.fromNames.length)]
+      : fromName);
+    processed = processed.replace(/\[subject\]/g, rotationConfig.useRotation 
+      ? rotationConfig.subjects[Math.floor(Math.random() * rotationConfig.subjects.length)]
+      : subject);
+    processed = processed.replace(/\[to\]/g, recipient.email);
+    
+    // SMTP tags
+    if (accountData && accountData.type === 'smtp') {
+      processed = processed.replace(/\[smtp\]/g, accountData.config?.username || '');
+      processed = processed.replace(/\[smtp_name\]/g, accountData.name || '');
+    }
+    
+    // Random tags
+    const randomTags = processed.match(/\[rnd[alnulslnun]+_(\d+)\]/g);
+    if (randomTags) {
+      randomTags.forEach(tag => {
+        const match = tag.match(/\[rnd([alnulslnun]+)_(\d+)\]/);
+        if (match) {
+          const type = match[1];
+          const length = parseInt(match[2]);
+          const randomValue = generateRandomValue(type, length);
+          processed = processed.replace(tag, randomValue);
+        }
+      });
+    }
+    
+    // Legacy tags
+    processed = processed.replace(/\{\{firstName\}\}/g, recipient.firstName || '');
+    processed = processed.replace(/\{\{lastName\}\}/g, recipient.lastName || '');
+    processed = processed.replace(/\{\{email\}\}/g, recipient.email);
+    
+    return processed;
+  };
 
   // Persist recipients when they're added manually
   useEffect(() => {
@@ -74,27 +149,31 @@ const BulkEmailComposer = ({ organizationId }: BulkEmailComposerProps) => {
   }, [manualEmails]);
 
   const handleCSVImport = (data: RecipientData[]) => {
-    // Replace recipients with CSV data
-    setRecipients(data);
+    // Merge with existing recipients
+    const existingEmails = new Set(recipients.map(r => r.email));
+    const newRecipients = data.filter(r => !existingEmails.has(r.email));
+    setRecipients(prev => [...prev, ...newRecipients]);
     toast({
       title: "CSV Imported",
-      description: `Successfully imported ${data.length} recipients`
+      description: `Successfully imported ${newRecipients.length} new recipients`
     });
   };
 
-  const handleGoogleSheetsImport = (data: RecipientData[]) => {
-    // Replace recipients with Google Sheets data
-    setRecipients(data);
+  const handleGoogleSheetsImport = (data: string[]) => {
+    const recipientData = data.map(email => ({ email: email.trim() }));
+    const existingEmails = new Set(recipients.map(r => r.email));
+    const newRecipients = recipientData.filter(r => !existingEmails.has(r.email));
+    setRecipients(prev => [...prev, ...newRecipients]);
     toast({
       title: "Google Sheets Imported",
-      description: `Successfully imported ${data.length} recipients`
+      description: `Successfully imported ${newRecipients.length} new recipients`
     });
   };
 
   const handleTemplateSelect = (template: any) => {
     setSubject(template.subject || '');
-    setHtmlContent(template.html_content || '');
-    setTextContent(template.text_content || '');
+    setHtmlContent(template.htmlContent || '');
+    setTextContent(template.textContent || '');
     toast({
       title: "Template Applied",
       description: `Template "${template.name}" has been applied`
@@ -109,6 +188,27 @@ const BulkEmailComposer = ({ organizationId }: BulkEmailComposerProps) => {
     }
   };
 
+  const addRotationItem = (type: 'fromNames' | 'subjects') => {
+    setRotationConfig(prev => ({
+      ...prev,
+      [type]: [...prev[type], '']
+    }));
+  };
+
+  const updateRotationItem = (type: 'fromNames' | 'subjects', index: number, value: string) => {
+    setRotationConfig(prev => ({
+      ...prev,
+      [type]: prev[type].map((item, i) => i === index ? value : item)
+    }));
+  };
+
+  const removeRotationItem = (type: 'fromNames' | 'subjects', index: number) => {
+    setRotationConfig(prev => ({
+      ...prev,
+      [type]: prev[type].filter((_, i) => i !== index)
+    }));
+  };
+
   const handlePreview = () => {
     if (recipients.length === 0) {
       toast({
@@ -120,25 +220,11 @@ const BulkEmailComposer = ({ organizationId }: BulkEmailComposerProps) => {
     }
 
     const recipient = recipients[0];
-    setPreviewRecipient(recipient);
+    const selectedAccount = accounts.find(acc => acc.id === selectedAccounts[0]);
     
     // Create preview content with personalization
-    let previewHtml = htmlContent;
-    let previewSubject = subject;
-    
-    // Replace common tags
-    if (recipient.firstName) {
-      previewHtml = previewHtml.replace(/\{\{firstName\}\}/g, recipient.firstName);
-      previewSubject = previewSubject.replace(/\{\{firstName\}\}/g, recipient.firstName);
-    }
-    if (recipient.lastName) {
-      previewHtml = previewHtml.replace(/\{\{lastName\}\}/g, recipient.lastName);
-      previewSubject = previewSubject.replace(/\{\{lastName\}\}/g, recipient.lastName);
-    }
-    if (recipient.email) {
-      previewHtml = previewHtml.replace(/\{\{email\}\}/g, recipient.email);
-      previewSubject = previewSubject.replace(/\{\{email\}\}/g, recipient.email);
-    }
+    let previewHtml = processTags(htmlContent, recipient, selectedAccount);
+    let previewSubject = processTags(subject, recipient, selectedAccount);
 
     const previewWindow = window.open('', '_blank', 'width=800,height=600');
     if (previewWindow) {
@@ -147,18 +233,23 @@ const BulkEmailComposer = ({ organizationId }: BulkEmailComposerProps) => {
           <head>
             <title>Email Preview - ${previewSubject}</title>
             <style>
-              body { font-family: Arial, sans-serif; margin: 20px; }
-              .header { background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 20px; }
-              .content { border: 1px solid #e5e7eb; border-radius: 8px; padding: 20px; }
+              body { font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }
+              .header { background: #fff; padding: 20px; border-radius: 8px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+              .content { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+              .tag-info { background: #e3f2fd; padding: 15px; border-radius: 6px; margin: 10px 0; font-size: 12px; }
             </style>
           </head>
           <body>
             <div class="header">
-              <h2>Email Preview</h2>
+              <h2>📧 Email Preview</h2>
               <p><strong>Subject:</strong> ${previewSubject}</p>
-              <p><strong>From:</strong> ${fromName}</p>
+              <p><strong>From:</strong> ${rotationConfig.useRotation ? '[Rotating]' : fromName}</p>
               <p><strong>To:</strong> ${recipient.email}</p>
               <p><strong>Recipients:</strong> ${recipients.length} total</p>
+              ${selectedAccount ? `<p><strong>Sender:</strong> ${selectedAccount.name} (${selectedAccount.type})</p>` : ''}
+              <div class="tag-info">
+                <strong>Available Tags:</strong> [from], [subject], [to], [smtp], [smtp_name], [rndn_N], [rnda_N], [rndl_N], [rndu_N], [rnds_N], [rndlu_N], [rndln_N], [rndun_N]
+              </div>
             </div>
             <div class="content">
               ${previewHtml}
@@ -210,14 +301,23 @@ const BulkEmailComposer = ({ organizationId }: BulkEmailComposerProps) => {
 
       const recipientEmails = recipients.map(r => r.email).join(',');
 
-      await createCampaign({
+      // Create enhanced campaign with rotation config
+      const campaignData = {
         from_name: fromName,
         subject: subject,
         recipients: recipientEmails,
         html_content: htmlContent,
         text_content: textContent,
-        send_method: sendMethod
-      });
+        send_method: sendMethod,
+        config: {
+          rotation: rotationConfig,
+          selectedAccounts: selectedAccounts,
+          sendingMethod: sendingMethod,
+          recipientData: recipients
+        }
+      };
+
+      await createCampaign(campaignData);
 
       // Reset form but keep recipients for reuse
       setFromName('');
@@ -228,7 +328,7 @@ const BulkEmailComposer = ({ organizationId }: BulkEmailComposerProps) => {
 
       toast({
         title: "Campaign Created",
-        description: `Campaign created successfully with ${recipients.length} recipients`
+        description: `Campaign created successfully with ${recipients.length} recipients and tracking enabled`
       });
 
     } catch (error) {
@@ -440,28 +540,106 @@ const BulkEmailComposer = ({ organizationId }: BulkEmailComposerProps) => {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Mail className="w-5 h-5" />
-              Step 3: Email Content
+              Step 3: Email Content & Rotation
             </CardTitle>
             <CardDescription>
-              Create your email content and subject line
+              Create your email content with advanced rotation options
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="from-name">From Name *</Label>
+            {/* Rotation Toggle */}
+            <div className="flex items-center space-x-2 p-4 bg-gradient-to-r from-blue-50 to-purple-50 rounded-lg">
+              <Checkbox
+                id="use-rotation"
+                checked={rotationConfig.useRotation}
+                onCheckedChange={(checked) => setRotationConfig(prev => ({ ...prev, useRotation: checked as boolean }))}
+              />
+              <Label htmlFor="use-rotation" className="font-medium flex items-center gap-2">
+                <RotateCw className="w-4 h-4" />
+                Enable Rotation for From Names & Subjects
+              </Label>
+            </div>
+
+            {/* From Name Configuration */}
+            <div className="space-y-4">
+              <Label className="text-base font-medium">From Name Configuration</Label>
+              {rotationConfig.useRotation ? (
+                <div className="space-y-3">
+                  {rotationConfig.fromNames.map((name, index) => (
+                    <div key={index} className="flex gap-2">
+                      <Input
+                        placeholder={`From Name ${index + 1}`}
+                        value={name}
+                        onChange={(e) => updateRotationItem('fromNames', index, e.target.value)}
+                        className="flex-1"
+                      />
+                      {rotationConfig.fromNames.length > 1 && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => removeRotationItem('fromNames', index)}
+                        >
+                          Remove
+                        </Button>
+                      )}
+                    </div>
+                  ))}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => addRotationItem('fromNames')}
+                    className="w-full"
+                  >
+                    <Shuffle className="w-4 h-4 mr-2" />
+                    Add Another From Name
+                  </Button>
+                </div>
+              ) : (
                 <Input
-                  id="from-name"
                   placeholder="Your Name or Company"
                   value={fromName}
                   onChange={(e) => setFromName(e.target.value)}
                 />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="subject">Subject Line *</Label>
+              )}
+            </div>
+
+            {/* Subject Configuration */}
+            <div className="space-y-4">
+              <Label className="text-base font-medium">Subject Line Configuration</Label>
+              {rotationConfig.useRotation ? (
+                <div className="space-y-3">
+                  {rotationConfig.subjects.map((subj, index) => (
+                    <div key={index} className="flex gap-2">
+                      <Input
+                        placeholder={`Subject Line ${index + 1}`}
+                        value={subj}
+                        onChange={(e) => updateRotationItem('subjects', index, e.target.value)}
+                        className="flex-1"
+                      />
+                      {rotationConfig.subjects.length > 1 && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => removeRotationItem('subjects', index)}
+                        >
+                          Remove
+                        </Button>
+                      )}
+                    </div>
+                  ))}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => addRotationItem('subjects')}
+                    className="w-full"
+                  >
+                    <Shuffle className="w-4 h-4 mr-2" />
+                    Add Another Subject
+                  </Button>
+                </div>
+              ) : (
                 <div className="flex gap-2">
                   <Input
-                    id="subject"
                     placeholder="Your compelling subject line"
                     value={subject}
                     onChange={(e) => setSubject(e.target.value)}
@@ -469,7 +647,7 @@ const BulkEmailComposer = ({ organizationId }: BulkEmailComposerProps) => {
                   />
                   <AISubjectGenerator onGenerate={setSubject} />
                 </div>
-              </div>
+              )}
             </div>
 
             <Separator />
@@ -477,7 +655,25 @@ const BulkEmailComposer = ({ organizationId }: BulkEmailComposerProps) => {
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <Label className="text-base font-medium">Email Templates</Label>
-                <EmailTemplateLibrary onSelect={handleTemplateSelect} />
+                <EmailTemplateLibrary onSelectTemplate={handleTemplateSelect} />
+              </div>
+              
+              {/* Tag Information */}
+              <div className="p-4 bg-slate-50 rounded-lg">
+                <h4 className="font-medium mb-2">Available Tags:</h4>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
+                  <code>[from]</code> <span className="text-slate-600">From Name</span>
+                  <code>[subject]</code> <span className="text-slate-600">Subject</span>
+                  <code>[to]</code> <span className="text-slate-600">Recipient Email</span>
+                  <code>[smtp]</code> <span className="text-slate-600">SMTP Username</span>
+                  <code>[smtp_name]</code> <span className="text-slate-600">SMTP Name</span>
+                  <code>[rndn_N]</code> <span className="text-slate-600">Random Numbers</span>
+                  <code>[rnda_N]</code> <span className="text-slate-600">Random Alphanumeric</span>
+                  <code>[rndl_N]</code> <span className="text-slate-600">Random Lowercase</span>
+                  <code>[rndu_N]</code> <span className="text-slate-600">Random Uppercase</span>
+                  <code>[rnds_N]</code> <span className="text-slate-600">Random Symbols</span>
+                </div>
+                <p className="text-xs text-slate-500 mt-2">Replace N with desired length (e.g., [rndn_5] for 5 random numbers)</p>
               </div>
               
               <Tabs defaultValue="html" className="space-y-4">
@@ -491,21 +687,18 @@ const BulkEmailComposer = ({ organizationId }: BulkEmailComposerProps) => {
                   <Label htmlFor="html-content">HTML Content *</Label>
                   <Textarea
                     id="html-content"
-                    placeholder="<h1>Hello {{firstName}}!</h1><p>Your email content here...</p>"
+                    placeholder="<h1>Hello [to]!</h1><p>Your email content here... Use [from], [subject], [rndn_5] etc.</p>"
                     className="min-h-[300px] font-mono"
                     value={htmlContent}
                     onChange={(e) => setHtmlContent(e.target.value)}
                   />
-                  <p className="text-sm text-slate-500">
-                    Use personalization tags like {`{{firstName}}`}, {`{{lastName}}`}, {`{{email}}`}
-                  </p>
                 </TabsContent>
 
                 <TabsContent value="text" className="space-y-2">
                   <Label htmlFor="text-content">Plain Text Content</Label>
                   <Textarea
                     id="text-content"
-                    placeholder="Hello {{firstName}}! Your email content in plain text..."
+                    placeholder="Hello [to]! Your email content in plain text..."
                     className="min-h-[300px]"
                     value={textContent}
                     onChange={(e) => setTextContent(e.target.value)}
@@ -514,7 +707,7 @@ const BulkEmailComposer = ({ organizationId }: BulkEmailComposerProps) => {
 
                 <TabsContent value="preview">
                   <TagPreviewTool
-                    content={htmlContent}
+                    htmlContent={htmlContent}
                     recipients={recipients}
                   />
                 </TabsContent>
@@ -544,7 +737,7 @@ const BulkEmailComposer = ({ organizationId }: BulkEmailComposerProps) => {
               Step 4: Review & Send
             </CardTitle>
             <CardDescription>
-              Review your campaign settings and send
+              Review your campaign settings and send with tracking enabled
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
@@ -554,11 +747,15 @@ const BulkEmailComposer = ({ organizationId }: BulkEmailComposerProps) => {
                 <div className="space-y-2 text-sm">
                   <div className="flex justify-between">
                     <span className="text-slate-600">From Name:</span>
-                    <span className="font-medium">{fromName}</span>
+                    <span className="font-medium">
+                      {rotationConfig.useRotation ? `${rotationConfig.fromNames.length} variants` : fromName}
+                    </span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-slate-600">Subject:</span>
-                    <span className="font-medium">{subject}</span>
+                    <span className="font-medium">
+                      {rotationConfig.useRotation ? `${rotationConfig.subjects.length} variants` : subject}
+                    </span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-slate-600">Recipients:</span>
@@ -572,6 +769,10 @@ const BulkEmailComposer = ({ organizationId }: BulkEmailComposerProps) => {
                     <span className="text-slate-600">Sending Method:</span>
                     <span className="font-medium">{sendingMethod}</span>
                   </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-600">Tracking:</span>
+                    <span className="font-medium text-green-600">✓ Enabled (Opens, Clicks, Unsubscribes)</span>
+                  </div>
                 </div>
               </div>
 
@@ -580,7 +781,7 @@ const BulkEmailComposer = ({ organizationId }: BulkEmailComposerProps) => {
                 <div className="space-y-2">
                   <Button variant="outline" className="w-full" onClick={handlePreview}>
                     <Eye className="w-4 h-4 mr-2" />
-                    Preview Email
+                    Preview Email with Tags
                   </Button>
                   <Button 
                     className="w-full" 
@@ -595,7 +796,7 @@ const BulkEmailComposer = ({ organizationId }: BulkEmailComposerProps) => {
                     ) : (
                       <>
                         <Save className="w-4 h-4 mr-2" />
-                        Create Campaign
+                        Create Campaign with Tracking
                       </>
                     )}
                   </Button>
