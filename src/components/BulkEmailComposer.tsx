@@ -108,19 +108,23 @@ const BulkEmailComposer = ({ organizationId }: BulkEmailComposerProps) => {
       processed = processed.replace(/\[smtp_name\]/g, accountData.name || '');
     }
     
-    // Random tags
-    const randomTags = processed.match(/\[rnd[alnulslnun]+_(\d+)\]/g);
-    if (randomTags) {
-      randomTags.forEach(tag => {
-        const match = tag.match(/\[rnd([alnulslnun]+)_(\d+)\]/);
-        if (match) {
-          const type = match[1];
-          const length = parseInt(match[2]);
-          const randomValue = generateRandomValue(type, length);
-          processed = processed.replace(tag, randomValue);
-        }
+    // Random tags with all variations
+    const randomTagPatterns = [
+      { pattern: /\[rndn_(\d+)\]/g, type: 'n' },
+      { pattern: /\[rnda_(\d+)\]/g, type: 'a' },
+      { pattern: /\[rndl_(\d+)\]/g, type: 'l' },
+      { pattern: /\[rndu_(\d+)\]/g, type: 'u' },
+      { pattern: /\[rnds_(\d+)\]/g, type: 's' },
+      { pattern: /\[rndlu_(\d+)\]/g, type: 'lu' },
+      { pattern: /\[rndln_(\d+)\]/g, type: 'ln' },
+      { pattern: /\[rndun_(\d+)\]/g, type: 'un' }
+    ];
+
+    randomTagPatterns.forEach(({ pattern, type }) => {
+      processed = processed.replace(pattern, (match, length) => {
+        return generateRandomValue(type, parseInt(length));
       });
-    }
+    });
     
     // Legacy tags
     processed = processed.replace(/\{\{firstName\}\}/g, recipient.firstName || '');
@@ -439,7 +443,7 @@ const BulkEmailComposer = ({ organizationId }: BulkEmailComposerProps) => {
             <div className="flex justify-end mt-6">
               <Button 
                 onClick={() => setCurrentStep(2)} 
-                disabled={!canProceedToStep(2)}
+                disabled={recipients.length === 0}
               >
                 Next: Sender Settings
               </Button>
@@ -645,7 +649,7 @@ const BulkEmailComposer = ({ organizationId }: BulkEmailComposerProps) => {
                     onChange={(e) => setSubject(e.target.value)}
                     className="flex-1"
                   />
-                  <AISubjectGenerator onGenerate={setSubject} />
+                  <AISubjectGenerator onGenerated={setSubject} />
                 </div>
               )}
             </div>
@@ -707,8 +711,9 @@ const BulkEmailComposer = ({ organizationId }: BulkEmailComposerProps) => {
 
                 <TabsContent value="preview">
                   <TagPreviewTool
-                    htmlContent={htmlContent}
-                    recipients={recipients}
+                    onTagInsert={(tag) => {
+                      setHtmlContent(prev => prev + tag);
+                    }}
                   />
                 </TabsContent>
               </Tabs>
@@ -720,7 +725,7 @@ const BulkEmailComposer = ({ organizationId }: BulkEmailComposerProps) => {
               </Button>
               <Button 
                 onClick={() => setCurrentStep(4)} 
-                disabled={!canProceedToStep(4)}
+                disabled={!htmlContent.trim() || (!rotationConfig.useRotation && (!fromName.trim() || !subject.trim()))}
               >
                 Next: Review & Send
               </Button>

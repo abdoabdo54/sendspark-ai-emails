@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -17,11 +18,11 @@ import { useOrganizations } from '@/hooks/useOrganizations';
 import { sendEmailViaAppsScript } from '@/utils/appsScriptSender';
 import { sendEmailViaSMTP, testSMTPConnection } from '@/utils/emailSender';
 
-// Standardized interfaces
+// Standardized interfaces to match component requirements
 interface AppsScriptConfig {
   exec_url: string;
-  script_id?: string;
-  deployment_id?: string;
+  script_id: string;
+  deployment_id: string;
   daily_quota: number;
 }
 
@@ -178,18 +179,30 @@ const AccountManager = () => {
     
     if (account.type === 'apps-script') {
       setAppsScriptConfig({
-        ...appsScriptConfig,
-        ...account.config
+        exec_url: account.config?.exec_url || '',
+        script_id: account.config?.script_id || '',
+        deployment_id: account.config?.deployment_id || '',
+        daily_quota: account.config?.daily_quota || 100
       });
     } else if (account.type === 'smtp') {
       setSMTPConfig({
-        ...smtpConfig,
-        ...account.config
+        host: account.config?.host || '',
+        port: account.config?.port || 587,
+        username: account.config?.username || '',
+        password: account.config?.password || '',
+        encryption: account.config?.encryption || 'tls',
+        auth_required: account.config?.auth_required ?? true
       });
     } else if (account.type === 'powermta') {
       setPowerMTAConfig({
-        ...powerMTAConfig,
-        ...account.config
+        server_host: account.config?.server_host || '',
+        api_port: account.config?.api_port || 8080,
+        username: account.config?.username || '',
+        password: account.config?.password || '',
+        virtual_mta: account.config?.virtual_mta || '',
+        job_pool: account.config?.job_pool || '',
+        rate_limit: account.config?.rate_limit || 100,
+        max_hourly_rate: account.config?.max_hourly_rate || 1000
       });
     }
     
