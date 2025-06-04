@@ -1,519 +1,618 @@
-
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Progress } from "@/components/ui/progress";
-import { Mail, Upload, Play, Pause, Square, Users, Clock, CheckCircle, AlertCircle, Loader2, Calendar } from 'lucide-react';
-import CSVDataImporter from './CSVDataImporter';
-import TagPreviewTool from './TagPreviewTool';
-import CampaignScheduler from './CampaignScheduler';
-import { useEmailAccounts } from '@/hooks/useEmailAccounts';
+import { Badge } from "@/components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Separator } from "@/components/ui/separator";
+import { Upload, Users, Mail, Send, Eye, Save, Settings, AlertCircle } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
+import { useCampaigns } from '@/hooks/useCampaigns';
+import { useEmailAccounts } from '@/hooks/useEmailAccounts';
+import CSVDataImporter from './CSVDataImporter';
+import GoogleSheetsImport from './GoogleSheetsImport';
+import EmailTemplateLibrary from './EmailTemplateLibrary';
+import TagPreviewTool from './TagPreviewTool';
+import AISubjectGenerator from './AISubjectGenerator';
 
 interface BulkEmailComposerProps {
-  organizationId?: string;
+  organizationId: string;
 }
 
 interface RecipientData {
   email: string;
+  firstName?: string;
+  lastName?: string;
   [key: string]: any;
 }
 
-interface ScheduleOptions {
-  enabled: boolean;
-  scheduleType: 'immediate' | 'scheduled' | 'recurring';
-  scheduledDate: string;
-  scheduledTime: string;
-  timezone: string;
-  recurringPattern: 'daily' | 'weekly' | 'monthly';
-  recurringInterval: number;
-  endDate?: string;
-}
-
 const BulkEmailComposer = ({ organizationId }: BulkEmailComposerProps) => {
+  const { createCampaign } = useCampaigns(organizationId);
   const { accounts } = useEmailAccounts(organizationId);
   
-  const [activeTab, setActiveTab] = useState('recipients');
+  // Persistent state for recipients
   const [recipients, setRecipients] = useState<RecipientData[]>([]);
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [queueProgress, setQueueProgress] = useState(0);
-  const [queueStatus, setQueueStatus] = useState<'idle' | 'running' | 'paused' | 'completed'>('idle');
-  const [schedule, setSchedule] = useState<ScheduleOptions>({
-    enabled: false,
-    scheduleType: 'immediate',
-    scheduledDate: '',
-    scheduledTime: '',
-    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-    recurringPattern: 'weekly',
-    recurringInterval: 1
-  });
+  const [manualEmails, setManualEmails] = useState('');
+  
+  // Campaign configuration
+  const [fromName, setFromName] = useState('');
+  const [subject, setSubject] = useState('');
+  const [htmlContent, setHtmlContent] = useState('');
+  const [textContent, setTextContent] = useState('');
+  
+  // Sender selection
+  const [selectedAccounts, setSelectedAccounts] = useState<string[]>([]);
+  const [sendingMethod, setSendingMethod] = useState<'single' | 'multiple' | 'round-robin'>('single');
+  
+  // UI state
+  const [currentStep, setCurrentStep] = useState(1);
+  const [isCreating, setIsCreating] = useState(false);
+  const [previewRecipient, setPreviewRecipient] = useState<RecipientData | null>(null);
 
-  const [bulkData, setBulkData] = useState({
-    fromNames: ['Demo Campaign'],
-    subjects: ['Welcome to our newsletter!'],
-    htmlContent: '<h1>Hello {{firstname}}!</h1><p>Welcome to our newsletter from {{fromname}}.</p><p>We hope you enjoy our content.</p>',
-    textContent: 'Hello {{firstname}}! Welcome to our newsletter from {{fromname}}. We hope you enjoy our content.',
-    sendMethod: 'smtp',
-    maxConcurrent: 5,
-    rateLimitDelay: 2,
-    testEmail: '',
-    testFrequency: 100,
-    customHeaders: '{}'
-  });
+  const activeAccounts = accounts.filter(acc => acc.is_active);
 
-  const activeAccounts = accounts.filter(account => 
-    account.is_active && account.type === bulkData.sendMethod
-  );
+  // Persist recipients when they're added manually
+  useEffect(() => {
+    if (manualEmails.trim()) {
+      const emails = manualEmails.split('\n')
+        .map(line => line.trim())
+        .filter(line => line && line.includes('@'))
+        .map(email => ({ email: email.trim() }));
+      
+      // Merge with existing recipients, avoiding duplicates
+      const existingEmails = new Set(recipients.map(r => r.email));
+      const newRecipients = emails.filter(r => !existingEmails.has(r.email));
+      
+      if (newRecipients.length > 0) {
+        setRecipients(prev => [...prev, ...newRecipients]);
+      }
+    }
+  }, [manualEmails]);
 
-  const handleImportData = (data: Array<{ [key: string]: any }>) => {
-    const validData: RecipientData[] = data
-      .filter(item => item.email || item.Email || item.EMAIL)
-      .map(item => ({
-        email: item.email || item.Email || item.EMAIL,
-        ...item
-      }));
-
-    setRecipients(validData);
+  const handleCSVImport = (data: RecipientData[]) => {
+    // Replace recipients with CSV data
+    setRecipients(data);
     toast({
-      title: "Data Imported",
-      description: `Successfully imported ${validData.length} recipients`,
+      title: "CSV Imported",
+      description: `Successfully imported ${data.length} recipients`
     });
   };
 
-  const handleScheduleChange = (newSchedule: ScheduleOptions) => {
-    setSchedule(newSchedule);
+  const handleGoogleSheetsImport = (data: RecipientData[]) => {
+    // Replace recipients with Google Sheets data
+    setRecipients(data);
+    toast({
+      title: "Google Sheets Imported",
+      description: `Successfully imported ${data.length} recipients`
+    });
   };
 
-  const handleSendCampaign = async () => {
+  const handleTemplateSelect = (template: any) => {
+    setSubject(template.subject || '');
+    setHtmlContent(template.html_content || '');
+    setTextContent(template.text_content || '');
+    toast({
+      title: "Template Applied",
+      description: `Template "${template.name}" has been applied`
+    });
+  };
+
+  const handleAccountSelection = (accountId: string, checked: boolean) => {
+    if (checked) {
+      setSelectedAccounts(prev => [...prev, accountId]);
+    } else {
+      setSelectedAccounts(prev => prev.filter(id => id !== accountId));
+    }
+  };
+
+  const handlePreview = () => {
     if (recipients.length === 0) {
       toast({
         title: "No Recipients",
-        description: "Please import recipients before sending",
+        description: "Please add recipients to preview the email",
         variant: "destructive"
       });
       return;
     }
 
-    if (!bulkData.subjects[0] || !bulkData.htmlContent) {
-      toast({
-        title: "Missing Content",
-        description: "Please add subject and email content",
-        variant: "destructive"
-      });
-      return;
-    }
-
-    if (activeAccounts.length === 0) {
-      toast({
-        title: "No Active Accounts",
-        description: `Please add and activate at least one ${bulkData.sendMethod.toUpperCase()} account`,
-        variant: "destructive"
-      });
-      return;
-    }
-
-    if (schedule.enabled && schedule.scheduleType !== 'immediate') {
-      if (!schedule.scheduledDate || !schedule.scheduledTime) {
-        toast({
-          title: "Schedule Incomplete",
-          description: "Please set both date and time for scheduled campaigns",
-          variant: "destructive"
-        });
-        return;
-      }
-    }
-
-    setIsProcessing(true);
+    const recipient = recipients[0];
+    setPreviewRecipient(recipient);
     
+    // Create preview content with personalization
+    let previewHtml = htmlContent;
+    let previewSubject = subject;
+    
+    // Replace common tags
+    if (recipient.firstName) {
+      previewHtml = previewHtml.replace(/\{\{firstName\}\}/g, recipient.firstName);
+      previewSubject = previewSubject.replace(/\{\{firstName\}\}/g, recipient.firstName);
+    }
+    if (recipient.lastName) {
+      previewHtml = previewHtml.replace(/\{\{lastName\}\}/g, recipient.lastName);
+      previewSubject = previewSubject.replace(/\{\{lastName\}\}/g, recipient.lastName);
+    }
+    if (recipient.email) {
+      previewHtml = previewHtml.replace(/\{\{email\}\}/g, recipient.email);
+      previewSubject = previewSubject.replace(/\{\{email\}\}/g, recipient.email);
+    }
+
+    const previewWindow = window.open('', '_blank', 'width=800,height=600');
+    if (previewWindow) {
+      previewWindow.document.write(`
+        <html>
+          <head>
+            <title>Email Preview - ${previewSubject}</title>
+            <style>
+              body { font-family: Arial, sans-serif; margin: 20px; }
+              .header { background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 20px; }
+              .content { border: 1px solid #e5e7eb; border-radius: 8px; padding: 20px; }
+            </style>
+          </head>
+          <body>
+            <div class="header">
+              <h2>Email Preview</h2>
+              <p><strong>Subject:</strong> ${previewSubject}</p>
+              <p><strong>From:</strong> ${fromName}</p>
+              <p><strong>To:</strong> ${recipient.email}</p>
+              <p><strong>Recipients:</strong> ${recipients.length} total</p>
+            </div>
+            <div class="content">
+              ${previewHtml}
+            </div>
+          </body>
+        </html>
+      `);
+      previewWindow.document.close();
+    }
+  };
+
+  const handleCreateCampaign = async () => {
+    if (!fromName.trim() || !subject.trim() || !htmlContent.trim()) {
+      toast({
+        title: "Missing Information",
+        description: "Please fill in all required fields",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    if (recipients.length === 0) {
+      toast({
+        title: "No Recipients",
+        description: "Please add at least one recipient",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    if (selectedAccounts.length === 0) {
+      toast({
+        title: "No Sender Selected",
+        description: "Please select at least one email account",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    setIsCreating(true);
+
     try {
-      // Simulate campaign creation
-      const campaignName = `Bulk Campaign - ${new Date().toLocaleString()}`;
-      
-      if (schedule.enabled && schedule.scheduleType !== 'immediate') {
-        toast({
-          title: "Campaign Scheduled",
-          description: `Campaign "${campaignName}" has been scheduled successfully`,
-        });
-      } else {
-        // Simulate sending progress
-        let progress = 0;
-        const interval = setInterval(() => {
-          progress += Math.random() * 15;
-          if (progress >= 100) {
-            progress = 100;
-            setQueueStatus('completed');
-            clearInterval(interval);
-            toast({
-              title: "Campaign Sent",
-              description: `Successfully sent ${recipients.length} emails`,
-            });
-          }
-          setQueueProgress(progress);
-        }, 1000);
-        
-        setQueueStatus('running');
+      // Determine send method based on selected accounts
+      let sendMethod = 'smtp'; // default
+      const selectedAccount = accounts.find(acc => acc.id === selectedAccounts[0]);
+      if (selectedAccount) {
+        sendMethod = selectedAccount.type;
       }
+
+      const recipientEmails = recipients.map(r => r.email).join(',');
+
+      await createCampaign({
+        from_name: fromName,
+        subject: subject,
+        recipients: recipientEmails,
+        html_content: htmlContent,
+        text_content: textContent,
+        send_method: sendMethod
+      });
+
+      // Reset form but keep recipients for reuse
+      setFromName('');
+      setSubject('');
+      setHtmlContent('');
+      setTextContent('');
+      setCurrentStep(1);
+
+      toast({
+        title: "Campaign Created",
+        description: `Campaign created successfully with ${recipients.length} recipients`
+      });
+
     } catch (error) {
-      console.error('Error sending campaign:', error);
       toast({
         title: "Error",
-        description: "Failed to send campaign",
+        description: "Failed to create campaign",
         variant: "destructive"
       });
     } finally {
-      setIsProcessing(false);
+      setIsCreating(false);
     }
   };
 
-  const processPlaceholders = (content: string, recipient: RecipientData, fromName: string) => {
-    return content
-      .replace(/\{\{fromname\}\}/g, fromName)
-      .replace(/\{\{to\}\}/g, recipient.email)
-      .replace(/\{\{firstname\}\}/g, recipient.firstname || recipient.first_name || '')
-      .replace(/\{\{lastname\}\}/g, recipient.lastname || recipient.last_name || '')
-      .replace(/\{\{company\}\}/g, recipient.company || '')
-      .replace(/\{\{date\}\}/g, new Date().toLocaleDateString())
-      .replace(/\{\{rndn_(\d+)\}\}/g, (match, length) => {
-        return Math.random().toString(36).substring(2, 2 + parseInt(length));
-      });
-  };
-
-  const insertTag = (tag: string) => {
-    setBulkData(prev => ({
-      ...prev,
-      htmlContent: prev.htmlContent + tag
-    }));
+  const canProceedToStep = (step: number) => {
+    switch (step) {
+      case 2:
+        return recipients.length > 0;
+      case 3:
+        return recipients.length > 0 && fromName.trim() && subject.trim();
+      case 4:
+        return recipients.length > 0 && fromName.trim() && subject.trim() && htmlContent.trim();
+      default:
+        return true;
+    }
   };
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <div>
-          <h2 className="text-3xl font-bold text-slate-800">Bulk Email Campaign</h2>
-          <p className="text-slate-600">Professional bulk email sending with advanced scheduling</p>
+      {/* Progress Indicator */}
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center space-x-4">
+          {[1, 2, 3, 4].map((step) => (
+            <div key={step} className="flex items-center">
+              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${
+                currentStep >= step ? 'bg-blue-600 text-white' : 'bg-slate-200 text-slate-600'
+              }`}>
+                {step}
+              </div>
+              {step < 4 && <div className={`w-16 h-0.5 ${currentStep > step ? 'bg-blue-600' : 'bg-slate-200'}`} />}
+            </div>
+          ))}
         </div>
-        <div className="flex gap-2">
-          <Badge variant="outline" className="bg-blue-50 text-blue-700">
-            {recipients.length} Recipients
-          </Badge>
-          <Badge variant="outline" className="bg-green-50 text-green-700">
-            {activeAccounts.length} Active Accounts
-          </Badge>
+        <div className="text-sm text-slate-600">
+          Step {currentStep} of 4
         </div>
       </div>
 
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-5">
-          <TabsTrigger value="recipients" className="flex items-center gap-2">
-            <Users className="w-4 h-4" />
-            Recipients
-          </TabsTrigger>
-          <TabsTrigger value="content" className="flex items-center gap-2">
-            <Mail className="w-4 h-4" />
-            Content
-          </TabsTrigger>
-          <TabsTrigger value="schedule" className="flex items-center gap-2">
-            <Calendar className="w-4 h-4" />
-            Schedule
-          </TabsTrigger>
-          <TabsTrigger value="settings" className="flex items-center gap-2">
-            <Clock className="w-4 h-4" />
-            Settings
-          </TabsTrigger>
-          <TabsTrigger value="send" className="flex items-center gap-2">
-            <CheckCircle className="w-4 h-4" />
-            Send
-          </TabsTrigger>
-        </TabsList>
+      {/* Step Content */}
+      {currentStep === 1 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Users className="w-5 h-5" />
+              Step 1: Add Recipients
+            </CardTitle>
+            <CardDescription>
+              Import your recipient list from various sources
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Tabs defaultValue="manual" className="space-y-4">
+              <TabsList className="grid w-full grid-cols-3">
+                <TabsTrigger value="manual">Manual Entry</TabsTrigger>
+                <TabsTrigger value="csv">CSV Upload</TabsTrigger>
+                <TabsTrigger value="sheets">Google Sheets</TabsTrigger>
+              </TabsList>
 
-        <TabsContent value="recipients">
-          <Card>
-            <CardHeader>
-              <CardTitle>Import Recipients</CardTitle>
-              <CardDescription>
-                Import your recipient list from CSV data or other sources
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <CSVDataImporter onImport={handleImportData} />
-              
-              {recipients.length > 0 && (
-                <div className="mt-6">
-                  <div className="flex justify-between items-center mb-4">
-                    <h3 className="text-lg font-medium">Recipients Preview</h3>
-                    <Badge variant="secondary">{recipients.length} contacts</Badge>
+              <TabsContent value="manual" className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="manual-emails">Email Addresses (one per line)</Label>
+                  <Textarea
+                    id="manual-emails"
+                    placeholder="user1@example.com&#10;user2@example.com&#10;user3@example.com"
+                    className="min-h-[200px]"
+                    value={manualEmails}
+                    onChange={(e) => setManualEmails(e.target.value)}
+                  />
+                  <p className="text-sm text-slate-500">
+                    Enter one email address per line. Recipients will be automatically added as you type.
+                  </p>
+                </div>
+              </TabsContent>
+
+              <TabsContent value="csv">
+                <CSVDataImporter onDataImport={handleCSVImport} />
+              </TabsContent>
+
+              <TabsContent value="sheets">
+                <GoogleSheetsImport onDataImport={handleGoogleSheetsImport} />
+              </TabsContent>
+            </Tabs>
+
+            {recipients.length > 0 && (
+              <div className="mt-6 p-4 bg-blue-50 rounded-lg">
+                <div className="flex items-center gap-2 mb-2">
+                  <Users className="w-4 h-4 text-blue-600" />
+                  <span className="font-medium text-blue-900">
+                    {recipients.length} Recipients Added
+                  </span>
+                </div>
+                <div className="text-sm text-blue-700">
+                  Recipients: {recipients.slice(0, 3).map(r => r.email).join(', ')}
+                  {recipients.length > 3 && ` and ${recipients.length - 3} more...`}
+                </div>
+              </div>
+            )}
+
+            <div className="flex justify-end mt-6">
+              <Button 
+                onClick={() => setCurrentStep(2)} 
+                disabled={!canProceedToStep(2)}
+              >
+                Next: Sender Settings
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {currentStep === 2 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Settings className="w-5 h-5" />
+              Step 2: Configure Sending Settings
+            </CardTitle>
+            <CardDescription>
+              Choose your email accounts and sending strategy
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <div className="space-y-4">
+              <div>
+                <Label className="text-base font-medium">Select Email Accounts</Label>
+                <p className="text-sm text-slate-500 mb-3">
+                  Choose one or more email accounts to send your campaign
+                </p>
+                
+                {activeAccounts.length === 0 ? (
+                  <div className="flex items-center gap-2 p-4 bg-yellow-50 rounded-lg">
+                    <AlertCircle className="w-5 h-5 text-yellow-600" />
+                    <span className="text-yellow-800">
+                      No active email accounts found. Please configure email accounts first.
+                    </span>
                   </div>
-                  <div className="border rounded-lg max-h-64 overflow-auto">
-                    <table className="w-full text-sm">
-                      <thead className="bg-slate-50 sticky top-0">
-                        <tr>
-                          <th className="text-left p-2 border-b">Email</th>
-                          <th className="text-left p-2 border-b">First Name</th>
-                          <th className="text-left p-2 border-b">Last Name</th>
-                          <th className="text-left p-2 border-b">Company</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {recipients.slice(0, 10).map((recipient, index) => (
-                          <tr key={index} className="border-b">
-                            <td className="p-2">{recipient.email}</td>
-                            <td className="p-2">{recipient.firstname || recipient.first_name || '-'}</td>
-                            <td className="p-2">{recipient.lastname || recipient.last_name || '-'}</td>
-                            <td className="p-2">{recipient.company || '-'}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                    {recipients.length > 10 && (
-                      <div className="p-2 text-center text-slate-500 bg-slate-50">
-                        And {recipients.length - 10} more recipients...
+                ) : (
+                  <div className="space-y-3">
+                    {activeAccounts.map((account) => (
+                      <div key={account.id} className="flex items-center space-x-3 p-3 border rounded-lg">
+                        <Checkbox
+                          id={account.id}
+                          checked={selectedAccounts.includes(account.id)}
+                          onCheckedChange={(checked) => handleAccountSelection(account.id, checked as boolean)}
+                        />
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <Label htmlFor={account.id} className="font-medium cursor-pointer">
+                              {account.name}
+                            </Label>
+                            <Badge variant="outline">{account.type.toUpperCase()}</Badge>
+                          </div>
+                          <p className="text-sm text-slate-500">{account.email}</p>
+                        </div>
                       </div>
-                    )}
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="content">
-          <div className="space-y-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>Email Configuration</CardTitle>
-                <CardDescription>
-                  Configure your email content and settings
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label>From Names (one per line)</Label>
-                    <Textarea
-                      placeholder="Company Name&#10;Sales Team&#10;Marketing Department"
-                      value={bulkData.fromNames.join('\n')}
-                      onChange={(e) => setBulkData(prev => ({
-                        ...prev,
-                        fromNames: e.target.value.split('\n').filter(name => name.trim())
-                      }))}
-                      rows={3}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Send Method</Label>
-                    <Select 
-                      value={bulkData.sendMethod} 
-                      onValueChange={(value) => setBulkData(prev => ({ ...prev, sendMethod: value }))}
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="smtp">SMTP Server</SelectItem>
-                        <SelectItem value="apps-script">Google Apps Script</SelectItem>
-                        <SelectItem value="powermta">PowerMTA</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Subject Lines (one per line)</Label>
-                  <Textarea
-                    placeholder="Special Offer Just for You!&#10;Don't Miss Out - Limited Time&#10;Exclusive Deal Inside"
-                    value={bulkData.subjects.join('\n')}
-                    onChange={(e) => setBulkData(prev => ({
-                      ...prev,
-                      subjects: e.target.value.split('\n').filter(subject => subject.trim())
-                    }))}
-                    rows={3}
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <Label>HTML Content</Label>
-                    <TagPreviewTool onTagInsert={insertTag} />
-                  </div>
-                  <Textarea
-                    placeholder="Enter your HTML email content. Use placeholders like {{firstname}}, {{company}}, {{fromname}}"
-                    value={bulkData.htmlContent}
-                    onChange={(e) => setBulkData(prev => ({ ...prev, htmlContent: e.target.value }))}
-                    rows={10}
-                    className="font-mono text-sm"
-                  />
-                  <div className="text-xs text-slate-500">
-                    Available placeholders: firstname, lastname, company, fromname, to, date, rndn_10
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        </TabsContent>
-
-        <TabsContent value="schedule">
-          <CampaignScheduler 
-            onScheduleChange={handleScheduleChange}
-            initialSchedule={schedule}
-          />
-        </TabsContent>
-
-        <TabsContent value="settings">
-          <Card>
-            <CardHeader>
-              <CardTitle>Sending Settings</CardTitle>
-              <CardDescription>
-                Configure rate limiting and advanced sending options
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="space-y-2">
-                  <Label>Max Concurrent Sends</Label>
-                  <Input
-                    type="number"
-                    min="1"
-                    max="20"
-                    value={bulkData.maxConcurrent}
-                    onChange={(e) => setBulkData(prev => ({ ...prev, maxConcurrent: parseInt(e.target.value) || 5 }))}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Rate Limit Delay (seconds)</Label>
-                  <Input
-                    type="number"
-                    min="0"
-                    value={bulkData.rateLimitDelay}
-                    onChange={(e) => setBulkData(prev => ({ ...prev, rateLimitDelay: parseInt(e.target.value) || 2 }))}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Test Email Frequency</Label>
-                  <Input
-                    type="number"
-                    min="1"
-                    placeholder="Send test every X emails"
-                    value={bulkData.testFrequency}
-                    onChange={(e) => setBulkData(prev => ({ ...prev, testFrequency: parseInt(e.target.value) || 100 }))}
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label>Test Email Address</Label>
-                <Input
-                  type="email"
-                  placeholder="test@example.com"
-                  value={bulkData.testEmail}
-                  onChange={(e) => setBulkData(prev => ({ ...prev, testEmail: e.target.value }))}
-                />
-              </div>
-
-              {activeAccounts.length > 0 && (
-                <div className="bg-green-50 p-4 rounded-lg">
-                  <h4 className="font-medium text-green-800 mb-2">Active Sending Accounts:</h4>
-                  <div className="flex flex-wrap gap-2">
-                    {activeAccounts.map(account => (
-                      <Badge key={account.id} variant="secondary" className="bg-green-100 text-green-800">
-                        {account.name} ({account.email})
-                      </Badge>
                     ))}
                   </div>
+                )}
+              </div>
+
+              {selectedAccounts.length > 1 && (
+                <div className="space-y-3">
+                  <Label className="text-base font-medium">Sending Strategy</Label>
+                  <Select value={sendingMethod} onValueChange={(value: 'single' | 'multiple' | 'round-robin') => setSendingMethod(value)}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="single">Use first selected account</SelectItem>
+                      <SelectItem value="multiple">Send from all selected accounts</SelectItem>
+                      <SelectItem value="round-robin">Round-robin distribution</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-sm text-slate-500">
+                    {sendingMethod === 'single' && 'All emails will be sent from the first selected account'}
+                    {sendingMethod === 'multiple' && 'Campaign will be duplicated for each selected account'}
+                    {sendingMethod === 'round-robin' && 'Recipients will be distributed evenly across selected accounts'}
+                  </p>
                 </div>
               )}
-            </CardContent>
-          </Card>
-        </TabsContent>
+            </div>
 
-        <TabsContent value="send">
-          <Card>
-            <CardHeader>
-              <CardTitle>Campaign Summary & Send</CardTitle>
-              <CardDescription>
-                Review your campaign details and send when ready
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="space-y-4">
-                  <div>
-                    <h4 className="font-medium mb-2">Recipients</h4>
-                    <p className="text-sm text-slate-600">{recipients.length} recipients imported</p>
-                  </div>
-                  <div>
-                    <h4 className="font-medium mb-2">Content</h4>
-                    <p className="text-sm text-slate-600">
-                      {bulkData.subjects.length} subject line(s), HTML content ready
-                    </p>
-                  </div>
-                  <div>
-                    <h4 className="font-medium mb-2">Sending Method</h4>
-                    <p className="text-sm text-slate-600">
-                      {bulkData.sendMethod.toUpperCase()} ({activeAccounts.length} active accounts)
-                    </p>
-                  </div>
+            <div className="flex justify-between">
+              <Button variant="outline" onClick={() => setCurrentStep(1)}>
+                Back
+              </Button>
+              <Button 
+                onClick={() => setCurrentStep(3)} 
+                disabled={selectedAccounts.length === 0}
+              >
+                Next: Email Content
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {currentStep === 3 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Mail className="w-5 h-5" />
+              Step 3: Email Content
+            </CardTitle>
+            <CardDescription>
+              Create your email content and subject line
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="from-name">From Name *</Label>
+                <Input
+                  id="from-name"
+                  placeholder="Your Name or Company"
+                  value={fromName}
+                  onChange={(e) => setFromName(e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="subject">Subject Line *</Label>
+                <div className="flex gap-2">
+                  <Input
+                    id="subject"
+                    placeholder="Your compelling subject line"
+                    value={subject}
+                    onChange={(e) => setSubject(e.target.value)}
+                    className="flex-1"
+                  />
+                  <AISubjectGenerator onSubjectGenerated={setSubject} />
                 </div>
-                <div className="space-y-4">
-                  <div>
-                    <h4 className="font-medium mb-2">Schedule</h4>
-                    <p className="text-sm text-slate-600">
-                      {schedule.enabled 
-                        ? schedule.scheduleType === 'immediate' 
-                          ? 'Send immediately'
-                          : `Scheduled for ${schedule.scheduledDate} at ${schedule.scheduledTime}`
-                        : 'Send immediately'
-                      }
-                    </p>
+              </div>
+            </div>
+
+            <Separator />
+
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <Label className="text-base font-medium">Email Templates</Label>
+                <EmailTemplateLibrary onTemplateSelect={handleTemplateSelect} />
+              </div>
+              
+              <Tabs defaultValue="html" className="space-y-4">
+                <TabsList>
+                  <TabsTrigger value="html">HTML Content</TabsTrigger>
+                  <TabsTrigger value="text">Plain Text</TabsTrigger>
+                  <TabsTrigger value="preview">Preview & Tags</TabsTrigger>
+                </TabsList>
+
+                <TabsContent value="html" className="space-y-2">
+                  <Label htmlFor="html-content">HTML Content *</Label>
+                  <Textarea
+                    id="html-content"
+                    placeholder="<h1>Hello {{firstName}}!</h1><p>Your email content here...</p>"
+                    className="min-h-[300px] font-mono"
+                    value={htmlContent}
+                    onChange={(e) => setHtmlContent(e.target.value)}
+                  />
+                  <p className="text-sm text-slate-500">
+                    Use personalization tags like {`{{firstName}}`}, {`{{lastName}}`}, {`{{email}}`}
+                  </p>
+                </TabsContent>
+
+                <TabsContent value="text" className="space-y-2">
+                  <Label htmlFor="text-content">Plain Text Content</Label>
+                  <Textarea
+                    id="text-content"
+                    placeholder="Hello {{firstName}}! Your email content in plain text..."
+                    className="min-h-[300px]"
+                    value={textContent}
+                    onChange={(e) => setTextContent(e.target.value)}
+                  />
+                </TabsContent>
+
+                <TabsContent value="preview">
+                  <TagPreviewTool
+                    htmlContent={htmlContent}
+                    textContent={textContent}
+                    subject={subject}
+                    recipients={recipients}
+                  />
+                </TabsContent>
+              </Tabs>
+            </div>
+
+            <div className="flex justify-between">
+              <Button variant="outline" onClick={() => setCurrentStep(2)}>
+                Back
+              </Button>
+              <Button 
+                onClick={() => setCurrentStep(4)} 
+                disabled={!canProceedToStep(4)}
+              >
+                Next: Review & Send
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {currentStep === 4 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Send className="w-5 h-5" />
+              Step 4: Review & Send
+            </CardTitle>
+            <CardDescription>
+              Review your campaign settings and send
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="space-y-4">
+                <h4 className="font-medium">Campaign Summary</h4>
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-slate-600">From Name:</span>
+                    <span className="font-medium">{fromName}</span>
                   </div>
-                  <div>
-                    <h4 className="font-medium mb-2">Rate Limiting</h4>
-                    <p className="text-sm text-slate-600">
-                      Max {bulkData.maxConcurrent} concurrent, {bulkData.rateLimitDelay}s delay
-                    </p>
+                  <div className="flex justify-between">
+                    <span className="text-slate-600">Subject:</span>
+                    <span className="font-medium">{subject}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-600">Recipients:</span>
+                    <span className="font-medium">{recipients.length}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-600">Selected Accounts:</span>
+                    <span className="font-medium">{selectedAccounts.length}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-600">Sending Method:</span>
+                    <span className="font-medium">{sendingMethod}</span>
                   </div>
                 </div>
               </div>
 
-              {queueStatus === 'running' && (
+              <div className="space-y-4">
+                <h4 className="font-medium">Actions</h4>
                 <div className="space-y-2">
-                  <div className="flex justify-between text-sm">
-                    <span>Sending Progress</span>
-                    <span>{Math.round(queueProgress)}%</span>
-                  </div>
-                  <Progress value={queueProgress} className="w-full" />
+                  <Button variant="outline" className="w-full" onClick={handlePreview}>
+                    <Eye className="w-4 h-4 mr-2" />
+                    Preview Email
+                  </Button>
+                  <Button 
+                    className="w-full" 
+                    onClick={handleCreateCampaign}
+                    disabled={isCreating}
+                  >
+                    {isCreating ? (
+                      <>
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                        Creating Campaign...
+                      </>
+                    ) : (
+                      <>
+                        <Save className="w-4 h-4 mr-2" />
+                        Create Campaign
+                      </>
+                    )}
+                  </Button>
                 </div>
-              )}
-
-              <div className="flex gap-3">
-                <Button 
-                  onClick={handleSendCampaign}
-                  disabled={isProcessing || recipients.length === 0 || !bulkData.htmlContent}
-                  className="flex-1"
-                  size="lg"
-                >
-                  {isProcessing ? (
-                    <>
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      {schedule.enabled && schedule.scheduleType !== 'immediate' ? 'Scheduling...' : 'Sending...'}
-                    </>
-                  ) : (
-                    <>
-                      <Play className="w-4 h-4 mr-2" />
-                      {schedule.enabled && schedule.scheduleType !== 'immediate' ? 'Schedule Campaign' : 'Send Campaign'}
-                    </>
-                  )}
-                </Button>
               </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
+            </div>
+
+            <div className="flex justify-start">
+              <Button variant="outline" onClick={() => setCurrentStep(3)}>
+                Back
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 };

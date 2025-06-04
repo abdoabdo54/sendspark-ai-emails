@@ -1,61 +1,123 @@
 
+import { useState } from 'react';
 import { Button } from "@/components/ui/button";
-import { TestTube, BarChart3, Mail } from 'lucide-react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { Badge } from "@/components/ui/badge";
+import { 
+  Mail, 
+  TestTube, 
+  BarChart3, 
+  Settings, 
+  Users, 
+  Calendar,
+  Zap,
+  Eye
+} from 'lucide-react';
+import { useOrganizations } from '@/hooks/useOrganizations';
 
-const Header = () => {
-  const location = useLocation();
-  const navigate = useNavigate();
+interface HeaderProps {
+  activeTab: string;
+  onTabChange: (tab: string) => void;
+}
 
-  const navItems = [
+const Header = ({ activeTab, onTabChange }: HeaderProps) => {
+  const { currentOrganization } = useOrganizations();
+
+  const navigationItems = [
     {
-      path: '/',
+      id: 'bulk',
       label: 'Email Composer',
       icon: Mail,
-      active: location.pathname === '/'
+      description: 'Create and send bulk email campaigns'
     },
     {
-      path: '/tools',
-      label: 'Testing Tools',
+      id: 'testing',
+      label: 'Campaign Testing',
       icon: TestTube,
-      active: location.pathname === '/tools'
+      description: 'Test campaigns before sending'
     },
     {
-      path: '/campaigns',
+      id: 'campaigns',
       label: 'Manage Campaigns',
+      icon: Calendar,
+      description: 'View and manage your campaigns'
+    },
+    {
+      id: 'analytics',
+      label: 'Analytics',
       icon: BarChart3,
-      active: location.pathname === '/campaigns'
+      description: 'Campaign performance and insights'
+    },
+    {
+      id: 'accounts',
+      label: 'Email Accounts',
+      icon: Settings,
+      description: 'Manage sending accounts'
+    },
+    {
+      id: 'tools',
+      label: 'Testing Tools',
+      icon: Zap,
+      description: 'SMTP and DNS testing tools'
     }
   ];
 
   return (
     <header className="bg-white border-b border-slate-200 sticky top-0 z-50">
-      <div className="container mx-auto px-6 py-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Mail className="w-8 h-8 text-blue-600" />
-            <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
-              Email Mailer
-            </h1>
+      <div className="container mx-auto px-6">
+        <div className="flex items-center justify-between py-4">
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 bg-gradient-to-r from-blue-600 to-purple-600 rounded-lg flex items-center justify-center">
+                <Mail className="w-5 h-5 text-white" />
+              </div>
+              <div>
+                <h1 className="text-xl font-bold text-slate-800">Email Campaign Platform</h1>
+                {currentOrganization && (
+                  <p className="text-sm text-slate-600">{currentOrganization.name}</p>
+                )}
+              </div>
+            </div>
           </div>
-          
-          <nav className="flex items-center gap-2">
-            {navItems.map((item) => {
+
+          <div className="flex items-center gap-2">
+            {currentOrganization && (
+              <>
+                <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
+                  {currentOrganization.name}
+                </Badge>
+                <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
+                  {currentOrganization.subscription_plan.toUpperCase()}
+                </Badge>
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* Navigation */}
+        <nav className="border-t border-slate-100">
+          <div className="flex items-center gap-1 py-2 overflow-x-auto">
+            {navigationItems.map((item) => {
               const Icon = item.icon;
+              const isActive = activeTab === item.id;
+              
               return (
                 <Button
-                  key={item.path}
-                  variant={item.active ? "default" : "ghost"}
-                  onClick={() => navigate(item.path)}
-                  className="flex items-center gap-2"
+                  key={item.id}
+                  variant={isActive ? "default" : "ghost"}
+                  size="sm"
+                  className={`flex items-center gap-2 whitespace-nowrap ${
+                    isActive ? 'bg-blue-600 text-white' : 'text-slate-600 hover:text-slate-800'
+                  }`}
+                  onClick={() => onTabChange(item.id)}
+                  title={item.description}
                 >
                   <Icon className="w-4 h-4" />
                   {item.label}
                 </Button>
               );
             })}
-          </nav>
-        </div>
+          </div>
+        </nav>
       </div>
     </header>
   );
