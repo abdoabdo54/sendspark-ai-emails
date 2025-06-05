@@ -1,3 +1,4 @@
+
 import { useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -76,190 +77,100 @@ const AppsScriptConfigForm = ({ config, onChange }: AppsScriptConfigFormProps) =
     }
   };
 
-  const appsScriptCode = `// Apps Script Mailer
-// IMPORTANT: After deploying this script as a Web App, use the *EXEC* URL (e.g., https://script.google.com/macros/s/ABCDE12345/exec)
-// To deploy: Deploy → New deployment → Select "Web app" → Execute as "Me" → Who has access "Anyone" → Deploy → Copy the **EXEC** URL.
-
-const JSON_MIME_TYPE = ContentService.MimeType.JSON;
-const TEXT_MIME_TYPE = ContentService.MimeType.TEXT; // For returning CSV
-
-/**
- * doGet: Handles GET requests.
- * Can be used for:
- *   1. Simple status check (no params or action=status).
- *   2. Fetching data from a Google Sheet (action=getSheetData&sheetUrl=URL_ENCODED_SHEET_LINK).
- */
+  const appsScriptCode = `// Apps Script Email Sender with HTML Support
 function doGet(e) {
   try {
-    const action = e.parameter.action;
-    
-    if (action === "getSheetData") {
-      const sheetUrl = e.parameter.sheetUrl;
-      if (!sheetUrl) {
-        return createErrorResponse("Missing 'sheetUrl' parameter for getSheetData action.", JSON_MIME_TYPE);
-      }
-      return getCsvDataFromSheet(sheetUrl);
-    } else { // Default or status check
-      const remaining = MailApp.getRemainingDailyQuota();
-      return createSuccessResponse('Mailer is active', remaining, JSON_MIME_TYPE);
-    }
+    const remaining = MailApp.getRemainingDailyQuota();
+    return ContentService
+      .createTextOutput(JSON.stringify({
+        status: 'success',
+        message: 'Apps Script is active',
+        remainingQuota: remaining
+      }))
+      .setMimeType(ContentService.MimeType.JSON);
   } catch (err) {
-    Logger.log("Error in doGet: " + err.toString() + (err.stack ? "\\nStack: " + err.stack : ""));
-    return createErrorResponse('Error processing GET request: ' + err.toString(), JSON_MIME_TYPE);
+    return ContentService
+      .createTextOutput(JSON.stringify({
+        status: 'error',
+        message: err.toString()
+      }))
+      .setMimeType(ContentService.MimeType.JSON);
   }
 }
 
-/**
- * Fetches data from a Google Sheet URL and returns it as CSV text.
- */
-function getCsvDataFromSheet(sheetUrl) {
-  try {
-    const spreadsheet = SpreadsheetApp.openByUrl(sheetUrl);
-    const sheet = spreadsheet.getSheets()[0]; // Get the first sheet
-    if (!sheet) {
-      return createErrorResponse("No sheets found in the Google Sheet.", TEXT_MIME_TYPE);
-    }
-    const data = sheet.getDataRange().getValues();
-    
-    if (!data || data.length === 0) {
-      return createErrorResponse("Google Sheet is empty or no data found.", TEXT_MIME_TYPE);
-    }
-
-    // Convert array of arrays to CSV string
-    const csvContent = data.map(row => {
-      return row.map(cell => {
-        let cellValue = cell.toString();
-        // Handle quotes and commas in cell values
-        if (cellValue.includes('"') || cellValue.includes(',')) {
-          cellValue = '"' + cellValue.replace(/"/g, '""') + '"';
-        }
-        return cellValue;
-      }).join(',');
-    }).join('\\n');
-    
-    // Return as plain text
-    return ContentService.createTextOutput(csvContent).setMimeType(TEXT_MIME_TYPE);
-
-  } catch (err) {
-    Logger.log("Error in getCsvDataFromSheet (URL: " + sheetUrl + "): " + err.toString() + (err.stack ? "\\nStack: " + err.stack : ""));
-    // Return error as plain text because client might expect CSV or error text
-    return createErrorResponse('Failed to get data from Google Sheet: ' + err.toString(), TEXT_MIME_TYPE, 500); // 500 for server error
-  }
-}
-
-/**
- * doPost: main entrypoint for sending emails
- * Expects JSON body with keys: 
- *   to (string, required), 
- *   subject (string, required), 
- *   htmlBody (string, optional), 
- *   plainBody (string, optional),
- *   fromName (string, optional for display name), 
- *   fromAlias (string, optional), 
- *   cc (string, optional), 
- *   bcc (string, optional), 
- *   attachments (array of strings, optional blob IDs)
- * POST to the EXEC URL.
- */
 function doPost(e) {
   try {
     const params = JSON.parse(e.postData.getDataAsString());
-    const to          = params.to;
-    const subject     = params.subject;
-    const htmlBody    = params.htmlBody;   
-    const plainBody   = params.plainBody;  
-    const fromName    = params.fromName;   
-    const fromAlias   = params.fromAlias;
-    const cc          = params.cc;
-    const bcc         = params.bcc;
-    const attachments = params.attachments || [];
+    const to = params.to;
+    const subject = params.subject;
+    const htmlBody = params.htmlBody;
+    const plainBody = params.plainBody;
+    const fromName = params.fromName;
+    const fromAlias = params.fromAlias;
+    const cc = params.cc;
+    const bcc = params.bcc;
 
-    if (!to || !subject) { 
-      return createErrorResponse("Missing required parameters: to or subject.", JSON_MIME_TYPE);
-    }
-    if (!htmlBody && !plainBody) { 
-        return createErrorResponse("Missing email body: htmlBody or plainBody must be provided.", JSON_MIME_TYPE);
+    if (!to || !subject) {
+      throw new Error("Missing required parameters: to or subject");
     }
 
-    const options = {}; 
+    if (!htmlBody && !plainBody) {
+      throw new Error("Missing email body: htmlBody or plainBody must be provided");
+    }
 
+    const options = {};
+
+    // Set HTML body if provided
     if (htmlBody) {
-        options.htmlBody = htmlBody;
+      options.htmlBody = htmlBody;
     }
+    
+    // Set plain text body if provided
     if (plainBody) {
-        options.body = plainBody; 
+      options.body = plainBody;
     }
-    
-    if (fromAlias && fromAlias.trim() !== "") {
-      options.from = fromAlias.trim(); 
-    }
-    
+
+    // Set sender name
     if (fromName && fromName.trim() !== "") {
-        if (!options.from || !options.from.includes("<")) { 
-            options.name = fromName.trim(); 
-        }
+      options.name = fromName.trim();
     }
 
-    if (cc && cc.trim() !== "") options.cc = cc.trim();
-    if (bcc && bcc.trim() !== "") options.bcc = bcc.trim();
-    
-    if (attachments.length) {
-      try {
-        options.attachments = attachments.map(id => {
-          if (typeof id !== 'string' || id.trim() === '') {
-            throw new Error("Invalid attachment ID found: " + id);
-          }
-          return DriveApp.getFileById(id.trim()).getBlob();
-        });
-      } catch (attachErr) {
-        Logger.log("Attachment processing error: " + attachErr.toString());
-        return createErrorResponse('Failed to process attachments: ' + attachErr.toString(), JSON_MIME_TYPE);
-      }
+    // Set from alias if provided
+    if (fromAlias && fromAlias.trim() !== "") {
+      options.from = fromAlias.trim();
     }
 
-    GmailApp.sendEmail(to, subject, "", options); 
+    // Set CC if provided
+    if (cc && cc.trim() !== "") {
+      options.cc = cc.trim();
+    }
+
+    // Set BCC if provided
+    if (bcc && bcc.trim() !== "") {
+      options.bcc = bcc.trim();
+    }
+
+    // Send the email using GmailApp for better HTML support
+    GmailApp.sendEmail(to, subject, plainBody || "", options);
 
     const remaining = MailApp.getRemainingDailyQuota();
-    return createSuccessResponse('Email sent successfully', remaining, JSON_MIME_TYPE);
+    return ContentService
+      .createTextOutput(JSON.stringify({
+        status: 'success',
+        message: 'Email sent successfully',
+        remainingQuota: remaining
+      }))
+      .setMimeType(ContentService.MimeType.JSON);
 
   } catch (err) {
-    Logger.log("Error in doPost: " + err.toString() + (err.stack ? "\\nStack: " + err.stack : ""));
-    return createErrorResponse('Failed to send email: ' + err.toString(), JSON_MIME_TYPE);
+    Logger.log("Error in doPost: " + err.toString());
+    return ContentService
+      .createTextOutput(JSON.stringify({
+        status: 'error',
+        message: 'Failed to send email: ' + err.toString()
+      }))
+      .setMimeType(ContentService.MimeType.JSON);
   }
-}
-
-/**
- * createSuccessResponse: helper to build standardized JSON success output
- */
-function createSuccessResponse(message, quota, mimeType) {
-  const payload = {
-    status: 'success',
-    message: message,
-    remainingQuota: quota 
-  };
-  return ContentService
-    .createTextOutput(JSON.stringify(payload))
-    .setMimeType(mimeType || JSON_MIME_TYPE);
-}
-
-/**
- * createErrorResponse: helper to build standardized JSON error output
- * For text responses (like CSV fetch errors), it just returns the message.
- */
-function createErrorResponse(message, mimeType, httpStatusCode) {
-  if (mimeType === TEXT_MIME_TYPE) {
-    var output = ContentService.createTextOutput("Error: " + message).setMimeType(TEXT_MIME_TYPE);
-    // Note: ContentService does not directly support setting HTTP status codes for textOutput easily in a way that all clients reliably interpret.
-    // The Python client will check response.ok and response.text.
-    return output;
-  }
-  const payload = {
-    status: 'error',
-    message: message
-  };
-  return ContentService
-    .createTextOutput(JSON.stringify(payload))
-    .setMimeType(mimeType || JSON_MIME_TYPE);
 }`;
 
   return (
@@ -270,7 +181,7 @@ function createErrorResponse(message, mimeType, httpStatusCode) {
           Google Apps Script Configuration
         </CardTitle>
         <CardDescription>
-          Configure your Google Apps Script deployment for email sending
+          Configure your Google Apps Script deployment for email sending with HTML support
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -388,12 +299,12 @@ function createErrorResponse(message, mimeType, httpStatusCode) {
             <DialogTrigger asChild>
               <Button variant="outline" size="sm" className="w-full">
                 <Code className="w-4 h-4 mr-2" />
-                View Apps Script Code
+                View Enhanced Apps Script Code
               </Button>
             </DialogTrigger>
             <DialogContent className="max-w-4xl max-h-[80vh]">
               <DialogHeader>
-                <DialogTitle>Google Apps Script Code</DialogTitle>
+                <DialogTitle>Google Apps Script Code (HTML Support)</DialogTitle>
               </DialogHeader>
               <div className="max-h-[60vh] overflow-auto">
                 <Textarea
