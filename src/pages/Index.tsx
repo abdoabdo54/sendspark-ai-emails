@@ -4,51 +4,18 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Loader2 } from 'lucide-react';
 import EmailComposer from "@/components/EmailComposer";
 import CampaignHistory from "@/components/CampaignHistory";
 import SettingsPanel from "@/components/SettingsPanel";
 import SubscriberManager from "@/components/SubscriberManager";
 import DashboardStats from "@/components/DashboardStats";
 import AccountManager from "@/components/AccountManager";
-import { useOrganizations } from '@/hooks/useOrganizations';
-import { Mail, Settings, History, Users, Server, Building2, TestTube, Target } from 'lucide-react';
+import { useSimpleOrganizations } from '@/contexts/SimpleOrganizationContext';
+import { Mail, Settings, History, Users, Server, TestTube, Target } from 'lucide-react';
 
 const Index = () => {
   const [activeTab, setActiveTab] = useState("compose");
-  const { currentOrganization, loading } = useOrganizations();
-
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-slate-100 flex items-center justify-center">
-        <div className="flex items-center gap-3">
-          <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
-          <span className="text-lg text-slate-600">Loading your workspace...</span>
-        </div>
-      </div>
-    );
-  }
-
-  if (!currentOrganization) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-slate-100 flex items-center justify-center">
-        <Card className="w-full max-w-md">
-          <CardHeader className="text-center">
-            <Building2 className="w-12 h-12 text-blue-600 mx-auto mb-4" />
-            <CardTitle>Welcome to Email Campaign Pro</CardTitle>
-            <CardDescription>
-              Setting up your workspace...
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="text-center">
-            <Button onClick={() => window.location.reload()}>
-              Retry Setup
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
+  const { currentOrganization } = useSimpleOrganizations();
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-slate-100">

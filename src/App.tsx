@@ -10,6 +10,7 @@ import Index from "./pages/Index";
 import Tools from "./pages/Tools";
 import Campaigns from "./pages/Campaigns";
 import NotFound from "./pages/NotFound";
+import { SimpleOrganizationProvider } from "./contexts/SimpleOrganizationContext";
 
 const queryClient = new QueryClient();
 
@@ -19,19 +20,21 @@ const App = () => {
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
-        <Toaster />
-        <Sonner />
-        <BrowserRouter>
-          <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-slate-100">
-            <Header activeTab={activeTab} onTabChange={setActiveTab} />
-            <Routes>
-              <Route path="/" element={<Index />} />
-              <Route path="/tools" element={<Tools />} />
-              <Route path="/campaigns" element={<Campaigns />} />
-              <Route path="*" element={<NotFound />} />
-            </Routes>
-          </div>
-        </BrowserRouter>
+        <SimpleOrganizationProvider>
+          <Toaster />
+          <Sonner />
+          <BrowserRouter>
+            <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-slate-100">
+              <Header activeTab={activeTab} onTabChange={setActiveTab} />
+              <Routes>
+                <Route path="/" element={<Index />} />
+                <Route path="/tools" element={<Tools />} />
+                <Route path="/campaigns" element={<Campaigns />} />
+                <Route path="*" element={<NotFound />} />
+              </Routes>
+            </div>
+          </BrowserRouter>
+        </SimpleOrganizationProvider>
       </TooltipProvider>
     </QueryClientProvider>
   );
