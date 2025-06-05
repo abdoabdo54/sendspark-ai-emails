@@ -12,8 +12,7 @@ import {
   Send,
   Wrench
 } from 'lucide-react';
-import OrganizationSetup from './OrganizationSetup';
-import { useOrganizations } from '@/hooks/useOrganizations';
+import { useSimpleOrganizations } from '@/contexts/SimpleOrganizationContext';
 import { useNavigate, useLocation } from 'react-router-dom';
 
 interface HeaderProps {
@@ -24,7 +23,7 @@ interface HeaderProps {
 const Header = ({ activeTab, onTabChange }: HeaderProps) => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { currentOrganization } = useOrganizations();
+  const { currentOrganization } = useSimpleOrganizations();
 
   const handleTabClick = (tab: string) => {
     console.log('Tab clicked:', tab);
@@ -78,7 +77,6 @@ const Header = ({ activeTab, onTabChange }: HeaderProps) => {
                 <p className="font-medium text-slate-900">{currentOrganization.name}</p>
               </div>
             )}
-            <OrganizationSetup />
           </div>
         </div>
         
