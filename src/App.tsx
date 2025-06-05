@@ -27,7 +27,7 @@ const App = () => {
             <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-slate-100">
               <Header activeTab={activeTab} onTabChange={setActiveTab} />
               <Routes>
-                <Route path="/" element={<Index />} />
+                <Route path="/" element={<Index activeTab={activeTab} onTabChange={setActiveTab} />} />
                 <Route path="/tools" element={<Tools />} />
                 <Route path="/campaigns" element={<Campaigns />} />
                 <Route path="*" element={<NotFound />} />

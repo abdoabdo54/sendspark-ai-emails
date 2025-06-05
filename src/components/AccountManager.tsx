@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -13,7 +14,7 @@ import { useEmailAccounts, EmailAccount } from '@/hooks/useEmailAccounts';
 import AppsScriptConfigForm from '@/components/AppsScriptConfigForm';
 import SMTPConfigForm from '@/components/SMTPConfigForm';
 import PowerMTAConfigForm from '@/components/PowerMTAConfigForm';
-import { useOrganizations } from '@/hooks/useOrganizations';
+import { useSimpleOrganizations } from '@/contexts/SimpleOrganizationContext';
 import { sendEmailViaAppsScript } from '@/utils/appsScriptSender';
 import { sendEmailViaSMTP, testSMTPConnection } from '@/utils/emailSender';
 
@@ -46,7 +47,7 @@ interface PowerMTAConfig {
 }
 
 const AccountManager = () => {
-  const { currentOrganization } = useOrganizations();
+  const { currentOrganization } = useSimpleOrganizations();
   const { accounts, loading, addAccount, updateAccount, deleteAccount, refetch } = useEmailAccounts(currentOrganization?.id);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingAccount, setEditingAccount] = useState<EmailAccount | null>(null);

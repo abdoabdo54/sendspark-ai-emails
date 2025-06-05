@@ -22,8 +22,9 @@ interface SimpleOrganizationContextType {
 
 const SimpleOrganizationContext = createContext<SimpleOrganizationContextType | undefined>(undefined);
 
+// Use a proper UUID format instead of "demo-org-id"
 const defaultOrganization: Organization = {
-  id: 'demo-org-id',
+  id: '550e8400-e29b-41d4-a716-446655440000',
   name: 'Demo Organization',
   subscription_plan: 'pro',
   subdomain: 'demo-org',
@@ -34,10 +35,12 @@ const defaultOrganization: Organization = {
 
 export const SimpleOrganizationProvider = ({ children }: { children: ReactNode }) => {
   const createOrganization = async (orgData: any): Promise<Organization> => {
-    // Return a mock organization for demo purposes
+    // Generate a proper UUID format for new organizations
+    const newId = `${Date.now().toString(16).padStart(8, '0')}-${Math.random().toString(16).substr(2, 4)}-4${Math.random().toString(16).substr(2, 3)}-${Math.random().toString(16).substr(2, 4)}-${Math.random().toString(16).substr(2, 12)}`;
+    
     return {
       ...defaultOrganization,
-      id: `org-${Date.now()}`,
+      id: newId,
       name: orgData.name || 'New Organization',
       subdomain: orgData.subdomain || 'new-org'
     };

@@ -1,9 +1,5 @@
-
-import { useState } from 'react';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import EmailComposer from "@/components/EmailComposer";
 import CampaignHistory from "@/components/CampaignHistory";
 import SettingsPanel from "@/components/SettingsPanel";
@@ -11,11 +7,36 @@ import SubscriberManager from "@/components/SubscriberManager";
 import DashboardStats from "@/components/DashboardStats";
 import AccountManager from "@/components/AccountManager";
 import { useSimpleOrganizations } from '@/contexts/SimpleOrganizationContext';
-import { Mail, Settings, History, Users, Server, TestTube, Target } from 'lucide-react';
+import { Mail, Settings, History, Users, Server } from 'lucide-react';
 
-const Index = () => {
-  const [activeTab, setActiveTab] = useState("compose");
+interface IndexProps {
+  activeTab: string;
+  onTabChange: (tab: string) => void;
+}
+
+const Index = ({ activeTab, onTabChange }: IndexProps) => {
   const { currentOrganization } = useSimpleOrganizations();
+
+  const renderMainContent = () => {
+    // If activeTab is one of the header tabs, show EmailComposer
+    if (['bulk', 'single', 'testing', 'analytics', 'accounts'].includes(activeTab)) {
+      return <EmailComposer activeTab={activeTab} />;
+    }
+    
+    // Otherwise show the local tab content
+    switch (activeTab) {
+      case 'accounts-local':
+        return <AccountManager />;
+      case 'subscribers':
+        return <SubscriberManager />;
+      case 'history':
+        return <CampaignHistory />;
+      case 'settings':
+        return <SettingsPanel />;
+      default:
+        return <EmailComposer activeTab="bulk" />;
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-slate-100">
@@ -41,30 +62,10 @@ const Index = () => {
           </div>
         </div>
 
-        {/* Quick Navigation */}
-        <div className="mb-6 flex flex-wrap gap-3">
-          <Button 
-            variant="outline" 
-            onClick={() => window.location.href = '/tools'}
-            className="flex items-center gap-2"
-          >
-            <TestTube className="w-4 h-4" />
-            Testing Tools
-          </Button>
-          <Button 
-            variant="outline" 
-            onClick={() => window.location.href = '/campaigns'}
-            className="flex items-center gap-2"
-          >
-            <Target className="w-4 h-4" />
-            Campaign Manager
-          </Button>
-        </div>
-
         {/* Dashboard Stats */}
         <DashboardStats />
 
-        {/* Main Interface */}
+        {/* Main Content */}
         <Card className="mt-6 shadow-lg">
           <CardHeader className="bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-t-lg">
             <CardTitle className="text-2xl">Campaign Management Center</CardTitle>
@@ -72,66 +73,8 @@ const Index = () => {
               Create, schedule, and manage professional email campaigns with advanced features
             </CardDescription>
           </CardHeader>
-          <CardContent className="p-0">
-            <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-              <TabsList className="grid w-full grid-cols-5 bg-white border-b">
-                <TabsTrigger 
-                  value="compose" 
-                  className="flex items-center gap-2 data-[state=active]:bg-blue-50 data-[state=active]:text-blue-700"
-                >
-                  <Mail className="w-4 h-4" />
-                  Compose
-                </TabsTrigger>
-                <TabsTrigger 
-                  value="accounts" 
-                  className="flex items-center gap-2 data-[state=active]:bg-blue-50 data-[state=active]:text-blue-700"
-                >
-                  <Server className="w-4 h-4" />
-                  Accounts
-                </TabsTrigger>
-                <TabsTrigger 
-                  value="subscribers" 
-                  className="flex items-center gap-2 data-[state=active]:bg-blue-50 data-[state=active]:text-blue-700"
-                >
-                  <Users className="w-4 h-4" />
-                  Subscribers
-                </TabsTrigger>
-                <TabsTrigger 
-                  value="history" 
-                  className="flex items-center gap-2 data-[state=active]:bg-blue-50 data-[state=active]:text-blue-700"
-                >
-                  <History className="w-4 h-4" />
-                  History
-                </TabsTrigger>
-                <TabsTrigger 
-                  value="settings" 
-                  className="flex items-center gap-2 data-[state=active]:bg-blue-50 data-[state=active]:text-blue-700"
-                >
-                  <Settings className="w-4 h-4" />
-                  Settings
-                </TabsTrigger>
-              </TabsList>
-
-              <TabsContent value="compose" className="p-6">
-                <EmailComposer />
-              </TabsContent>
-
-              <TabsContent value="accounts" className="p-6">
-                <AccountManager />
-              </TabsContent>
-
-              <TabsContent value="subscribers" className="p-6">
-                <SubscriberManager />
-              </TabsContent>
-
-              <TabsContent value="history" className="p-6">
-                <CampaignHistory />
-              </TabsContent>
-
-              <TabsContent value="settings" className="p-6">
-                <SettingsPanel />
-              </TabsContent>
-            </Tabs>
+          <CardContent className="p-6">
+            {renderMainContent()}
           </CardContent>
         </Card>
       </div>
