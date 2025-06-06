@@ -248,6 +248,7 @@ export type Database = {
       }
       email_campaigns: {
         Row: {
+          config: Json | null
           created_at: string
           from_name: string
           html_content: string | null
@@ -263,6 +264,7 @@ export type Database = {
           total_recipients: number | null
         }
         Insert: {
+          config?: Json | null
           created_at?: string
           from_name: string
           html_content?: string | null
@@ -278,6 +280,7 @@ export type Database = {
           total_recipients?: number | null
         }
         Update: {
+          config?: Json | null
           created_at?: string
           from_name?: string
           html_content?: string | null
