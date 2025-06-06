@@ -1,5 +1,6 @@
 
 import { useState, useEffect } from 'react';
+import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
 
 export interface EmailAccount {
@@ -14,9 +15,6 @@ export interface EmailAccount {
   updated_at: string;
 }
 
-// Mock storage for demo mode
-let mockAccounts: EmailAccount[] = [];
-
 export const useEmailAccounts = (organizationId?: string) => {
   const [accounts, setAccounts] = useState<EmailAccount[]>([]);
   const [loading, setLoading] = useState(false);
@@ -26,9 +24,21 @@ export const useEmailAccounts = (organizationId?: string) => {
 
     try {
       setLoading(true);
-      // In demo mode, use mock storage
-      const filteredAccounts = mockAccounts.filter(account => account.organization_id === organizationId);
-      setAccounts(filteredAccounts);
+      const { data, error } = await supabase
+        .from('email_accounts')
+        .select('*')
+        .eq('organization_id', organizationId)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      
+      const typedData = (data || []).map(item => ({
+        ...item,
+        type: item.type as 'apps-script' | 'powermta' | 'smtp',
+        config: item.config || {}
+      })) as EmailAccount[];
+      
+      setAccounts(typedData);
     } catch (error) {
       console.error('Error fetching email accounts:', error);
       toast({
@@ -52,28 +62,47 @@ export const useEmailAccounts = (organizationId?: string) => {
     }
 
     try {
-      const newAccount: EmailAccount = {
-        ...accountData,
-        id: `account_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-        organization_id: organizationId,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
+      console.log('Creating account with data:', accountData);
+      
+      const accountToCreate = {
+        name: accountData.name,
+        type: accountData.type,
+        email: accountData.email,
+        is_active: accountData.is_active,
+        config: accountData.config || {},
+        organization_id: organizationId
       };
 
-      mockAccounts.push(newAccount);
-      setAccounts(prev => [newAccount, ...prev]);
+      const { data, error } = await supabase
+        .from('email_accounts')
+        .insert([accountToCreate])
+        .select()
+        .single();
+
+      if (error) {
+        console.error('Supabase error:', error);
+        throw error;
+      }
+
+      const typedData = {
+        ...data,
+        type: data.type as 'apps-script' | 'powermta' | 'smtp',
+        config: data.config || {}
+      } as EmailAccount;
+
+      setAccounts(prev => [typedData, ...prev]);
       
       toast({
         title: "Success",
         description: `${accountData.name} has been added successfully`
       });
       
-      return newAccount;
+      return typedData;
     } catch (error) {
       console.error('Error adding account:', error);
       toast({
         title: "Error",
-        description: "Failed to add email account",
+        description: `Failed to add email account: ${error.message}`,
         variant: "destructive"
       });
       throw error;
@@ -82,20 +111,26 @@ export const useEmailAccounts = (organizationId?: string) => {
 
   const updateAccount = async (id: string, updates: Partial<EmailAccount>) => {
     try {
-      const accountIndex = mockAccounts.findIndex(account => account.id === id);
-      if (accountIndex === -1) {
-        throw new Error('Account not found');
-      }
+      const { data, error } = await supabase
+        .from('email_accounts')
+        .update({
+          ...updates,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', id)
+        .select()
+        .single();
 
-      const updatedAccount = {
-        ...mockAccounts[accountIndex],
-        ...updates,
-        updated_at: new Date().toISOString()
-      };
+      if (error) throw error;
 
-      mockAccounts[accountIndex] = updatedAccount;
+      const typedData = {
+        ...data,
+        type: data.type as 'apps-script' | 'powermta' | 'smtp',
+        config: data.config || {}
+      } as EmailAccount;
+
       setAccounts(prev => prev.map(account => 
-        account.id === id ? updatedAccount : account
+        account.id === id ? typedData : account
       ));
       
       toast({
@@ -103,7 +138,7 @@ export const useEmailAccounts = (organizationId?: string) => {
         description: "Email account updated successfully"
       });
       
-      return updatedAccount;
+      return typedData;
     } catch (error) {
       console.error('Error updating account:', error);
       toast({
@@ -117,7 +152,13 @@ export const useEmailAccounts = (organizationId?: string) => {
 
   const deleteAccount = async (id: string) => {
     try {
-      mockAccounts = mockAccounts.filter(account => account.id !== id);
+      const { error } = await supabase
+        .from('email_accounts')
+        .delete()
+        .eq('id', id);
+
+      if (error) throw error;
+
       setAccounts(prev => prev.filter(account => account.id !== id));
       
       toast({

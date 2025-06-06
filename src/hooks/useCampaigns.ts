@@ -11,13 +11,14 @@ export interface Campaign {
   html_content?: string;
   text_content?: string;
   send_method: string;
-  status: 'draft' | 'sending' | 'sent' | 'failed';
+  status: 'draft' | 'prepared' | 'sending' | 'sent' | 'failed' | 'paused';
   sent_count: number;
   total_recipients: number;
   organization_id: string;
   created_at: string;
   sent_at?: string;
   config?: any;
+  prepared_emails?: any[];
 }
 
 export const useCampaigns = (organizationId?: string) => {
@@ -38,8 +39,9 @@ export const useCampaigns = (organizationId?: string) => {
       
       const typedData = (data || []).map(item => ({
         ...item,
-        status: item.status as 'draft' | 'sending' | 'sent' | 'failed',
-        config: item.config || {}
+        status: item.status as 'draft' | 'prepared' | 'sending' | 'sent' | 'failed' | 'paused',
+        config: item.config || {},
+        prepared_emails: item.prepared_emails || []
       })) as Campaign[];
       
       setCampaigns(typedData);
@@ -55,7 +57,7 @@ export const useCampaigns = (organizationId?: string) => {
     }
   };
 
-  const createCampaign = async (campaignData: Omit<Campaign, 'id' | 'created_at' | 'status' | 'sent_count' | 'total_recipients' | 'organization_id'>) => {
+  const createCampaign = async (campaignData: Omit<Campaign, 'id' | 'created_at' | 'status' | 'sent_count' | 'total_recipients' | 'organization_id' | 'prepared_emails'>) => {
     if (!organizationId) {
       toast({
         title: "Error",
@@ -81,7 +83,8 @@ export const useCampaigns = (organizationId?: string) => {
         total_recipients: recipientCount,
         sent_count: 0,
         status: 'draft',
-        config: campaignData.config || {}
+        config: campaignData.config || {},
+        prepared_emails: []
       };
 
       console.log('Campaign payload:', campaignToCreate);
@@ -99,8 +102,9 @@ export const useCampaigns = (organizationId?: string) => {
 
       const typedData = {
         ...data,
-        status: data.status as 'draft' | 'sending' | 'sent' | 'failed',
-        config: data.config || {}
+        status: data.status as 'draft' | 'prepared' | 'sending' | 'sent' | 'failed' | 'paused',
+        config: data.config || {},
+        prepared_emails: data.prepared_emails || []
       } as Campaign;
 
       setCampaigns(prev => [typedData, ...prev]);
@@ -116,6 +120,86 @@ export const useCampaigns = (organizationId?: string) => {
       toast({
         title: "Error",
         description: `Failed to create campaign: ${error.message}`,
+        variant: "destructive"
+      });
+      throw error;
+    }
+  };
+
+  const updateCampaign = async (campaignId: string, updates: Partial<Campaign>) => {
+    try {
+      console.log('Updating campaign:', campaignId, updates);
+
+      const { data, error } = await supabase
+        .from('email_campaigns')
+        .update(updates)
+        .eq('id', campaignId)
+        .select()
+        .single();
+
+      if (error) {
+        console.error('Error updating campaign:', error);
+        throw error;
+      }
+
+      const typedData = {
+        ...data,
+        status: data.status as 'draft' | 'prepared' | 'sending' | 'sent' | 'failed' | 'paused',
+        config: data.config || {},
+        prepared_emails: data.prepared_emails || []
+      } as Campaign;
+
+      setCampaigns(prev => prev.map(campaign => 
+        campaign.id === campaignId ? typedData : campaign
+      ));
+
+      toast({
+        title: "Success",
+        description: "Campaign updated successfully"
+      });
+
+      return typedData;
+    } catch (error) {
+      console.error('Error updating campaign:', error);
+      toast({
+        title: "Error",
+        description: `Failed to update campaign: ${error.message}`,
+        variant: "destructive"
+      });
+      throw error;
+    }
+  };
+
+  const prepareCampaign = async (campaignId: string) => {
+    try {
+      console.log('Preparing campaign:', campaignId);
+
+      // Call the prepare function
+      const { data, error } = await supabase.functions.invoke('prepare-campaign', {
+        body: { campaignId }
+      });
+
+      if (error) {
+        console.error('Error calling prepare-campaign:', error);
+        throw error;
+      }
+
+      console.log('Campaign preparation result:', data);
+
+      toast({
+        title: "Success",
+        description: "Campaign has been prepared and is ready to send"
+      });
+
+      // Refresh campaigns to get updated status
+      await fetchCampaigns();
+      
+      return data;
+    } catch (error) {
+      console.error('Error preparing campaign:', error);
+      toast({
+        title: "Error",
+        description: `Failed to prepare campaign: ${error.message}`,
         variant: "destructive"
       });
       throw error;
@@ -164,7 +248,7 @@ export const useCampaigns = (organizationId?: string) => {
     } catch (error) {
       console.error('Error sending campaign:', error);
       
-      // Revert status back to draft on error
+      // Revert status back to prepared/draft on error
       await supabase
         .from('email_campaigns')
         .update({ status: 'draft' })
@@ -177,6 +261,39 @@ export const useCampaigns = (organizationId?: string) => {
       });
       
       await fetchCampaigns();
+      throw error;
+    }
+  };
+
+  const pauseCampaign = async (campaignId: string) => {
+    try {
+      await updateCampaign(campaignId, { status: 'paused' });
+      toast({
+        title: "Success",
+        description: "Campaign has been paused"
+      });
+    } catch (error) {
+      console.error('Error pausing campaign:', error);
+      throw error;
+    }
+  };
+
+  const resumeCampaign = async (campaignId: string) => {
+    try {
+      // Find the campaign
+      const campaign = campaigns.find(c => c.id === campaignId);
+      if (!campaign) {
+        throw new Error('Campaign not found');
+      }
+
+      // If campaign is prepared, resume sending
+      if (campaign.status === 'prepared' || campaign.status === 'paused') {
+        await sendCampaign(campaignId);
+      } else {
+        throw new Error('Campaign must be prepared before resuming');
+      }
+    } catch (error) {
+      console.error('Error resuming campaign:', error);
       throw error;
     }
   };
@@ -251,7 +368,11 @@ export const useCampaigns = (organizationId?: string) => {
     campaigns,
     loading,
     createCampaign,
+    updateCampaign,
+    prepareCampaign,
     sendCampaign,
+    pauseCampaign,
+    resumeCampaign,
     duplicateCampaign,
     deleteCampaign,
     refetch: fetchCampaigns

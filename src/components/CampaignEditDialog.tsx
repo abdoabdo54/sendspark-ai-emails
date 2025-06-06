@@ -1,41 +1,44 @@
 
-import React, { useState } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Badge } from '@/components/ui/badge';
-import { Switch } from '@/components/ui/switch';
-import { toast } from '@/hooks/use-toast';
-import { useCampaigns } from '@/hooks/useCampaigns';
+import React, { useState, useEffect } from 'react';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
+import { Plus, Trash2, Edit } from 'lucide-react';
+import { Campaign, useCampaigns } from '@/hooks/useCampaigns';
 import { useEmailAccounts } from '@/hooks/useEmailAccounts';
 import { useOrganizations } from '@/hooks/useOrganizations';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Plus, Trash2, Eye, Zap } from 'lucide-react';
+import { toast } from '@/hooks/use-toast';
 
-const BulkEmailComposer = () => {
+interface CampaignEditDialogProps {
+  campaign: Campaign;
+  trigger?: React.ReactNode;
+}
+
+const CampaignEditDialog = ({ campaign, trigger }: CampaignEditDialogProps) => {
   const { currentOrganization } = useOrganizations();
-  const { createCampaign } = useCampaigns(currentOrganization?.id);
+  const { updateCampaign } = useCampaigns(currentOrganization?.id);
   const { accounts } = useEmailAccounts(currentOrganization?.id);
 
-  const [fromName, setFromName] = useState('');
-  const [subject, setSubject] = useState('');
-  const [recipients, setRecipients] = useState('');
-  const [htmlContent, setHtmlContent] = useState('');
-  const [textContent, setTextContent] = useState('');
-  const [selectedAccounts, setSelectedAccounts] = useState<string[]>([]);
-  const [sendingMethod, setSendingMethod] = useState('sequential');
+  const [open, setOpen] = useState(false);
+  const [fromName, setFromName] = useState(campaign.from_name);
+  const [subject, setSubject] = useState(campaign.subject);
+  const [recipients, setRecipients] = useState(campaign.recipients);
+  const [htmlContent, setHtmlContent] = useState(campaign.html_content || '');
+  const [textContent, setTextContent] = useState(campaign.text_content || '');
+  const [selectedAccounts, setSelectedAccounts] = useState<string[]>(campaign.config?.selectedAccounts || []);
+  const [sendingMethod, setSendingMethod] = useState(campaign.config?.sendingMethod || 'sequential');
   
   // Rotation settings
-  const [useRotation, setUseRotation] = useState(false);
-  const [rotationFromNames, setRotationFromNames] = useState<string[]>(['']);
-  const [rotationSubjects, setRotationSubjects] = useState<string[]>(['']);
-  
-  // Rate limiting settings
-  const [emailsPerHour, setEmailsPerHour] = useState(60);
+  const [useRotation, setUseRotation] = useState(campaign.config?.rotation?.useRotation || false);
+  const [rotationFromNames, setRotationFromNames] = useState<string[]>(campaign.config?.rotation?.fromNames || ['']);
+  const [rotationSubjects, setRotationSubjects] = useState<string[]>(campaign.config?.rotation?.subjects || ['']);
   
   const [loading, setLoading] = useState(false);
 
@@ -73,16 +76,7 @@ const BulkEmailComposer = () => {
     setRotationSubjects(prev => prev.filter((_, i) => i !== index));
   };
 
-  const handleCreateCampaign = async () => {
-    if (!currentOrganization?.id) {
-      toast({
-        title: "Error",
-        description: "No organization selected",
-        variant: "destructive"
-      });
-      return;
-    }
-
+  const handleSave = async () => {
     if (!fromName || !subject || !recipients) {
       toast({
         title: "Error",
@@ -104,10 +98,11 @@ const BulkEmailComposer = () => {
     setLoading(true);
     
     try {
-      const campaignConfig = {
+      const recipientCount = recipients.split(',').filter(email => email.trim()).length;
+      
+      const updatedConfig = {
         selectedAccounts,
         sendingMethod,
-        emailsPerHour,
         rotation: {
           useRotation,
           fromNames: useRotation ? rotationFromNames.filter(name => name.trim()) : [],
@@ -115,41 +110,29 @@ const BulkEmailComposer = () => {
         }
       };
 
-      const campaignData = {
+      const updates = {
         from_name: fromName,
         subject: subject,
         recipients: recipients,
         html_content: htmlContent,
         text_content: textContent,
-        send_method: 'bulk',
-        config: campaignConfig
+        total_recipients: recipientCount,
+        config: updatedConfig
       };
 
-      console.log('Creating campaign with data:', campaignData);
+      await updateCampaign(campaign.id, updates);
       
-      await createCampaign(campaignData);
-      
-      // Reset form
-      setFromName('');
-      setSubject('');
-      setRecipients('');
-      setHtmlContent('');
-      setTextContent('');
-      setSelectedAccounts([]);
-      setUseRotation(false);
-      setRotationFromNames(['']);
-      setRotationSubjects(['']);
-      setEmailsPerHour(60);
+      setOpen(false);
       
       toast({
         title: "Success",
-        description: "Campaign created successfully! You can now prepare it for sending."
+        description: "Campaign updated successfully!"
       });
     } catch (error) {
-      console.error('Error creating campaign:', error);
+      console.error('Error updating campaign:', error);
       toast({
         title: "Error",
-        description: `Failed to create campaign: ${error.message}`,
+        description: `Failed to update campaign: ${error.message}`,
         variant: "destructive"
       });
     } finally {
@@ -162,18 +145,24 @@ const BulkEmailComposer = () => {
   const validSubjects = rotationSubjects.filter(subject => subject.trim());
 
   return (
-    <div className="space-y-6">
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Zap className="w-5 h-5" />
-            Bulk Email Campaign
-          </CardTitle>
-          <p className="text-sm text-muted-foreground">
-            Create campaigns that prepare emails first, then send with rate limiting
-          </p>
-        </CardHeader>
-        <CardContent className="space-y-6">
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        {trigger || (
+          <Button variant="outline" size="sm" className="flex items-center gap-2">
+            <Edit className="w-4 h-4" />
+            Edit
+          </Button>
+        )}
+      </DialogTrigger>
+      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Edit Campaign</DialogTitle>
+          <DialogDescription>
+            Modify your email campaign settings and content.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="fromName">From Name *</Label>
@@ -224,7 +213,7 @@ const BulkEmailComposer = () => {
                 value={htmlContent}
                 onChange={(e) => setHtmlContent(e.target.value)}
                 placeholder="Enter your HTML email content here..."
-                className="min-h-[300px] font-mono"
+                className="min-h-[200px] font-mono"
               />
             </TabsContent>
             
@@ -233,12 +222,12 @@ const BulkEmailComposer = () => {
                 value={textContent}
                 onChange={(e) => setTextContent(e.target.value)}
                 placeholder="Enter your plain text email content here..."
-                className="min-h-[300px]"
+                className="min-h-[200px]"
               />
             </TabsContent>
 
             <TabsContent value="preview" className="space-y-2">
-              <div className="border rounded-lg p-4 min-h-[300px] bg-white">
+              <div className="border rounded-lg p-4 min-h-[200px] bg-white">
                 <div className="border-b pb-2 mb-4">
                   <div className="text-sm text-gray-600">
                     <strong>From:</strong> {fromName || 'Your Name'}
@@ -256,80 +245,59 @@ const BulkEmailComposer = () => {
             </TabsContent>
           </Tabs>
 
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">Email Accounts</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {activeAccounts.length === 0 ? (
-                <p className="text-gray-500">No active email accounts found. Please add and configure email accounts first.</p>
-              ) : (
-                <div className="space-y-3">
-                  {activeAccounts.map((account) => (
-                    <div key={account.id} className="flex items-center space-x-3 p-3 border rounded-lg">
-                      <Checkbox
-                        checked={selectedAccounts.includes(account.id)}
-                        onCheckedChange={() => handleAccountToggle(account.id)}
-                      />
-                      <div className="flex-1">
-                        <div className="flex items-center space-x-2">
-                          <span className="font-medium">{account.name}</span>
-                          <Badge variant="outline">{account.type}</Badge>
-                        </div>
-                        <p className="text-sm text-gray-600">{account.email}</p>
+          {/* Email Accounts Selection */}
+          <div className="space-y-3">
+            <Label>Email Accounts *</Label>
+            {activeAccounts.length === 0 ? (
+              <p className="text-gray-500">No active email accounts found.</p>
+            ) : (
+              <div className="space-y-3">
+                {activeAccounts.map((account) => (
+                  <div key={account.id} className="flex items-center space-x-3 p-3 border rounded-lg">
+                    <Checkbox
+                      checked={selectedAccounts.includes(account.id)}
+                      onCheckedChange={() => handleAccountToggle(account.id)}
+                    />
+                    <div className="flex-1">
+                      <div className="flex items-center space-x-2">
+                        <span className="font-medium">{account.name}</span>
+                        <Badge variant="outline">{account.type}</Badge>
                       </div>
+                      <p className="text-sm text-gray-600">{account.email}</p>
                     </div>
-                  ))}
-                  
-                  {selectedAccounts.length > 0 && (
-                    <div className="mt-4 space-y-3">
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div className="space-y-2">
-                          <Label>Sending Method</Label>
-                          <Select value={sendingMethod} onValueChange={setSendingMethod}>
-                            <SelectTrigger>
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="sequential">Sequential (use first account)</SelectItem>
-                              <SelectItem value="round-robin">Round Robin (rotate accounts)</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        <div className="space-y-2">
-                          <Label>Emails per Hour</Label>
-                          <Input
-                            type="number"
-                            value={emailsPerHour}
-                            onChange={(e) => setEmailsPerHour(parseInt(e.target.value) || 60)}
-                            min="1"
-                            max="3600"
-                            placeholder="60"
-                          />
-                          <p className="text-xs text-muted-foreground">
-                            Rate limiting to avoid spam filters
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-            </CardContent>
-          </Card>
+                  </div>
+                ))}
+                
+                {selectedAccounts.length > 0 && (
+                  <div className="space-y-2">
+                    <Label>Sending Method</Label>
+                    <Select value={sendingMethod} onValueChange={setSendingMethod}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="sequential">Sequential (use first account)</SelectItem>
+                        <SelectItem value="round-robin">Round Robin (rotate accounts)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
 
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg flex items-center space-x-2">
-                <span>Content Rotation</span>
-                <Switch
-                  checked={useRotation}
-                  onCheckedChange={setUseRotation}
-                />
-              </CardTitle>
-            </CardHeader>
+          {/* Content Rotation */}
+          <div className="space-y-4">
+            <div className="flex items-center space-x-2">
+              <Label>Content Rotation</Label>
+              <Switch
+                checked={useRotation}
+                onCheckedChange={setUseRotation}
+              />
+            </div>
+            
             {useRotation && (
-              <CardContent className="space-y-4">
+              <div className="space-y-4 border rounded-lg p-4">
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
                     <Label>From Names</Label>
@@ -381,31 +349,25 @@ const BulkEmailComposer = () => {
                     <Badge variant="outline">{validSubjects.length} subjects will rotate</Badge>
                   )}
                 </div>
-              </CardContent>
+              </div>
             )}
-          </Card>
-
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-            <h4 className="font-medium text-blue-900 mb-2">New Workflow:</h4>
-            <div className="text-sm text-blue-800 space-y-1">
-              <p>1. <strong>Create Campaign</strong> - Save your campaign as a draft</p>
-              <p>2. <strong>Prepare Campaign</strong> - Process all emails and apply personalization</p>
-              <p>3. <strong>Start Sending</strong> - Begin sending with rate limiting</p>
-              <p>4. <strong>Monitor & Control</strong> - Pause/resume as needed</p>
-            </div>
           </div>
 
-          <Button 
-            onClick={handleCreateCampaign} 
-            disabled={loading || !fromName || !subject || !recipients || selectedAccounts.length === 0}
-            className="w-full"
-          >
-            {loading ? 'Creating Campaign...' : 'Create Campaign'}
-          </Button>
-        </CardContent>
-      </Card>
-    </div>
+          <div className="flex justify-end space-x-2">
+            <Button variant="outline" onClick={() => setOpen(false)}>
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleSave} 
+              disabled={loading || !fromName || !subject || !recipients || selectedAccounts.length === 0}
+            >
+              {loading ? 'Saving...' : 'Save Changes'}
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 };
 
-export default BulkEmailComposer;
+export default CampaignEditDialog;

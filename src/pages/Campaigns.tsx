@@ -3,30 +3,33 @@ import { useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
-import { Play, Pause, Copy, Trash2, BarChart3, Users, Mail, Calendar, TestTube, Send, Eye } from 'lucide-react';
+import { Play, Pause, Copy, Trash2, BarChart3, Users, Mail, Calendar, TestTube, Send, Eye, Edit, Settings, Zap } from 'lucide-react';
 import { useCampaigns } from '@/hooks/useCampaigns';
 import { useEmailAccounts } from '@/hooks/useEmailAccounts';
 import { useOrganizations } from '@/hooks/useOrganizations';
 import { toast } from '@/hooks/use-toast';
 import { sendEmailViaAppsScript } from '@/utils/appsScriptSender';
 import { sendEmailViaSMTP } from '@/utils/emailSender';
+import CampaignEditDialog from '@/components/CampaignEditDialog';
 
 const Campaigns = () => {
   const { currentOrganization } = useOrganizations();
-  const { campaigns, loading, sendCampaign, createCampaign } = useCampaigns(currentOrganization?.id);
+  const { campaigns, loading, prepareCampaign, sendCampaign, resumeCampaign, pauseCampaign, duplicateCampaign, deleteCampaign } = useCampaigns(currentOrganization?.id);
   const { accounts } = useEmailAccounts(currentOrganization?.id);
   const [selectedCampaign, setSelectedCampaign] = useState<string | null>(null);
   const [isSending, setIsSending] = useState<string | null>(null);
   const [isTesting, setIsTesting] = useState<string | null>(null);
+  const [isPreparing, setIsPreparing] = useState<string | null>(null);
 
   const getStatusIcon = (status: string) => {
     switch (status) {
       case 'draft': return <Play className="w-4 h-4 text-blue-600" />;
-      case 'sending': return <Pause className="w-4 h-4 text-green-600" />;
+      case 'prepared': return <Zap className="w-4 h-4 text-orange-600" />;
+      case 'sending': return <Send className="w-4 h-4 text-green-600" />;
       case 'sent': return <Mail className="w-4 h-4 text-slate-600" />;
+      case 'paused': return <Pause className="w-4 h-4 text-yellow-600" />;
       case 'failed': return <Trash2 className="w-4 h-4 text-red-600" />;
       default: return <Mail className="w-4 h-4 text-slate-600" />;
     }
@@ -35,8 +38,10 @@ const Campaigns = () => {
   const getStatusBadge = (status: string) => {
     const variants = {
       draft: 'secondary',
+      prepared: 'default',
       sending: 'default',
       sent: 'outline',
+      paused: 'destructive',
       failed: 'destructive'
     };
     return variants[status as keyof typeof variants] || 'outline';
@@ -57,6 +62,26 @@ const Campaigns = () => {
     });
   };
 
+  const handlePrepareCampaign = async (campaignId: string) => {
+    setIsPreparing(campaignId);
+    try {
+      await prepareCampaign(campaignId);
+      toast({
+        title: "Campaign Prepared",
+        description: "Your campaign has been prepared and is ready to send!"
+      });
+    } catch (error) {
+      console.error('Failed to prepare campaign:', error);
+      toast({
+        title: "Failed to Prepare Campaign",
+        description: "There was an error preparing your campaign. Please try again.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsPreparing(null);
+    }
+  };
+
   const handleStartCampaign = async (campaignId: string) => {
     setIsSending(campaignId);
     try {
@@ -74,6 +99,43 @@ const Campaigns = () => {
       });
     } finally {
       setIsSending(null);
+    }
+  };
+
+  const handleResumeCampaign = async (campaignId: string) => {
+    setIsSending(campaignId);
+    try {
+      await resumeCampaign(campaignId);
+      toast({
+        title: "Campaign Resumed",
+        description: "Your campaign has been resumed!"
+      });
+    } catch (error) {
+      console.error('Failed to resume campaign:', error);
+      toast({
+        title: "Failed to Resume Campaign",
+        description: "There was an error resuming your campaign. Please try again.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsSending(null);
+    }
+  };
+
+  const handlePauseCampaign = async (campaignId: string) => {
+    try {
+      await pauseCampaign(campaignId);
+      toast({
+        title: "Campaign Paused",
+        description: "Your campaign has been paused."
+      });
+    } catch (error) {
+      console.error('Failed to pause campaign:', error);
+      toast({
+        title: "Failed to Pause Campaign",
+        description: "There was an error pausing your campaign. Please try again.",
+        variant: "destructive"
+      });
     }
   };
 
@@ -157,21 +219,7 @@ const Campaigns = () => {
 
   const handleDuplicateCampaign = async (campaign: any) => {
     try {
-      const duplicatedCampaign = {
-        from_name: `${campaign.from_name} (Copy)`,
-        subject: `${campaign.subject} (Copy)`,
-        recipients: campaign.recipients,
-        html_content: campaign.html_content,
-        text_content: campaign.text_content,
-        send_method: campaign.send_method,
-        config: campaign.config
-      };
-
-      await createCampaign(duplicatedCampaign);
-      toast({
-        title: "Campaign Duplicated",
-        description: "Campaign has been successfully duplicated!"
-      });
+      await duplicateCampaign(campaign.id);
     } catch (error) {
       console.error('Failed to duplicate campaign:', error);
       toast({
@@ -184,18 +232,9 @@ const Campaigns = () => {
 
   const handleDeleteCampaign = async (campaignId: string) => {
     try {
-      // Note: We need to implement deleteCampaign in the hook
-      toast({
-        title: "Campaign Deleted",
-        description: "Campaign has been successfully deleted!"
-      });
+      await deleteCampaign(campaignId);
     } catch (error) {
       console.error('Failed to delete campaign:', error);
-      toast({
-        title: "Deletion Failed",
-        description: "Failed to delete the campaign. Please try again.",
-        variant: "destructive"
-      });
     }
   };
 
@@ -331,16 +370,20 @@ const Campaigns = () => {
                   </div>
 
                   {/* Progress Bar */}
-                  {campaign.status === 'sending' && (
+                  {(campaign.status === 'sending' || campaign.status === 'prepared') && (
                     <div className="mb-6">
                       <div className="flex justify-between text-sm text-slate-600 mb-2">
-                        <span>Sending Progress</span>
+                        <span>{campaign.status === 'prepared' ? 'Ready to Send' : 'Sending Progress'}</span>
                         <span>{getProgress(campaign).toFixed(1)}%</span>
                       </div>
                       <div className="w-full bg-slate-200 rounded-full h-3">
                         <div 
-                          className="bg-gradient-to-r from-blue-600 to-purple-600 h-3 rounded-full transition-all duration-300"
-                          style={{ width: `${getProgress(campaign)}%` }}
+                          className={`h-3 rounded-full transition-all duration-300 ${
+                            campaign.status === 'prepared' 
+                              ? 'bg-gradient-to-r from-orange-500 to-yellow-500' 
+                              : 'bg-gradient-to-r from-blue-600 to-purple-600'
+                          }`}
+                          style={{ width: `${campaign.status === 'prepared' ? 100 : getProgress(campaign)}%` }}
                         />
                       </div>
                     </div>
@@ -349,9 +392,31 @@ const Campaigns = () => {
                   {/* Action Buttons */}
                   <div className="flex flex-wrap gap-2">
                     {campaign.status === 'draft' && (
+                      <>
+                        <Button 
+                          className="flex items-center gap-2"
+                          onClick={() => handlePrepareCampaign(campaign.id)}
+                          disabled={isPreparing === campaign.id}
+                        >
+                          {isPreparing === campaign.id ? (
+                            <>
+                              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                              Preparing...
+                            </>
+                          ) : (
+                            <>
+                              <Zap className="w-4 h-4" />
+                              Prepare Campaign
+                            </>
+                          )}
+                        </Button>
+                      </>
+                    )}
+
+                    {campaign.status === 'prepared' && (
                       <Button 
-                        className="flex items-center gap-2"
-                        onClick={() => handleStartCampaign(campaign.id)}
+                        className="flex items-center gap-2 bg-orange-500 hover:bg-orange-600"
+                        onClick={() => handleResumeCampaign(campaign.id)}
                         disabled={isSending === campaign.id}
                       >
                         {isSending === campaign.id ? (
@@ -362,7 +427,38 @@ const Campaigns = () => {
                         ) : (
                           <>
                             <Send className="w-4 h-4" />
-                            Start Campaign
+                            Start Sending
+                          </>
+                        )}
+                      </Button>
+                    )}
+
+                    {campaign.status === 'sending' && (
+                      <Button 
+                        variant="outline"
+                        className="flex items-center gap-2"
+                        onClick={() => handlePauseCampaign(campaign.id)}
+                      >
+                        <Pause className="w-4 h-4" />
+                        Pause
+                      </Button>
+                    )}
+
+                    {campaign.status === 'paused' && (
+                      <Button 
+                        className="flex items-center gap-2"
+                        onClick={() => handleResumeCampaign(campaign.id)}
+                        disabled={isSending === campaign.id}
+                      >
+                        {isSending === campaign.id ? (
+                          <>
+                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                            Resuming...
+                          </>
+                        ) : (
+                          <>
+                            <Play className="w-4 h-4" />
+                            Resume
                           </>
                         )}
                       </Button>
@@ -395,6 +491,16 @@ const Campaigns = () => {
                       <Eye className="w-4 h-4" />
                       Preview
                     </Button>
+
+                    <CampaignEditDialog 
+                      campaign={campaign}
+                      trigger={
+                        <Button variant="outline" className="flex items-center gap-2">
+                          <Edit className="w-4 h-4" />
+                          Edit
+                        </Button>
+                      }
+                    />
                     
                     <Button 
                       variant="outline" 
