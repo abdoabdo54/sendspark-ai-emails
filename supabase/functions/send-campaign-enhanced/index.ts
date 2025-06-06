@@ -51,8 +51,8 @@ function processTags(content: string, recipient: any, account: EmailAccount, con
   
   // Rotation logic
   if (config?.rotation?.useRotation) {
-    const fromNames = config.rotation.fromNames || [];
-    const subjects = config.rotation.subjects || [];
+    const fromNames = config.rotation.fromNames?.filter(n => n.trim()) || [];
+    const subjects = config.rotation.subjects?.filter(s => s.trim()) || [];
     
     if (fromNames.length > 0) {
       const fromName = fromNames[index % fromNames.length];
@@ -77,19 +77,23 @@ function processTags(content: string, recipient: any, account: EmailAccount, con
     processed = processed.replace(/\[smtp_name\]/g, account.name || '');
   }
   
-  // Random tags
-  const randomTags = processed.match(/\[rnd[alnulslnun]+_(\d+)\]/g);
-  if (randomTags) {
-    randomTags.forEach(tag => {
-      const match = tag.match(/\[rnd([alnulslnun]+)_(\d+)\]/);
-      if (match) {
-        const type = match[1];
-        const length = parseInt(match[2]);
-        const randomValue = generateRandomValue(type, length);
-        processed = processed.replace(tag, randomValue);
-      }
+  // Random tags with all variations
+  const randomTagPatterns = [
+    { pattern: /\[rndn_(\d+)\]/g, type: 'n' },
+    { pattern: /\[rnda_(\d+)\]/g, type: 'a' },
+    { pattern: /\[rndl_(\d+)\]/g, type: 'l' },
+    { pattern: /\[rndu_(\d+)\]/g, type: 'u' },
+    { pattern: /\[rnds_(\d+)\]/g, type: 's' },
+    { pattern: /\[rndlu_(\d+)\]/g, type: 'lu' },
+    { pattern: /\[rndln_(\d+)\]/g, type: 'ln' },
+    { pattern: /\[rndun_(\d+)\]/g, type: 'un' }
+  ];
+
+  randomTagPatterns.forEach(({ pattern, type }) => {
+    processed = processed.replace(pattern, (match, length) => {
+      return generateRandomValue(type, parseInt(length));
     });
-  }
+  });
   
   return processed;
 }
@@ -122,7 +126,7 @@ async function sendEmailViaSMTP(config: any, emailData: any): Promise<{ success:
   try {
     console.log(`Sending email via SMTP to ${emailData.to}`);
     
-    const response = await fetch('https://kzatxttazxwqawefumed.supabase.co/functions/v1/send-smtp-email', {
+    const response = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/send-smtp-email`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -144,6 +148,70 @@ async function sendEmailViaSMTP(config: any, emailData: any): Promise<{ success:
   } catch (error) {
     console.error('SMTP sending error:', error);
     return { success: false, error: error.message, logs: [`Fatal error: ${error.message}`] };
+  }
+}
+
+async function sendEmailViaAppsScript(config: any, emailData: any): Promise<{ success: boolean; error?: string; logs?: string[] }> {
+  try {
+    console.log(`Sending email via Apps Script to ${emailData.to}`);
+    
+    if (!config.exec_url) {
+      throw new Error('Apps Script execution URL is required');
+    }
+    
+    const payload = {
+      to: emailData.to,
+      subject: emailData.subject,
+      htmlBody: emailData.html,
+      plainBody: emailData.text || '',
+      fromName: emailData.from?.name || '',
+      fromAlias: emailData.from?.email || '',
+      cc: emailData.cc || '',
+      bcc: emailData.bcc || ''
+    };
+
+    console.log('Sending to Apps Script:', config.exec_url);
+
+    const response = await fetch(config.exec_url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload)
+    });
+
+    if (response.ok) {
+      const result = await response.json();
+      if (result.status === 'success') {
+        console.log('✓ Apps Script sent successfully');
+        return { 
+          success: true, 
+          logs: [`✓ Email sent via Apps Script to ${emailData.to}`, `Remaining quota: ${result.remainingQuota || 'Unknown'}`]
+        };
+      } else {
+        console.error('✗ Apps Script error:', result.message);
+        return { 
+          success: false, 
+          error: result.message || 'Apps Script sending failed',
+          logs: [`✗ Apps Script error: ${result.message}`]
+        };
+      }
+    } else {
+      const errorText = await response.text();
+      console.error('✗ Apps Script HTTP error:', response.status, errorText);
+      return { 
+        success: false, 
+        error: `HTTP ${response.status}: ${errorText}`,
+        logs: [`✗ Apps Script HTTP error: ${response.status} - ${errorText}`]
+      };
+    }
+  } catch (error) {
+    console.error('Apps Script sending error:', error);
+    return { 
+      success: false, 
+      error: error.message,
+      logs: [`✗ Apps Script fatal error: ${error.message}`]
+    };
   }
 }
 
@@ -218,7 +286,10 @@ serve(async (req) => {
         // Get from name with rotation
         let fromName = campaign.from_name;
         if (campaign.config?.rotation?.useRotation && campaign.config.rotation.fromNames?.length > 0) {
-          fromName = campaign.config.rotation.fromNames[i % campaign.config.rotation.fromNames.length];
+          const validFromNames = campaign.config.rotation.fromNames.filter(n => n.trim());
+          if (validFromNames.length > 0) {
+            fromName = validFromNames[i % validFromNames.length];
+          }
         }
 
         const emailData = {
@@ -230,21 +301,26 @@ serve(async (req) => {
         };
 
         // Send based on account type
+        let result;
         if (selectedAccount.type === 'smtp') {
-          const result = await sendEmailViaSMTP(selectedAccount.config, emailData);
-          
-          if (result.success) {
-            console.log(`✓ SMTP sent to: ${recipient}`);
-            results.push({ email: recipient, status: 'sent', account: selectedAccount.name });
-            sentCount++;
-          } else {
-            console.log(`✗ SMTP failed to: ${recipient} - ${result.error}`);
-            results.push({ email: recipient, status: 'failed', error: result.error, account: selectedAccount.name });
-          }
+          result = await sendEmailViaSMTP(selectedAccount.config, emailData);
+        } else if (selectedAccount.type === 'apps-script') {
+          result = await sendEmailViaAppsScript(selectedAccount.config, emailData);
         } else {
-          // Handle other account types (apps-script, powermta) here
-          console.log(`✗ Account type ${selectedAccount.type} not yet implemented`);
-          results.push({ email: recipient, status: 'failed', error: 'Account type not implemented', account: selectedAccount.name });
+          result = { 
+            success: false, 
+            error: `Account type ${selectedAccount.type} not supported`,
+            logs: [`✗ Unsupported account type: ${selectedAccount.type}`]
+          };
+        }
+        
+        if (result.success) {
+          console.log(`✓ Email sent to: ${recipient} via ${selectedAccount.type}`);
+          results.push({ email: recipient, status: 'sent', account: selectedAccount.name });
+          sentCount++;
+        } else {
+          console.log(`✗ Email failed to: ${recipient} - ${result.error}`);
+          results.push({ email: recipient, status: 'failed', error: result.error, account: selectedAccount.name });
         }
 
       } catch (error) {
@@ -253,7 +329,7 @@ serve(async (req) => {
       }
       
       // Add delay between emails
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      await new Promise(resolve => setTimeout(resolve, 2000));
     }
 
     // Update campaign status
@@ -294,6 +370,7 @@ serve(async (req) => {
         totalRecipients: recipientList.length,
         accountsUsed: accounts.length,
         trackingEnabled: true,
+        supportedMethods: ['smtp', 'apps-script'],
         details: results
       }),
       { 

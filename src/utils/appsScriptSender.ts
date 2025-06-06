@@ -18,27 +18,29 @@ export async function sendEmailViaAppsScript(
   bcc?: string
 ): Promise<{ success: boolean; error?: string; remainingQuota?: number }> {
   try {
-    console.log('Sending email via Apps Script:', { to: toEmail, subject });
+    console.log('Sending email via Apps Script Web App:', { to: toEmail, subject });
     
     if (!config.exec_url) {
-      throw new Error('Apps Script execution URL is required');
+      throw new Error('Apps Script Web App execution URL is required');
     }
     
     const payload = {
       to: toEmail,
       subject: subject,
       htmlBody: htmlContent,
-      plainBody: textContent,
+      plainBody: textContent || '',
       fromName: fromName,
       fromAlias: fromEmail,
-      cc: cc,
-      bcc: bcc
+      cc: cc || '',
+      bcc: bcc || ''
     };
+
+    console.log('Sending payload to Apps Script:', payload);
 
     // In demo mode, simulate the Apps Script call
     if (config.exec_url.includes('demo') || config.exec_url.includes('localhost')) {
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      console.log('✓ Email sent successfully via Apps Script (Demo Mode)');
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      console.log('✓ Email sent successfully via Apps Script Web App (Demo Mode)');
       return { 
         success: true, 
         remainingQuota: Math.floor(Math.random() * 100) + 50
@@ -53,19 +55,23 @@ export async function sendEmailViaAppsScript(
       body: JSON.stringify(payload)
     });
 
+    console.log('Apps Script response status:', response.status);
+
     if (response.ok) {
       const result = await response.json();
+      console.log('Apps Script response:', result);
+      
       if (result.status === 'success') {
-        console.log('✓ Email sent successfully via Apps Script');
+        console.log('✓ Email sent successfully via Apps Script Web App');
         return { 
           success: true, 
-          remainingQuota: result.remainingQuota 
+          remainingQuota: result.remainingQuota || 0
         };
       } else {
         console.error('✗ Apps Script error:', result.message);
         return { 
           success: false, 
-          error: result.message || 'Apps Script sending failed' 
+          error: result.message || 'Apps Script Web App sending failed' 
         };
       }
     } else {
@@ -87,42 +93,46 @@ export async function sendEmailViaAppsScript(
 
 export async function testAppsScriptConnection(config: AppsScriptConfig): Promise<{ success: boolean; error?: string; remainingQuota?: number }> {
   try {
-    console.log('Testing Apps Script connection:', config.exec_url);
+    console.log('Testing Apps Script Web App connection:', config.exec_url);
     
     if (!config.exec_url) {
-      throw new Error('Apps Script execution URL is required');
+      throw new Error('Apps Script Web App execution URL is required');
     }
     
     // In demo mode, simulate the test
     if (config.exec_url.includes('demo') || config.exec_url.includes('localhost')) {
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      console.log('✓ Apps Script connection test successful (Demo Mode)');
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      console.log('✓ Apps Script Web App connection test successful (Demo Mode)');
       return { 
         success: true, 
         remainingQuota: Math.floor(Math.random() * 100) + 50
       };
     }
     
-    const response = await fetch(`${config.exec_url}?action=status`, {
+    const response = await fetch(config.exec_url, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
       },
     });
 
+    console.log('Apps Script test response status:', response.status);
+
     if (response.ok) {
       const result = await response.json();
+      console.log('Apps Script test response:', result);
+      
       if (result.status === 'success') {
-        console.log('✓ Apps Script connection test successful');
+        console.log('✓ Apps Script Web App connection test successful');
         return { 
           success: true, 
-          remainingQuota: result.remainingQuota 
+          remainingQuota: result.remainingQuota || 0
         };
       } else {
         console.error('✗ Apps Script status error:', result.message);
         return { 
           success: false, 
-          error: result.message || 'Apps Script connection failed' 
+          error: result.message || 'Apps Script Web App connection failed' 
         };
       }
     } else {

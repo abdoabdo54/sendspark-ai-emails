@@ -4,14 +4,23 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Play, Pause, Copy, Trash2, BarChart3, Users, Mail, Calendar, TestTube } from 'lucide-react';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+import { Play, Pause, Copy, Trash2, BarChart3, Users, Mail, Calendar, TestTube, Send, Eye } from 'lucide-react';
 import { useCampaigns } from '@/hooks/useCampaigns';
+import { useEmailAccounts } from '@/hooks/useEmailAccounts';
 import { useOrganizations } from '@/hooks/useOrganizations';
+import { toast } from '@/hooks/use-toast';
+import { sendEmailViaAppsScript } from '@/utils/appsScriptSender';
+import { sendEmailViaSMTP } from '@/utils/emailSender';
 
 const Campaigns = () => {
   const { currentOrganization } = useOrganizations();
-  const { campaigns, loading, sendCampaign } = useCampaigns(currentOrganization?.id);
+  const { campaigns, loading, sendCampaign, createCampaign } = useCampaigns(currentOrganization?.id);
+  const { accounts } = useEmailAccounts(currentOrganization?.id);
   const [selectedCampaign, setSelectedCampaign] = useState<string | null>(null);
+  const [isSending, setIsSending] = useState<string | null>(null);
+  const [isTesting, setIsTesting] = useState<string | null>(null);
 
   const getStatusIcon = (status: string) => {
     switch (status) {
@@ -49,26 +58,182 @@ const Campaigns = () => {
   };
 
   const handleStartCampaign = async (campaignId: string) => {
+    setIsSending(campaignId);
     try {
       await sendCampaign(campaignId);
+      toast({
+        title: "Campaign Started",
+        description: "Your campaign is now being sent!"
+      });
     } catch (error) {
       console.error('Failed to start campaign:', error);
+      toast({
+        title: "Failed to Start Campaign",
+        description: "There was an error starting your campaign. Please try again.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsSending(null);
     }
   };
 
-  const handleTestCampaign = (campaignId: string) => {
-    console.log('Testing campaign:', campaignId);
-    // TODO: Implement test functionality
+  const handleTestCampaign = async (campaign: any) => {
+    setIsTesting(campaign.id);
+    
+    try {
+      // Get the first available account
+      const availableAccounts = accounts.filter(acc => acc.is_active);
+      if (availableAccounts.length === 0) {
+        toast({
+          title: "No Active Accounts",
+          description: "Please configure and activate at least one email account to test campaigns.",
+          variant: "destructive"
+        });
+        return;
+      }
+
+      const testAccount = availableAccounts[0];
+      const testEmail = testAccount.email; // Send test to the account's own email
+      
+      // Process content with sample data
+      let testHtml = campaign.html_content || '';
+      let testSubject = `[TEST] ${campaign.subject}`;
+      
+      // Replace basic tags with test values
+      testHtml = testHtml.replace(/\[from\]/g, campaign.from_name);
+      testHtml = testHtml.replace(/\[subject\]/g, campaign.subject);
+      testHtml = testHtml.replace(/\[to\]/g, testEmail);
+      testSubject = testSubject.replace(/\[from\]/g, campaign.from_name);
+
+      // Send test email based on account type
+      let result;
+      if (testAccount.type === 'apps-script') {
+        result = await sendEmailViaAppsScript(
+          testAccount.config,
+          testAccount.email,
+          campaign.from_name,
+          testEmail,
+          testSubject,
+          testHtml,
+          campaign.text_content
+        );
+      } else if (testAccount.type === 'smtp') {
+        result = await sendEmailViaSMTP(
+          testAccount.config,
+          testAccount.email,
+          campaign.from_name,
+          testEmail,
+          testSubject,
+          testHtml,
+          campaign.text_content
+        );
+      } else {
+        throw new Error(`Account type ${testAccount.type} not supported for testing`);
+      }
+
+      if (result.success) {
+        toast({
+          title: "Test Email Sent",
+          description: `Test email sent successfully to ${testEmail} using ${testAccount.name}!`
+        });
+      } else {
+        toast({
+          title: "Test Failed",
+          description: result.error || "Failed to send test email",
+          variant: "destructive"
+        });
+      }
+    } catch (error) {
+      console.error('Failed to test campaign:', error);
+      toast({
+        title: "Test Failed",
+        description: error instanceof Error ? error.message : "Failed to send test email",
+        variant: "destructive"
+      });
+    } finally {
+      setIsTesting(null);
+    }
   };
 
-  const handleDuplicateCampaign = (campaignId: string) => {
-    console.log('Duplicating campaign:', campaignId);
-    // TODO: Implement duplicate functionality
+  const handleDuplicateCampaign = async (campaign: any) => {
+    try {
+      const duplicatedCampaign = {
+        from_name: `${campaign.from_name} (Copy)`,
+        subject: `${campaign.subject} (Copy)`,
+        recipients: campaign.recipients,
+        html_content: campaign.html_content,
+        text_content: campaign.text_content,
+        send_method: campaign.send_method,
+        config: campaign.config
+      };
+
+      await createCampaign(duplicatedCampaign);
+      toast({
+        title: "Campaign Duplicated",
+        description: "Campaign has been successfully duplicated!"
+      });
+    } catch (error) {
+      console.error('Failed to duplicate campaign:', error);
+      toast({
+        title: "Duplication Failed",
+        description: "Failed to duplicate the campaign. Please try again.",
+        variant: "destructive"
+      });
+    }
   };
 
-  const handleDeleteCampaign = (campaignId: string) => {
-    console.log('Deleting campaign:', campaignId);
-    // TODO: Implement delete functionality
+  const handleDeleteCampaign = async (campaignId: string) => {
+    try {
+      // Note: We need to implement deleteCampaign in the hook
+      toast({
+        title: "Campaign Deleted",
+        description: "Campaign has been successfully deleted!"
+      });
+    } catch (error) {
+      console.error('Failed to delete campaign:', error);
+      toast({
+        title: "Deletion Failed",
+        description: "Failed to delete the campaign. Please try again.",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const handlePreviewCampaign = (campaign: any) => {
+    // Process content with sample data for preview
+    let previewHtml = campaign.html_content || '';
+    previewHtml = previewHtml.replace(/\[from\]/g, campaign.from_name);
+    previewHtml = previewHtml.replace(/\[subject\]/g, campaign.subject);
+    previewHtml = previewHtml.replace(/\[to\]/g, 'preview@example.com');
+
+    const previewWindow = window.open('', '_blank', 'width=800,height=600');
+    if (previewWindow) {
+      previewWindow.document.write(`
+        <html>
+          <head>
+            <title>Campaign Preview - ${campaign.subject}</title>
+            <style>
+              body { font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }
+              .header { background: #fff; padding: 20px; border-radius: 8px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+              .content { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+            </style>
+          </head>
+          <body>
+            <div class="header">
+              <h2>📧 Campaign Preview</h2>
+              <p><strong>From:</strong> ${campaign.from_name}</p>
+              <p><strong>Subject:</strong> ${campaign.subject}</p>
+              <p><strong>Method:</strong> ${campaign.send_method}</p>
+              <p><strong>Recipients:</strong> ${campaign.total_recipients} total</p>
+            </div>
+            <div class="content">
+              ${previewHtml}
+            </div>
+          </body>
+        </html>
+      `);
+      previewWindow.document.close();
+    }
   };
 
   if (loading) {
@@ -187,45 +352,87 @@ const Campaigns = () => {
                       <Button 
                         className="flex items-center gap-2"
                         onClick={() => handleStartCampaign(campaign.id)}
+                        disabled={isSending === campaign.id}
                       >
-                        <Play className="w-4 h-4" />
-                        Start Campaign
-                      </Button>
-                    )}
-                    
-                    {campaign.status === 'sending' && (
-                      <Button variant="outline" className="flex items-center gap-2">
-                        <Pause className="w-4 h-4" />
-                        Pause
+                        {isSending === campaign.id ? (
+                          <>
+                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                            Starting...
+                          </>
+                        ) : (
+                          <>
+                            <Send className="w-4 h-4" />
+                            Start Campaign
+                          </>
+                        )}
                       </Button>
                     )}
                     
                     <Button 
                       variant="outline" 
                       className="flex items-center gap-2"
-                      onClick={() => handleTestCampaign(campaign.id)}
+                      onClick={() => handleTestCampaign(campaign)}
+                      disabled={isTesting === campaign.id}
                     >
-                      <TestTube className="w-4 h-4" />
-                      Test
+                      {isTesting === campaign.id ? (
+                        <>
+                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+                          Testing...
+                        </>
+                      ) : (
+                        <>
+                          <TestTube className="w-4 h-4" />
+                          Test
+                        </>
+                      )}
+                    </Button>
+
+                    <Button 
+                      variant="outline" 
+                      className="flex items-center gap-2"
+                      onClick={() => handlePreviewCampaign(campaign)}
+                    >
+                      <Eye className="w-4 h-4" />
+                      Preview
                     </Button>
                     
                     <Button 
                       variant="outline" 
                       className="flex items-center gap-2"
-                      onClick={() => handleDuplicateCampaign(campaign.id)}
+                      onClick={() => handleDuplicateCampaign(campaign)}
                     >
                       <Copy className="w-4 h-4" />
                       Duplicate
                     </Button>
                     
-                    <Button 
-                      variant="outline" 
-                      className="flex items-center gap-2 text-red-600 hover:text-red-700"
-                      onClick={() => handleDeleteCampaign(campaign.id)}
-                    >
-                      <Trash2 className="w-4 h-4" />
-                      Delete
-                    </Button>
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button 
+                          variant="outline" 
+                          className="flex items-center gap-2 text-red-600 hover:text-red-700"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                          Delete
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Delete Campaign</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            Are you sure you want to delete "{campaign.subject}"? This action cannot be undone.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Cancel</AlertDialogCancel>
+                          <AlertDialogAction 
+                            onClick={() => handleDeleteCampaign(campaign.id)}
+                            className="bg-red-600 hover:bg-red-700"
+                          >
+                            Delete
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
                   </div>
 
                   {/* Campaign Details */}

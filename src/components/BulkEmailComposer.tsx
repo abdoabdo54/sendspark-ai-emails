@@ -266,10 +266,34 @@ const BulkEmailComposer = ({ organizationId }: BulkEmailComposerProps) => {
   };
 
   const handleCreateCampaign = async () => {
-    if (!fromName.trim() || !subject.trim() || !htmlContent.trim()) {
+    // Validate required fields
+    if (!rotationConfig.useRotation && (!fromName.trim() || !subject.trim())) {
       toast({
         title: "Missing Information",
-        description: "Please fill in all required fields",
+        description: "Please fill in From Name and Subject",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    if (rotationConfig.useRotation) {
+      const validFromNames = rotationConfig.fromNames.filter(name => name.trim());
+      const validSubjects = rotationConfig.subjects.filter(subj => subj.trim());
+      
+      if (validFromNames.length === 0 || validSubjects.length === 0) {
+        toast({
+          title: "Missing Rotation Data",
+          description: "Please provide at least one From Name and Subject for rotation",
+          variant: "destructive"
+        });
+        return;
+      }
+    }
+
+    if (!htmlContent.trim()) {
+      toast({
+        title: "Missing Content",
+        description: "Please add HTML email content",
         variant: "destructive"
       });
       return;
@@ -296,6 +320,14 @@ const BulkEmailComposer = ({ organizationId }: BulkEmailComposerProps) => {
     setIsCreating(true);
 
     try {
+      console.log('Creating campaign with data:', {
+        fromName,
+        subject,
+        recipients: recipients.length,
+        selectedAccounts: selectedAccounts.length,
+        rotationConfig
+      });
+
       // Determine send method based on selected accounts
       let sendMethod = 'smtp'; // default
       const selectedAccount = accounts.find(acc => acc.id === selectedAccounts[0]);
@@ -307,11 +339,11 @@ const BulkEmailComposer = ({ organizationId }: BulkEmailComposerProps) => {
 
       // Create enhanced campaign with rotation config
       const campaignData = {
-        from_name: fromName,
-        subject: subject,
+        from_name: rotationConfig.useRotation ? rotationConfig.fromNames[0] : fromName,
+        subject: rotationConfig.useRotation ? rotationConfig.subjects[0] : subject,
         recipients: recipientEmails,
         html_content: htmlContent,
-        text_content: textContent,
+        text_content: textContent || '',
         send_method: sendMethod,
         config: {
           rotation: rotationConfig,
@@ -321,24 +353,36 @@ const BulkEmailComposer = ({ organizationId }: BulkEmailComposerProps) => {
         }
       };
 
-      await createCampaign(campaignData);
+      console.log('Campaign data to create:', campaignData);
 
-      // Reset form but keep recipients for reuse
-      setFromName('');
-      setSubject('');
-      setHtmlContent('');
-      setTextContent('');
-      setCurrentStep(1);
+      const createdCampaign = await createCampaign(campaignData);
+      
+      if (createdCampaign) {
+        console.log('Campaign created successfully:', createdCampaign);
+        
+        // Reset form but keep recipients for reuse
+        setFromName('');
+        setSubject('');
+        setHtmlContent('');
+        setTextContent('');
+        setCurrentStep(1);
+        setRotationConfig({
+          fromNames: [''],
+          subjects: [''],
+          useRotation: false
+        });
 
-      toast({
-        title: "Campaign Created",
-        description: `Campaign created successfully with ${recipients.length} recipients and tracking enabled`
-      });
+        toast({
+          title: "Campaign Created Successfully!",
+          description: `Campaign created with ${recipients.length} recipients. Go to Campaigns to manage and send it.`
+        });
+      }
 
     } catch (error) {
+      console.error('Campaign creation error:', error);
       toast({
-        title: "Error",
-        description: "Failed to create campaign",
+        title: "Campaign Creation Failed",
+        description: error instanceof Error ? error.message : "Failed to create campaign. Please try again.",
         variant: "destructive"
       });
     } finally {
@@ -351,9 +395,12 @@ const BulkEmailComposer = ({ organizationId }: BulkEmailComposerProps) => {
       case 2:
         return recipients.length > 0;
       case 3:
-        return recipients.length > 0 && fromName.trim() && subject.trim();
+        return recipients.length > 0 && selectedAccounts.length > 0;
       case 4:
-        return recipients.length > 0 && fromName.trim() && subject.trim() && htmlContent.trim();
+        return recipients.length > 0 && 
+               selectedAccounts.length > 0 && 
+               htmlContent.trim() && 
+               (rotationConfig.useRotation || (fromName.trim() && subject.trim()));
       default:
         return true;
     }
@@ -443,7 +490,7 @@ const BulkEmailComposer = ({ organizationId }: BulkEmailComposerProps) => {
             <div className="flex justify-end mt-6">
               <Button 
                 onClick={() => setCurrentStep(2)} 
-                disabled={recipients.length === 0}
+                disabled={!canProceedToStep(2)}
               >
                 Next: Sender Settings
               </Button>
@@ -530,7 +577,7 @@ const BulkEmailComposer = ({ organizationId }: BulkEmailComposerProps) => {
               </Button>
               <Button 
                 onClick={() => setCurrentStep(3)} 
-                disabled={selectedAccounts.length === 0}
+                disabled={!canProceedToStep(3)}
               >
                 Next: Email Content
               </Button>
@@ -725,7 +772,7 @@ const BulkEmailComposer = ({ organizationId }: BulkEmailComposerProps) => {
               </Button>
               <Button 
                 onClick={() => setCurrentStep(4)} 
-                disabled={!htmlContent.trim() || (!rotationConfig.useRotation && (!fromName.trim() || !subject.trim()))}
+                disabled={!canProceedToStep(4)}
               >
                 Next: Review & Send
               </Button>
@@ -739,10 +786,10 @@ const BulkEmailComposer = ({ organizationId }: BulkEmailComposerProps) => {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Send className="w-5 h-5" />
-              Step 4: Review & Send
+              Step 4: Review & Create Campaign
             </CardTitle>
             <CardDescription>
-              Review your campaign settings and send with tracking enabled
+              Review your campaign settings and create it for sending
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
@@ -753,13 +800,13 @@ const BulkEmailComposer = ({ organizationId }: BulkEmailComposerProps) => {
                   <div className="flex justify-between">
                     <span className="text-slate-600">From Name:</span>
                     <span className="font-medium">
-                      {rotationConfig.useRotation ? `${rotationConfig.fromNames.length} variants` : fromName}
+                      {rotationConfig.useRotation ? `${rotationConfig.fromNames.filter(n => n.trim()).length} variants` : fromName}
                     </span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-slate-600">Subject:</span>
                     <span className="font-medium">
-                      {rotationConfig.useRotation ? `${rotationConfig.subjects.length} variants` : subject}
+                      {rotationConfig.useRotation ? `${rotationConfig.subjects.filter(s => s.trim()).length} variants` : subject}
                     </span>
                   </div>
                   <div className="flex justify-between">
@@ -791,7 +838,7 @@ const BulkEmailComposer = ({ organizationId }: BulkEmailComposerProps) => {
                   <Button 
                     className="w-full" 
                     onClick={handleCreateCampaign}
-                    disabled={isCreating}
+                    disabled={isCreating || !canProceedToStep(4)}
                   >
                     {isCreating ? (
                       <>
@@ -801,7 +848,7 @@ const BulkEmailComposer = ({ organizationId }: BulkEmailComposerProps) => {
                     ) : (
                       <>
                         <Save className="w-4 h-4 mr-2" />
-                        Create Campaign with Tracking
+                        Create Campaign
                       </>
                     )}
                   </Button>

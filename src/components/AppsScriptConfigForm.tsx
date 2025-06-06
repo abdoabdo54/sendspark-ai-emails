@@ -77,22 +77,31 @@ const AppsScriptConfigForm = ({ config, onChange }: AppsScriptConfigFormProps) =
     }
   };
 
-  const appsScriptCode = `// Apps Script Email Sender with HTML Support
+  const appsScriptCode = `// Enhanced Google Apps Script Web App for Email Sending
+// Deploy this as a Web App with Execute as "Me" and access to "Anyone"
+
 function doGet(e) {
   try {
     const remaining = MailApp.getRemainingDailyQuota();
     return ContentService
       .createTextOutput(JSON.stringify({
         status: 'success',
-        message: 'Apps Script is active',
-        remainingQuota: remaining
+        message: 'Apps Script Web App is active and ready',
+        remainingQuota: remaining,
+        timestamp: new Date().toISOString()
       }))
-      .setMimeType(ContentService.MimeType.JSON);
+      .setMimeType(ContentService.MimeType.JSON)
+      .setHeaders({
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type'
+      });
   } catch (err) {
+    console.error('Error in doGet:', err);
     return ContentService
       .createTextOutput(JSON.stringify({
         status: 'error',
-        message: err.toString()
+        message: 'Failed to get status: ' + err.toString()
       }))
       .setMimeType(ContentService.MimeType.JSON);
   }
@@ -100,77 +109,121 @@ function doGet(e) {
 
 function doPost(e) {
   try {
-    const params = JSON.parse(e.postData.getDataAsString());
-    const to = params.to;
-    const subject = params.subject;
-    const htmlBody = params.htmlBody;
-    const plainBody = params.plainBody;
-    const fromName = params.fromName;
-    const fromAlias = params.fromAlias;
-    const cc = params.cc;
-    const bcc = params.bcc;
+    // Set CORS headers
+    const headers = {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type'
+    };
 
+    // Parse incoming data
+    let params;
+    try {
+      params = JSON.parse(e.postData.getDataAsString());
+    } catch (parseError) {
+      throw new Error('Invalid JSON in request body');
+    }
+
+    // Validate required fields
+    const { to, subject, htmlBody, plainBody, fromName, fromAlias, cc, bcc } = params;
+    
     if (!to || !subject) {
-      throw new Error("Missing required parameters: to or subject");
+      throw new Error("Missing required parameters: 'to' and 'subject' are required");
     }
 
     if (!htmlBody && !plainBody) {
-      throw new Error("Missing email body: htmlBody or plainBody must be provided");
+      throw new Error("Missing email body: either 'htmlBody' or 'plainBody' must be provided");
     }
 
-    const options = {};
+    // Prepare email options
+    const emailOptions = {};
 
-    // Set HTML body if provided
-    if (htmlBody) {
-      options.htmlBody = htmlBody;
+    // Set HTML body (preferred)
+    if (htmlBody && htmlBody.trim() !== "") {
+      emailOptions.htmlBody = htmlBody.trim();
     }
     
-    // Set plain text body if provided
-    if (plainBody) {
-      options.body = plainBody;
+    // Set plain text body as fallback or alternative
+    if (plainBody && plainBody.trim() !== "") {
+      emailOptions.body = plainBody.trim();
     }
 
     // Set sender name
     if (fromName && fromName.trim() !== "") {
-      options.name = fromName.trim();
+      emailOptions.name = fromName.trim();
     }
 
-    // Set from alias if provided
+    // Set reply-to address
     if (fromAlias && fromAlias.trim() !== "") {
-      options.from = fromAlias.trim();
+      emailOptions.replyTo = fromAlias.trim();
     }
 
-    // Set CC if provided
+    // Set CC recipients
     if (cc && cc.trim() !== "") {
-      options.cc = cc.trim();
+      emailOptions.cc = cc.trim();
     }
 
-    // Set BCC if provided
+    // Set BCC recipients
     if (bcc && bcc.trim() !== "") {
-      options.bcc = bcc.trim();
+      emailOptions.bcc = bcc.trim();
     }
 
-    // Send the email using GmailApp for better HTML support
-    GmailApp.sendEmail(to, subject, plainBody || "", options);
+    // Send email using GmailApp for better formatting support
+    try {
+      if (emailOptions.htmlBody) {
+        // Use GmailApp for HTML emails
+        GmailApp.sendEmail(to, subject, emailOptions.body || '', emailOptions);
+      } else {
+        // Use MailApp for plain text emails
+        MailApp.sendEmail(to, subject, emailOptions.body || '', emailOptions);
+      }
+    } catch (sendError) {
+      throw new Error('Email sending failed: ' + sendError.toString());
+    }
 
+    // Get remaining quota
     const remaining = MailApp.getRemainingDailyQuota();
+    
+    // Log successful send
+    console.log('Email sent successfully to:', to);
+    
     return ContentService
       .createTextOutput(JSON.stringify({
         status: 'success',
-        message: 'Email sent successfully',
-        remainingQuota: remaining
+        message: 'Email sent successfully via Google Apps Script',
+        remainingQuota: remaining,
+        recipient: to,
+        timestamp: new Date().toISOString()
       }))
-      .setMimeType(ContentService.MimeType.JSON);
+      .setMimeType(ContentService.MimeType.JSON)
+      .setHeaders(headers);
 
   } catch (err) {
-    Logger.log("Error in doPost: " + err.toString());
+    console.error('Error in doPost:', err);
     return ContentService
       .createTextOutput(JSON.stringify({
         status: 'error',
-        message: 'Failed to send email: ' + err.toString()
+        message: 'Failed to send email: ' + err.toString(),
+        timestamp: new Date().toISOString()
       }))
-      .setMimeType(ContentService.MimeType.JSON);
+      .setMimeType(ContentService.MimeType.JSON)
+      .setHeaders({
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type'
+      });
   }
+}
+
+// Handle preflight OPTIONS requests for CORS
+function doOptions(e) {
+  return ContentService
+    .createTextOutput('')
+    .setHeaders({
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type'
+    });
 }`;
 
   return (
@@ -178,15 +231,15 @@ function doPost(e) {
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Code className="w-5 h-5" />
-          Google Apps Script Configuration
+          Google Apps Script Web App Configuration
         </CardTitle>
         <CardDescription>
-          Configure your Google Apps Script deployment for email sending with HTML support
+          Configure your Google Apps Script Web App deployment for professional email sending
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="space-y-2">
-          <Label htmlFor="exec-url">Execution URL (EXEC URL)</Label>
+          <Label htmlFor="exec-url">Web App Execution URL *</Label>
           <Input
             id="exec-url"
             placeholder="https://script.google.com/macros/s/YOUR_DEPLOYMENT_ID/exec"
@@ -194,7 +247,7 @@ function doPost(e) {
             onChange={(e) => updateConfig('exec_url', e.target.value)}
           />
           <p className="text-xs text-slate-500">
-            This is the execution URL from your deployed Google Apps Script web app
+            This is the web app URL from your deployed Google Apps Script project
           </p>
         </div>
 
@@ -235,7 +288,7 @@ function doPost(e) {
             onChange={(e) => updateConfig('daily_quota', parseInt(e.target.value) || 100)}
           />
           <p className="text-xs text-slate-500">
-            Maximum emails per day (Google Apps Script limit is typically 100-1000)
+            Maximum emails per day (Google Apps Script limit: 100 for free, 1500 for Google Workspace)
           </p>
         </div>
 
@@ -253,7 +306,7 @@ function doPost(e) {
             )}
             <span className="text-sm">
               {testResult.success 
-                ? `Connection successful! Remaining quota: ${testResult.remainingQuota}` 
+                ? `Web App is active! Remaining quota: ${testResult.remainingQuota}` 
                 : testResult.error
               }
             </span>
@@ -269,12 +322,12 @@ function doPost(e) {
           {isTesting ? (
             <>
               <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-              Testing Connection...
+              Testing Web App Connection...
             </>
           ) : (
             <>
               <TestTube className="w-4 h-4 mr-2" />
-              Test Apps Script Connection
+              Test Apps Script Web App
             </>
           )}
         </Button>
@@ -285,26 +338,29 @@ function doPost(e) {
         <div className="space-y-3">
           <h4 className="font-medium flex items-center gap-2">
             <ExternalLink className="w-4 h-4" />
-            Setup Instructions
+            Web App Setup Instructions
           </h4>
           <div className="text-sm text-slate-600 space-y-2">
-            <p>1. Go to <a href="https://script.google.com" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">script.google.com</a></p>
-            <p>2. Create a new project and paste the provided code</p>
-            <p>3. Deploy as Web App: Deploy → New deployment → Web app</p>
-            <p>4. Set Execute as "Me" and access to "Anyone"</p>
-            <p>5. Copy the EXEC URL and paste it above</p>
+            <p><strong>1.</strong> Go to <a href="https://script.google.com" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">script.google.com</a></p>
+            <p><strong>2.</strong> Create a new project and paste the provided code below</p>
+            <p><strong>3.</strong> Save the project with a meaningful name</p>
+            <p><strong>4.</strong> Click Deploy → New deployment</p>
+            <p><strong>5.</strong> Choose "Web app" as the type</p>
+            <p><strong>6.</strong> Set Execute as: "Me" and access to: "Anyone"</p>
+            <p><strong>7.</strong> Click Deploy and copy the Web App URL</p>
+            <p><strong>8.</strong> Paste the URL above and test the connection</p>
           </div>
           
           <Dialog>
             <DialogTrigger asChild>
               <Button variant="outline" size="sm" className="w-full">
                 <Code className="w-4 h-4 mr-2" />
-                View Enhanced Apps Script Code
+                View Enhanced Web App Code
               </Button>
             </DialogTrigger>
             <DialogContent className="max-w-4xl max-h-[80vh]">
               <DialogHeader>
-                <DialogTitle>Google Apps Script Code (HTML Support)</DialogTitle>
+                <DialogTitle>Google Apps Script Web App Code</DialogTitle>
               </DialogHeader>
               <div className="max-h-[60vh] overflow-auto">
                 <Textarea
