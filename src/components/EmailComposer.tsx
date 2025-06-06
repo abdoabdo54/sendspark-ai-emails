@@ -5,21 +5,18 @@ import SingleEmailComposer from './SingleEmailComposer';
 import CampaignAnalytics from './CampaignAnalytics';
 import CampaignTesting from './CampaignTesting';
 import AccountManager from './AccountManager';
-import { useSimpleOrganizations } from '@/contexts/SimpleOrganizationContext';
 
 interface EmailComposerProps {
   activeTab?: string;
 }
 
 const EmailComposer = ({ activeTab = 'bulk' }: EmailComposerProps) => {
-  const { currentOrganization } = useSimpleOrganizations();
-
   const renderContent = () => {
     switch (activeTab) {
       case 'bulk':
-        return <BulkEmailComposer organizationId={currentOrganization.id} />;
+        return <BulkEmailComposer />;
       case 'single':
-        return <SingleEmailComposer organizationId={currentOrganization.id} />;
+        return <SingleEmailComposer />;
       case 'testing':
         return <CampaignTesting />;
       case 'analytics':
@@ -27,7 +24,7 @@ const EmailComposer = ({ activeTab = 'bulk' }: EmailComposerProps) => {
       case 'accounts':
         return <AccountManager />;
       default:
-        return <BulkEmailComposer organizationId={currentOrganization.id} />;
+        return <BulkEmailComposer />;
     }
   };
 
