@@ -37,14 +37,7 @@ export const useCampaigns = (organizationId?: string) => {
 
       if (error) throw error;
       
-      const typedData = (data || []).map(item => ({
-        ...item,
-        status: item.status as 'draft' | 'prepared' | 'sending' | 'sent' | 'failed' | 'paused',
-        config: item.config || {},
-        prepared_emails: item.prepared_emails || []
-      })) as Campaign[];
-      
-      setCampaigns(typedData);
+      setCampaigns(data || []);
     } catch (error) {
       console.error('Error fetching campaigns:', error);
       toast({
@@ -100,21 +93,14 @@ export const useCampaigns = (organizationId?: string) => {
         throw error;
       }
 
-      const typedData = {
-        ...data,
-        status: data.status as 'draft' | 'prepared' | 'sending' | 'sent' | 'failed' | 'paused',
-        config: data.config || {},
-        prepared_emails: data.prepared_emails || []
-      } as Campaign;
-
-      setCampaigns(prev => [typedData, ...prev]);
+      setCampaigns(prev => [data, ...prev]);
       
       toast({
         title: "Success",
         description: "Campaign created successfully"
       });
       
-      return typedData;
+      return data;
     } catch (error) {
       console.error('Error creating campaign:', error);
       toast({
@@ -142,15 +128,8 @@ export const useCampaigns = (organizationId?: string) => {
         throw error;
       }
 
-      const typedData = {
-        ...data,
-        status: data.status as 'draft' | 'prepared' | 'sending' | 'sent' | 'failed' | 'paused',
-        config: data.config || {},
-        prepared_emails: data.prepared_emails || []
-      } as Campaign;
-
       setCampaigns(prev => prev.map(campaign => 
-        campaign.id === campaignId ? typedData : campaign
+        campaign.id === campaignId ? data : campaign
       ));
 
       toast({
@@ -158,7 +137,7 @@ export const useCampaigns = (organizationId?: string) => {
         description: "Campaign updated successfully"
       });
 
-      return typedData;
+      return data;
     } catch (error) {
       console.error('Error updating campaign:', error);
       toast({

@@ -254,6 +254,7 @@ export type Database = {
           html_content: string | null
           id: string
           organization_id: string | null
+          prepared_emails: Json | null
           recipients: string
           send_method: string
           sent_at: string | null
@@ -270,6 +271,7 @@ export type Database = {
           html_content?: string | null
           id?: string
           organization_id?: string | null
+          prepared_emails?: Json | null
           recipients: string
           send_method: string
           sent_at?: string | null
@@ -286,6 +288,7 @@ export type Database = {
           html_content?: string | null
           id?: string
           organization_id?: string | null
+          prepared_emails?: Json | null
           recipients?: string
           send_method?: string
           sent_at?: string | null
