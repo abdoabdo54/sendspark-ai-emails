@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
@@ -37,7 +36,15 @@ export const useCampaigns = (organizationId?: string) => {
 
       if (error) throw error;
       
-      setCampaigns(data || []);
+      // Properly cast the data to Campaign type
+      const typedCampaigns: Campaign[] = (data || []).map(item => ({
+        ...item,
+        status: item.status as Campaign['status'],
+        config: item.config || {},
+        prepared_emails: item.prepared_emails || []
+      }));
+      
+      setCampaigns(typedCampaigns);
     } catch (error) {
       console.error('Error fetching campaigns:', error);
       toast({
@@ -93,14 +100,22 @@ export const useCampaigns = (organizationId?: string) => {
         throw error;
       }
 
-      setCampaigns(prev => [data, ...prev]);
+      // Properly cast the returned data
+      const typedCampaign: Campaign = {
+        ...data,
+        status: data.status as Campaign['status'],
+        config: data.config || {},
+        prepared_emails: data.prepared_emails || []
+      };
+
+      setCampaigns(prev => [typedCampaign, ...prev]);
       
       toast({
         title: "Success",
         description: "Campaign created successfully"
       });
       
-      return data;
+      return typedCampaign;
     } catch (error) {
       console.error('Error creating campaign:', error);
       toast({
@@ -128,8 +143,16 @@ export const useCampaigns = (organizationId?: string) => {
         throw error;
       }
 
+      // Properly cast the returned data
+      const typedCampaign: Campaign = {
+        ...data,
+        status: data.status as Campaign['status'],
+        config: data.config || {},
+        prepared_emails: data.prepared_emails || []
+      };
+
       setCampaigns(prev => prev.map(campaign => 
-        campaign.id === campaignId ? data : campaign
+        campaign.id === campaignId ? typedCampaign : campaign
       ));
 
       toast({
@@ -137,7 +160,7 @@ export const useCampaigns = (organizationId?: string) => {
         description: "Campaign updated successfully"
       });
 
-      return data;
+      return typedCampaign;
     } catch (error) {
       console.error('Error updating campaign:', error);
       toast({
