@@ -41,7 +41,7 @@ export const useCampaigns = (organizationId?: string) => {
         ...item,
         status: item.status as Campaign['status'],
         config: item.config || {},
-        prepared_emails: item.prepared_emails || []
+        prepared_emails: Array.isArray(item.prepared_emails) ? item.prepared_emails : []
       }));
       
       setCampaigns(typedCampaigns);
@@ -105,7 +105,7 @@ export const useCampaigns = (organizationId?: string) => {
         ...data,
         status: data.status as Campaign['status'],
         config: data.config || {},
-        prepared_emails: data.prepared_emails || []
+        prepared_emails: Array.isArray(data.prepared_emails) ? data.prepared_emails : []
       };
 
       setCampaigns(prev => [typedCampaign, ...prev]);
@@ -148,7 +148,7 @@ export const useCampaigns = (organizationId?: string) => {
         ...data,
         status: data.status as Campaign['status'],
         config: data.config || {},
-        prepared_emails: data.prepared_emails || []
+        prepared_emails: Array.isArray(data.prepared_emails) ? data.prepared_emails : []
       };
 
       setCampaigns(prev => prev.map(campaign => 
