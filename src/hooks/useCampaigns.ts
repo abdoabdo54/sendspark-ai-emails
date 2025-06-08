@@ -36,11 +36,22 @@ export const useCampaigns = (organizationId?: string) => {
 
       if (error) throw error;
       
-      // Properly cast the data to Campaign type
+      // Properly cast the data to Campaign type with better error handling
       const typedCampaigns: Campaign[] = (data || []).map(item => ({
-        ...item,
-        status: item.status as Campaign['status'],
-        config: item.config || {},
+        id: item.id,
+        from_name: item.from_name || '',
+        subject: item.subject || '',
+        recipients: item.recipients || '',
+        html_content: item.html_content || '',
+        text_content: item.text_content || '',
+        send_method: item.send_method || '',
+        status: (item.status as Campaign['status']) || 'draft',
+        sent_count: item.sent_count || 0,
+        total_recipients: item.total_recipients || 0,
+        organization_id: item.organization_id || '',
+        created_at: item.created_at || '',
+        sent_at: item.sent_at || undefined,
+        config: typeof item.config === 'object' && item.config !== null ? item.config : {},
         prepared_emails: Array.isArray(item.prepared_emails) ? item.prepared_emails : []
       }));
       
@@ -82,7 +93,7 @@ export const useCampaigns = (organizationId?: string) => {
         organization_id: organizationId,
         total_recipients: recipientCount,
         sent_count: 0,
-        status: 'draft',
+        status: 'draft' as const,
         config: campaignData.config || {},
         prepared_emails: []
       };
@@ -100,11 +111,22 @@ export const useCampaigns = (organizationId?: string) => {
         throw error;
       }
 
-      // Properly cast the returned data
+      // Properly cast the returned data with better type safety
       const typedCampaign: Campaign = {
-        ...data,
-        status: data.status as Campaign['status'],
-        config: data.config || {},
+        id: data.id,
+        from_name: data.from_name || '',
+        subject: data.subject || '',
+        recipients: data.recipients || '',
+        html_content: data.html_content || '',
+        text_content: data.text_content || '',
+        send_method: data.send_method || '',
+        status: (data.status as Campaign['status']) || 'draft',
+        sent_count: data.sent_count || 0,
+        total_recipients: data.total_recipients || 0,
+        organization_id: data.organization_id || '',
+        created_at: data.created_at || '',
+        sent_at: data.sent_at || undefined,
+        config: typeof data.config === 'object' && data.config !== null ? data.config : {},
         prepared_emails: Array.isArray(data.prepared_emails) ? data.prepared_emails : []
       };
 
@@ -143,11 +165,22 @@ export const useCampaigns = (organizationId?: string) => {
         throw error;
       }
 
-      // Properly cast the returned data
+      // Properly cast the returned data with better type safety
       const typedCampaign: Campaign = {
-        ...data,
-        status: data.status as Campaign['status'],
-        config: data.config || {},
+        id: data.id,
+        from_name: data.from_name || '',
+        subject: data.subject || '',
+        recipients: data.recipients || '',
+        html_content: data.html_content || '',
+        text_content: data.text_content || '',
+        send_method: data.send_method || '',
+        status: (data.status as Campaign['status']) || 'draft',
+        sent_count: data.sent_count || 0,
+        total_recipients: data.total_recipients || 0,
+        organization_id: data.organization_id || '',
+        created_at: data.created_at || '',
+        sent_at: data.sent_at || undefined,
+        config: typeof data.config === 'object' && data.config !== null ? data.config : {},
         prepared_emails: Array.isArray(data.prepared_emails) ? data.prepared_emails : []
       };
 
