@@ -2,7 +2,7 @@
 import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { CheckCircle, Cloud, Code, Settings, Zap, AlertTriangle, Copy } from 'lucide-react';
+import { CheckCircle, Cloud, Code, Settings, Zap, AlertTriangle, Copy, ExternalLink, TestTube } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { toast } from '@/hooks/use-toast';
 
@@ -97,7 +97,7 @@ functions.http('sendEmailCampaign', async (req, res) => {
       title: "Enable Required APIs",
       description: "Enable Cloud Functions and Cloud Build APIs",
       details: [
-        "Go to APIs & Services > Library",
+        "Go to APIs & Services → Library",
         "Search and enable 'Cloud Functions API'",
         "Search and enable 'Cloud Build API'",
         "Search and enable 'Cloud Run API'",
@@ -106,6 +106,22 @@ functions.http('sendEmailCampaign', async (req, res) => {
       code: `gcloud services enable cloudfunctions.googleapis.com
 gcloud services enable cloudbuild.googleapis.com
 gcloud services enable run.googleapis.com`
+    },
+    {
+      title: "Install Google Cloud CLI",
+      description: "Install and authenticate with Google Cloud CLI",
+      details: [
+        "Download gcloud CLI from cloud.google.com/sdk/docs/install",
+        "Install following the instructions for your OS",
+        "Run: gcloud init",
+        "Run: gcloud auth login",
+        "Set your project: gcloud config set project YOUR_PROJECT_ID",
+        "Verify: gcloud config list"
+      ],
+      code: `# Initialize and authenticate
+gcloud init
+gcloud auth login
+gcloud config set project YOUR_PROJECT_ID`
     },
     {
       title: "Prepare Function Code",
@@ -124,6 +140,7 @@ gcloud services enable run.googleapis.com`
       details: [
         "Open terminal in your function folder",
         "Make sure gcloud CLI is installed and authenticated",
+        "Replace YOUR_SUPABASE_URL and YOUR_SERVICE_KEY in the command",
         "Run the deployment command provided below",
         "Wait for deployment to complete (may take 5-10 minutes)",
         "Copy the function URL from the output"
@@ -150,10 +167,24 @@ gcloud services enable run.googleapis.com`
       ]
     },
     {
+      title: "Test Your Function",
+      description: "Verify the function is working correctly",
+      details: [
+        "Use a tool like Postman or curl to test the function",
+        "Send a POST request to your function URL",
+        "Include test data in the request body",
+        "Check the response for success/error messages",
+        "View logs in Google Cloud Console if needed"
+      ],
+      code: `curl -X POST YOUR_FUNCTION_URL \\
+  -H "Content-Type: application/json" \\
+  -d '{"campaignId": "test", "emailsByAccount": {}}'`
+    },
+    {
       title: "Configure in Application",
       description: "Add the function URL to your email campaign settings",
       details: [
-        "Go to Settings > Cloud Functions tab",
+        "Go to Settings → Cloud Functions tab",
         "Enable Google Cloud Functions",
         "Paste your function URL",
         "Test the connection",
@@ -175,7 +206,7 @@ gcloud services enable run.googleapis.com`
           <ul className="space-y-2">
             <li>• Google Cloud account with billing enabled</li>
             <li>• Google Cloud CLI (gcloud) installed and authenticated</li>
-            <li>• Your Supabase service role key (found in Project Settings > API)</li>
+            <li>• Your Supabase service role key (found in Project Settings → API)</li>
             <li>• Basic familiarity with terminal/command line</li>
           </ul>
         </CardContent>
@@ -302,6 +333,35 @@ gcloud services enable run.googleapis.com`
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
+            <TestTube className="w-5 h-5" />
+            Testing Your Function
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
+            <p className="text-sm text-slate-600">
+              Before using your function in production, test it with a simple request:
+            </p>
+            <div className="bg-slate-50 p-4 rounded-lg">
+              <h4 className="font-medium mb-2">Test Request Example:</h4>
+              <pre className="bg-slate-900 text-slate-100 p-3 rounded text-sm overflow-x-auto">
+{`curl -X POST https://us-central1-YOUR_PROJECT_ID.cloudfunctions.net/sendEmailCampaign \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "campaignId": "test-campaign-123",
+    "emailsByAccount": {},
+    "supabaseUrl": "https://kzatxttazxwqawefumed.supabase.co",
+    "supabaseKey": "your-service-key"
+  }'`}
+              </pre>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
             <Zap className="w-5 h-5" />
             Expected Function URL Format
           </CardTitle>
@@ -321,13 +381,86 @@ gcloud services enable run.googleapis.com`
 
       <Card>
         <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <ExternalLink className="w-5 h-5" />
+            Useful Links
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <h4 className="font-medium">Google Cloud</h4>
+              <ul className="text-sm space-y-1">
+                <li>
+                  <a 
+                    href="https://console.cloud.google.com/" 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="text-blue-600 hover:underline"
+                  >
+                    Google Cloud Console
+                  </a>
+                </li>
+                <li>
+                  <a 
+                    href="https://cloud.google.com/sdk/docs/install" 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="text-blue-600 hover:underline"
+                  >
+                    Install Google Cloud CLI
+                  </a>
+                </li>
+                <li>
+                  <a 
+                    href="https://cloud.google.com/functions/docs" 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="text-blue-600 hover:underline"
+                  >
+                    Cloud Functions Documentation
+                  </a>
+                </li>
+              </ul>
+            </div>
+            <div className="space-y-2">
+              <h4 className="font-medium">Supabase</h4>
+              <ul className="text-sm space-y-1">
+                <li>
+                  <a 
+                    href="https://supabase.com/dashboard/project/kzatxttazxwqawefumed/settings/api" 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="text-blue-600 hover:underline"
+                  >
+                    Get Service Role Key
+                  </a>
+                </li>
+                <li>
+                  <a 
+                    href="https://supabase.com/docs/reference/javascript/supabase-createclient" 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="text-blue-600 hover:underline"
+                  >
+                    Supabase Client Documentation
+                  </a>
+                </li>
+              </ul>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
           <CardTitle>Troubleshooting Common Issues</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
             <div>
               <h4 className="font-medium text-red-600">Error: Billing not enabled</h4>
-              <p className="text-sm text-slate-600">Solution: Enable billing in Google Cloud Console > Billing</p>
+              <p className="text-sm text-slate-600">Solution: Enable billing in Google Cloud Console → Billing</p>
             </div>
             <div>
               <h4 className="font-medium text-red-600">Error: APIs not enabled</h4>
@@ -340,6 +473,14 @@ gcloud services enable run.googleapis.com`
             <div>
               <h4 className="font-medium text-red-600">Function timeout</h4>
               <p className="text-sm text-slate-600">Solution: Increase timeout in deployment command or reduce batch size</p>
+            </div>
+            <div>
+              <h4 className="font-medium text-red-600">CORS errors</h4>
+              <p className="text-sm text-slate-600">Solution: Ensure CORS headers are properly set in function response</p>
+            </div>
+            <div>
+              <h4 className="font-medium text-red-600">Function not found</h4>
+              <p className="text-sm text-slate-600">Solution: Check function name matches exactly: 'sendEmailCampaign'</p>
             </div>
           </div>
         </CardContent>
