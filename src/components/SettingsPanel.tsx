@@ -10,7 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Settings, Shield, Bell, Mail, Sparkles, Save, Cloud } from 'lucide-react';
 import { toast } from "@/hooks/use-toast";
-import GoogleCloudConfigForm from './GoogleCloudConfigForm';
+import GlobalGoogleCloudConfig from './GlobalGoogleCloudConfig';
 
 const SettingsPanel = () => {
   const [settings, setSettings] = useState({
@@ -270,7 +270,7 @@ const SettingsPanel = () => {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <GoogleCloudConfigForm
+              <GlobalGoogleCloudConfig
                 config={settings.googleCloudFunctions}
                 onSave={updateGoogleCloudSettings}
                 onTest={handleGoogleCloudTest}
