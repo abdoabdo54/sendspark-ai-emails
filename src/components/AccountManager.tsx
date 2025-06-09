@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -36,9 +35,8 @@ const AccountManager = () => {
   useEffect(() => {
     if (currentOrganization?.id) {
       console.log('Current organization changed:', currentOrganization);
-      refetch();
     }
-  }, [currentOrganization?.id, refetch]);
+  }, [currentOrganization?.id]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -111,8 +109,6 @@ const AccountManager = () => {
         }
       });
 
-      // Refresh the accounts list
-      await refetch();
     } catch (error) {
       console.error('Error saving account:', error);
       toast({
@@ -148,7 +144,6 @@ const AccountManager = () => {
     if (confirm('Are you sure you want to delete this account?')) {
       try {
         await deleteAccount(accountId);
-        await refetch();
       } catch (error) {
         console.error('Error deleting account:', error);
       }
@@ -189,7 +184,10 @@ const AccountManager = () => {
             <Button 
               variant="outline" 
               size="sm" 
-              onClick={refetch}
+              onClick={() => {
+                console.log('Manual refresh triggered');
+                refetch();
+              }}
               disabled={loading}
             >
               <RefreshCw className={`w-4 h-4 mr-1 ${loading ? 'animate-spin' : ''}`} />
