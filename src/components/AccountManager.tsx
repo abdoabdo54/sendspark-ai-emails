@@ -1,485 +1,311 @@
 
-import { useState, useEffect } from 'react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import React, { useState, useEffect } from 'react';
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, Settings, TestTube, Trash2, Edit, CheckCircle, XCircle, AlertCircle } from 'lucide-react';
-import { toast } from '@/hooks/use-toast';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { useEmailAccounts, EmailAccount } from '@/hooks/useEmailAccounts';
-import AppsScriptConfigForm from '@/components/AppsScriptConfigForm';
-import SMTPConfigForm from '@/components/SMTPConfigForm';
-import PowerMTAConfigForm from '@/components/PowerMTAConfigForm';
+import { Badge } from "@/components/ui/badge";
+import { Trash2, Edit, Plus } from 'lucide-react';
+import { useEmailAccounts } from '@/hooks/useEmailAccounts';
 import { useSimpleOrganizations } from '@/contexts/SimpleOrganizationContext';
-import { sendEmailViaAppsScript } from '@/utils/appsScriptSender';
-import { sendEmailViaSMTP, testSMTPConnection } from '@/utils/emailSender';
-
-// Standardized interfaces to match component requirements
-interface AppsScriptConfig {
-  exec_url: string;
-  script_id: string;
-  deployment_id: string;
-  daily_quota: number;
-}
-
-interface SMTPConfig {
-  host: string;
-  port: number;
-  username: string;
-  password: string;
-  encryption: 'none' | 'tls' | 'ssl';
-  auth_required: boolean;
-}
-
-interface PowerMTAConfig {
-  server_host: string;
-  api_port: number;
-  username: string;
-  password: string;
-  virtual_mta: string;
-  job_pool: string;
-  rate_limit: number;
-  max_hourly_rate: number;
-}
+import { toast } from '@/hooks/use-toast';
 
 const AccountManager = () => {
   const { currentOrganization } = useSimpleOrganizations();
-  const { accounts, loading, addAccount, updateAccount, deleteAccount, refetch } = useEmailAccounts(currentOrganization?.id);
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [editingAccount, setEditingAccount] = useState<EmailAccount | null>(null);
-  const [accountType, setAccountType] = useState<'smtp' | 'apps-script' | 'powermta'>('smtp');
-  const [accountName, setAccountName] = useState('');
-  const [accountEmail, setAccountEmail] = useState('');
-
-  // Configuration states
-  const [appsScriptConfig, setAppsScriptConfig] = useState<AppsScriptConfig>({
-    exec_url: '',
-    script_id: '',
-    deployment_id: '',
-    daily_quota: 100
-  });
-
-  const [smtpConfig, setSMTPConfig] = useState<SMTPConfig>({
-    host: '',
-    port: 587,
-    username: '',
-    password: '',
-    encryption: 'tls',
-    auth_required: true
-  });
-
-  const [powerMTAConfig, setPowerMTAConfig] = useState<PowerMTAConfig>({
-    server_host: '',
-    api_port: 8080,
-    username: '',
-    password: '',
-    virtual_mta: '',
-    job_pool: '',
-    rate_limit: 100,
-    max_hourly_rate: 1000
-  });
-
-  // ... keep existing code (resetForm function)
-  const resetForm = () => {
-    setAccountName('');
-    setAccountEmail('');
-    setEditingAccount(null);
-    setAppsScriptConfig({
-      exec_url: '',
-      script_id: '',
-      deployment_id: '',
-      daily_quota: 100
-    });
-    setSMTPConfig({
+  const { accounts, loading, createAccount, updateAccount, deleteAccount, refetch } = useEmailAccounts(currentOrganization?.id);
+  
+  const [formData, setFormData] = useState({
+    name: '',
+    email: '',
+    type: 'smtp',
+    config: {
       host: '',
       port: 587,
-      username: '',
-      password: '',
-      encryption: 'tls',
-      auth_required: true
-    });
-    setPowerMTAConfig({
-      server_host: '',
-      api_port: 8080,
-      username: '',
-      password: '',
-      virtual_mta: '',
-      job_pool: '',
-      rate_limit: 100,
-      max_hourly_rate: 1000
-    });
-  };
+      secure: false,
+      user: '',
+      pass: ''
+    }
+  });
+  const [editingId, setEditingId] = useState<string | null>(null);
 
-  // ... keep existing code (handleSave function)
-  const handleSave = async () => {
-    if (!accountName.trim() || !accountEmail.trim() || !currentOrganization) {
+  useEffect(() => {
+    if (currentOrganization?.id) {
+      refetch();
+    }
+  }, [currentOrganization?.id, refetch]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!currentOrganization?.id) {
       toast({
-        title: "Missing Information",
-        description: "Please fill in all required fields",
+        title: "Error",
+        description: "Please select an organization first",
         variant: "destructive"
       });
       return;
     }
 
-    let config: any;
-    switch (accountType) {
-      case 'apps-script':
-        config = appsScriptConfig;
-        break;
-      case 'smtp':
-        config = smtpConfig;
-        break;
-      case 'powermta':
-        config = powerMTAConfig;
-        break;
-    }
-
     try {
-      if (editingAccount) {
-        await updateAccount(editingAccount.id, {
-          name: accountName,
-          email: accountEmail,
-          config
-        });
-        toast({
-          title: "Success",
-          description: "Account updated successfully"
-        });
-      } else {
-        await addAccount({
-          name: accountName,
-          type: accountType,
-          email: accountEmail,
-          config,
-          is_active: true
-        });
-        toast({
-          title: "Success",
-          description: "Account created successfully"
-        });
-      }
-      setIsDialogOpen(false);
-      resetForm();
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: "Failed to save account",
-        variant: "destructive"
-      });
-    }
-  };
-
-  // ... keep existing code (handleEdit function)
-  const handleEdit = (account: EmailAccount) => {
-    setEditingAccount(account);
-    setAccountName(account.name);
-    setAccountEmail(account.email);
-    setAccountType(account.type as 'smtp' | 'apps-script' | 'powermta');
-    
-    if (account.type === 'apps-script') {
-      setAppsScriptConfig({
-        exec_url: account.config?.exec_url || '',
-        script_id: account.config?.script_id || '',
-        deployment_id: account.config?.deployment_id || '',
-        daily_quota: account.config?.daily_quota || 100
-      });
-    } else if (account.type === 'smtp') {
-      setSMTPConfig({
-        host: account.config?.host || '',
-        port: account.config?.port || 587,
-        username: account.config?.username || '',
-        password: account.config?.password || '',
-        encryption: account.config?.encryption || 'tls',
-        auth_required: account.config?.auth_required ?? true
-      });
-    } else if (account.type === 'powermta') {
-      setPowerMTAConfig({
-        server_host: account.config?.server_host || '',
-        api_port: account.config?.api_port || 8080,
-        username: account.config?.username || '',
-        password: account.config?.password || '',
-        virtual_mta: account.config?.virtual_mta || '',
-        job_pool: account.config?.job_pool || '',
-        rate_limit: account.config?.rate_limit || 100,
-        max_hourly_rate: account.config?.max_hourly_rate || 1000
-      });
-    }
-    
-    setIsDialogOpen(true);
-  };
-
-  // ... keep existing code (handleDelete function)
-  const handleDelete = async (accountId: string) => {
-    try {
-      await deleteAccount(accountId);
-      toast({
-        title: "Success",
-        description: "Account deleted successfully"
-      });
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: "Failed to delete account",
-        variant: "destructive"
-      });
-    }
-  };
-
-  // ... keep existing code (handleTest function)
-  const handleTest = async (account: EmailAccount) => {
-    try {
-      const testEmail = {
-        to: account.email,
-        subject: 'Test Email from Email Campaign Platform',
-        html: '<h1>Test Email</h1><p>This is a test email to verify your email account configuration.</p>',
-        text: 'Test Email\n\nThis is a test email to verify your email account configuration.'
+      const accountData = {
+        ...formData,
+        organization_id: currentOrganization.id
       };
 
-      if (account.type === 'apps-script') {
-        await sendEmailViaAppsScript(
-          account.config as any,
-          account.email,
-          'Test Sender',
-          account.email,
-          testEmail.subject,
-          testEmail.html,
-          testEmail.text
-        );
-      } else if (account.type === 'smtp') {
-        await sendEmailViaSMTP(
-          account.config as any,
-          account.email,
-          'Test Sender',
-          account.email,
-          testEmail.subject,
-          testEmail.html,
-          testEmail.text
-        );
-      }
-
-      toast({
-        title: "Test Successful",
-        description: "Test email sent successfully"
-      });
-    } catch (error) {
-      toast({
-        title: "Test Failed",
-        description: "Failed to send test email",
-        variant: "destructive"
-      });
-    }
-  };
-
-  // ... keep existing code (handleSMTPTest function)
-  const handleSMTPTest = async () => {
-    try {
-      const result = await testSMTPConnection(smtpConfig);
-      if (result.success) {
-        toast({
-          title: "SMTP Test Successful",
-          description: "SMTP connection is working correctly"
-        });
+      if (editingId) {
+        await updateAccount(editingId, accountData);
+        setEditingId(null);
       } else {
-        toast({
-          title: "SMTP Test Failed",
-          description: result.error || "SMTP connection failed",
-          variant: "destructive"
-        });
+        await createAccount(accountData);
       }
-    } catch (error) {
-      toast({
-        title: "Test Error",
-        description: "Failed to test SMTP connection",
-        variant: "destructive"
+      
+      // Reset form
+      setFormData({
+        name: '',
+        email: '',
+        type: 'smtp',
+        config: {
+          host: '',
+          port: 587,
+          secure: false,
+          user: '',
+          pass: ''
+        }
       });
+    } catch (error) {
+      console.error('Error saving account:', error);
     }
   };
 
-  // ... keep existing code (helper functions)
-  const getStatusIcon = (account: EmailAccount) => {
-    if (account.is_active) {
-      return <CheckCircle className="w-4 h-4 text-green-600" />;
-    }
-    return <XCircle className="w-4 h-4 text-red-600" />;
+  const handleEdit = (account: any) => {
+    setFormData({
+      name: account.name,
+      email: account.email,
+      type: account.type,
+      config: account.config || {
+        host: '',
+        port: 587,
+        secure: false,
+        user: '',
+        pass: ''
+      }
+    });
+    setEditingId(account.id);
   };
 
-  const getAccountTypeLabel = (type: string) => {
-    switch (type) {
-      case 'smtp': return 'SMTP';
-      case 'apps-script': return 'Google Apps Script';
-      case 'powermta': return 'PowerMTA';
-      default: return type.toUpperCase();
+  const handleDelete = async (accountId: string) => {
+    if (confirm('Are you sure you want to delete this account?')) {
+      try {
+        await deleteAccount(accountId);
+      } catch (error) {
+        console.error('Error deleting account:', error);
+      }
     }
   };
 
-  if (loading) {
+  const handleConfigChange = (field: string, value: any) => {
+    setFormData(prev => ({
+      ...prev,
+      config: {
+        ...prev.config,
+        [field]: value
+      }
+    }));
+  };
+
+  if (!currentOrganization?.id) {
     return (
-      <div className="flex items-center justify-center p-8">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-      </div>
+      <Card>
+        <CardContent className="p-6">
+          <div className="text-center text-slate-600">
+            Please select an organization to manage email accounts.
+          </div>
+        </CardContent>
+      </Card>
     );
   }
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <div>
-          <h2 className="text-2xl font-bold text-slate-800">Email Account Manager</h2>
-          <p className="text-slate-600">Manage your email sending accounts and configurations</p>
-        </div>
-        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-          <DialogTrigger asChild>
-            <Button onClick={() => { resetForm(); setIsDialogOpen(true); }}>
-              <Plus className="w-4 h-4 mr-2" />
-              Add Account
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle>
-                {editingAccount ? 'Edit Email Account' : 'Add New Email Account'}
-              </DialogTitle>
-            </DialogHeader>
-            
-            <div className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="account-name">Account Name</Label>
-                  <Input
-                    id="account-name"
-                    placeholder="My SMTP Account"
-                    value={accountName}
-                    onChange={(e) => setAccountName(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="account-email">From Email</Label>
-                  <Input
-                    id="account-email"
-                    type="email"
-                    placeholder="sender@domain.com"
-                    value={accountEmail}
-                    onChange={(e) => setAccountEmail(e.target.value)}
-                  />
-                </div>
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Plus className="w-5 h-5" />
+            {editingId ? 'Edit Email Account' : 'Add Email Account'}
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="name">Account Name</Label>
+                <Input
+                  id="name"
+                  value={formData.name}
+                  onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+                  placeholder="My Email Account"
+                  required
+                />
               </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="account-type">Account Type</Label>
-                <Select value={accountType} onValueChange={(value: 'smtp' | 'apps-script' | 'powermta') => setAccountType(value)}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select account type" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="smtp">SMTP</SelectItem>
-                    <SelectItem value="apps-script">Google Apps Script</SelectItem>
-                    <SelectItem value="powermta">PowerMTA</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {accountType === 'apps-script' && (
-                <AppsScriptConfigForm
-                  config={appsScriptConfig}
-                  onChange={setAppsScriptConfig}
+              
+              <div>
+                <Label htmlFor="email">Email Address</Label>
+                <Input
+                  id="email"
+                  type="email"
+                  value={formData.email}
+                  onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
+                  placeholder="your@email.com"
+                  required
                 />
-              )}
-
-              {accountType === 'smtp' && (
-                <SMTPConfigForm
-                  config={smtpConfig}
-                  onChange={setSMTPConfig}
-                  onTest={handleSMTPTest}
-                />
-              )}
-
-              {accountType === 'powermta' && (
-                <PowerMTAConfigForm
-                  config={powerMTAConfig}
-                  onChange={(config: PowerMTAConfig) => setPowerMTAConfig(config)}
-                />
-              )}
-
-              <div className="flex justify-end gap-2 pt-4">
-                <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
-                  Cancel
-                </Button>
-                <Button onClick={handleSave}>
-                  {editingAccount ? 'Update Account' : 'Create Account'}
-                </Button>
               </div>
             </div>
-          </DialogContent>
-        </Dialog>
-      </div>
 
-      {/* ... keep existing code (accounts display section) */}
-      <div className="grid gap-4">
-        {accounts.length === 0 ? (
-          <Card>
-            <CardContent className="flex flex-col items-center justify-center py-12">
-              <Settings className="w-16 h-16 text-slate-300 mb-4" />
-              <h3 className="text-lg font-medium text-slate-600 mb-2">No email accounts configured</h3>
-              <p className="text-slate-500 text-center mb-4">
-                Add your first email account to start sending campaigns
-              </p>
-              <Button onClick={() => setIsDialogOpen(true)}>
-                <Plus className="w-4 h-4 mr-2" />
-                Add Your First Account
+            <div>
+              <Label htmlFor="type">Account Type</Label>
+              <Select value={formData.type} onValueChange={(value) => setFormData(prev => ({ ...prev, type: value }))}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="smtp">SMTP</SelectItem>
+                  <SelectItem value="apps-script">Google Apps Script</SelectItem>
+                  <SelectItem value="powermta">PowerMTA</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {formData.type === 'smtp' && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="host">SMTP Host</Label>
+                  <Input
+                    id="host"
+                    value={formData.config.host}
+                    onChange={(e) => handleConfigChange('host', e.target.value)}
+                    placeholder="smtp.gmail.com"
+                    required
+                  />
+                </div>
+                
+                <div>
+                  <Label htmlFor="port">Port</Label>
+                  <Input
+                    id="port"
+                    type="number"
+                    value={formData.config.port}
+                    onChange={(e) => handleConfigChange('port', parseInt(e.target.value))}
+                    required
+                  />
+                </div>
+                
+                <div>
+                  <Label htmlFor="user">Username</Label>
+                  <Input
+                    id="user"
+                    value={formData.config.user}
+                    onChange={(e) => handleConfigChange('user', e.target.value)}
+                    placeholder="your@email.com"
+                    required
+                  />
+                </div>
+                
+                <div>
+                  <Label htmlFor="pass">Password</Label>
+                  <Input
+                    id="pass"
+                    type="password"
+                    value={formData.config.pass}
+                    onChange={(e) => handleConfigChange('pass', e.target.value)}
+                    placeholder="Your app password"
+                    required
+                  />
+                </div>
+              </div>
+            )}
+
+            <div className="flex gap-2">
+              <Button type="submit">
+                {editingId ? 'Update Account' : 'Add Account'}
               </Button>
-            </CardContent>
-          </Card>
-        ) : (
-          accounts.map((account) => (
-            <Card key={account.id} className="hover:shadow-md transition-shadow">
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    {getStatusIcon(account)}
-                    <div>
-                      <CardTitle className="text-lg">{account.name}</CardTitle>
-                      <CardDescription>{account.email}</CardDescription>
+              {editingId && (
+                <Button 
+                  type="button" 
+                  variant="outline" 
+                  onClick={() => {
+                    setEditingId(null);
+                    setFormData({
+                      name: '',
+                      email: '',
+                      type: 'smtp',
+                      config: {
+                        host: '',
+                        port: 587,
+                        secure: false,
+                        user: '',
+                        pass: ''
+                      }
+                    });
+                  }}
+                >
+                  Cancel
+                </Button>
+              )}
+            </div>
+          </form>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Email Accounts</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {loading ? (
+            <div className="text-center py-4">Loading accounts...</div>
+          ) : accounts.length === 0 ? (
+            <div className="text-center py-8 text-slate-500">
+              No email accounts configured yet. Add your first account above.
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {accounts.map((account) => (
+                <div key={account.id} className="border rounded-lg p-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex-1">
+                      <h3 className="font-medium">{account.name}</h3>
+                      <p className="text-sm text-slate-600">{account.email}</p>
+                      <div className="flex items-center gap-2 mt-2">
+                        <Badge variant="outline">{account.type}</Badge>
+                        <Badge variant={account.is_active ? "default" : "secondary"}>
+                          {account.is_active ? "Active" : "Inactive"}
+                        </Badge>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleEdit(account)}
+                      >
+                        <Edit className="w-4 h-4" />
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleDelete(account.id)}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <Badge variant="outline">
-                      {getAccountTypeLabel(account.type)}
-                    </Badge>
-                    <Badge variant={account.is_active ? "default" : "destructive"}>
-                      {account.is_active ? "Active" : "Inactive"}
-                    </Badge>
-                  </div>
                 </div>
-              </CardHeader>
-              <CardContent>
-                <div className="flex justify-end gap-2">
-                  <Button variant="outline" size="sm" onClick={() => handleTest(account)}>
-                    <TestTube className="w-4 h-4 mr-2" />
-                    Test
-                  </Button>
-                  <Button variant="outline" size="sm" onClick={() => handleEdit(account)}>
-                    <Edit className="w-4 h-4 mr-2" />
-                    Edit
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => handleDelete(account.id)}
-                    className="text-red-600 hover:text-red-700"
-                  >
-                    <Trash2 className="w-4 h-4 mr-2" />
-                    Delete
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          ))
-        )}
-      </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 };

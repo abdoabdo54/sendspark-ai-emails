@@ -15,128 +15,143 @@ serve(async (req) => {
   try {
     const { campaignId } = await req.json()
 
+    if (!campaignId) {
+      return new Response(
+        JSON.stringify({ error: 'Campaign ID is required' }),
+        { 
+          status: 400, 
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        }
+      )
+    }
+
     // Create supabase client
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     const supabase = createClient(supabaseUrl, supabaseKey)
 
-    // Get campaign details
+    // Get the campaign
     const { data: campaign, error: campaignError } = await supabase
       .from('email_campaigns')
       .select('*')
       .eq('id', campaignId)
       .single()
 
-    if (campaignError) throw campaignError
-
-    if (campaign.status !== 'draft') {
-      throw new Error('Campaign must be in draft status to prepare')
+    if (campaignError || !campaign) {
+      return new Response(
+        JSON.stringify({ error: 'Campaign not found' }),
+        { 
+          status: 404, 
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        }
+      )
     }
 
     // Parse recipients
-    const recipients = campaign.recipients.split(',').map((email: string) => email.trim()).filter(Boolean)
-    
+    const recipients = campaign.recipients.split(',').map(email => email.trim()).filter(email => email)
+
     if (recipients.length === 0) {
-      throw new Error('No valid recipients found')
+      return new Response(
+        JSON.stringify({ error: 'No valid recipients found' }),
+        { 
+          status: 400, 
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        }
+      )
     }
 
-    console.log(`Preparing campaign ${campaignId} for ${recipients.length} recipients`);
+    // Prepare emails with tracking
+    const baseUrl = supabaseUrl.replace('.supabase.co', '.supabase.co/functions/v1')
+    
+    const preparedEmails = recipients.map(email => {
+      let htmlContent = campaign.html_content || ''
+      let textContent = campaign.text_content || ''
 
-    // Prepare personalized emails
-    const preparedEmails = recipients.map((email: string) => {
-      let personalizedHtml = campaign.html_content || '';
-      let personalizedText = campaign.text_content || '';
-      let personalizedSubject = campaign.subject || '';
-
-      // Add tracking pixel for opens
-      const trackingPixel = `<img src="${supabaseUrl}/functions/v1/track-open?campaign=${campaignId}&email=${encodeURIComponent(email)}" width="1" height="1" style="display:none;" alt="" />`;
+      // Add tracking pixel to HTML content
+      const trackingPixel = `<img src="${baseUrl}/track-open?campaign=${campaignId}&email=${encodeURIComponent(email)}" width="1" height="1" style="display:none;" alt="" />`
       
-      // Add unsubscribe link
-      const unsubscribeLink = `${supabaseUrl}/functions/v1/track-unsubscribe?campaign=${campaignId}&email=${encodeURIComponent(email)}`;
-      const unsubscribeHtml = `<div style="text-align: center; margin-top: 2rem; padding-top: 1rem; border-top: 1px solid #e5e7eb; font-size: 12px; color: #6b7280;">
-        <a href="${unsubscribeLink}" style="color: #6b7280; text-decoration: underline;">Unsubscribe from these emails</a>
-      </div>`;
-
-      // Basic personalization - replace common placeholders
-      const personalizations = {
-        '{email}': email,
-        '{firstname}': email.split('@')[0], // Simple fallback
-        '{lastname}': '',
-        '{company}': email.split('@')[1]?.split('.')[0] || ''
-      };
-
-      // Apply personalizations
-      for (const [placeholder, value] of Object.entries(personalizations)) {
-        personalizedHtml = personalizedHtml.replace(new RegExp(placeholder, 'gi'), value);
-        personalizedText = personalizedText.replace(new RegExp(placeholder, 'gi'), value);
-        personalizedSubject = personalizedSubject.replace(new RegExp(placeholder, 'gi'), value);
-      }
-
-      // Add tracking and unsubscribe to HTML
-      if (personalizedHtml) {
+      if (htmlContent) {
         // Add tracking pixel before closing body tag, or at the end if no body tag
-        if (personalizedHtml.includes('</body>')) {
-          personalizedHtml = personalizedHtml.replace('</body>', `${trackingPixel}</body>`);
+        if (htmlContent.includes('</body>')) {
+          htmlContent = htmlContent.replace('</body>', `${trackingPixel}</body>`)
         } else {
-          personalizedHtml += trackingPixel;
+          htmlContent += trackingPixel
         }
 
-        // Add unsubscribe link before closing body tag, or at the end if no body tag
-        if (personalizedHtml.includes('</body>')) {
-          personalizedHtml = personalizedHtml.replace('</body>', `${unsubscribeHtml}</body>`);
-        } else {
-          personalizedHtml += unsubscribeHtml;
-        }
+        // Replace links with tracking links
+        htmlContent = htmlContent.replace(
+          /href="([^"]+)"/g,
+          (match, url) => {
+            if (url.startsWith('mailto:') || url.startsWith('#')) {
+              return match // Don't track mailto or anchor links
+            }
+            const trackingUrl = `${baseUrl}/track-click?campaign=${campaignId}&email=${encodeURIComponent(email)}&url=${encodeURIComponent(url)}`
+            return `href="${trackingUrl}"`
+          }
+        )
       }
 
-      // Add unsubscribe to text version
-      if (personalizedText) {
-        personalizedText += `\n\nTo unsubscribe from these emails, visit: ${unsubscribeLink}`;
+      // Add unsubscribe link
+      const unsubscribeUrl = `${baseUrl}/track-unsubscribe?campaign=${campaignId}&email=${encodeURIComponent(email)}`
+      const unsubscribeText = `\n\nTo unsubscribe from future emails, click here: ${unsubscribeUrl}`
+      const unsubscribeHtml = `<br><br><small><a href="${unsubscribeUrl}">Unsubscribe from future emails</a></small>`
+
+      if (textContent) {
+        textContent += unsubscribeText
+      }
+      if (htmlContent) {
+        htmlContent += unsubscribeHtml
       }
 
       return {
         to: email,
-        from: campaign.from_name,
-        subject: personalizedSubject,
-        html: personalizedHtml,
-        text: personalizedText,
-        campaignId: campaignId
-      };
-    });
+        subject: campaign.subject,
+        from_name: campaign.from_name,
+        html_content: htmlContent,
+        text_content: textContent,
+        send_method: campaign.send_method
+      }
+    })
 
-    // Update campaign with prepared emails and status
+    // Update campaign with prepared emails
     const { error: updateError } = await supabase
       .from('email_campaigns')
       .update({
-        status: 'prepared',
         prepared_emails: preparedEmails,
+        status: 'prepared',
         total_recipients: recipients.length
       })
       .eq('id', campaignId)
 
-    if (updateError) throw updateError
-
-    console.log(`Campaign ${campaignId} prepared successfully with ${preparedEmails.length} emails`);
+    if (updateError) {
+      console.error('Error updating campaign:', updateError)
+      return new Response(
+        JSON.stringify({ error: 'Failed to update campaign' }),
+        { 
+          status: 500, 
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        }
+      )
+    }
 
     return new Response(
       JSON.stringify({ 
         success: true, 
-        message: 'Campaign prepared successfully',
-        totalEmails: preparedEmails.length,
-        campaignId: campaignId
+        prepared_count: preparedEmails.length,
+        message: `Campaign prepared with ${preparedEmails.length} emails ready to send`
       }),
       { 
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 200 
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       }
     )
+
   } catch (error) {
-    console.error('Error preparing campaign:', error)
+    console.error('Error in prepare-campaign:', error)
     return new Response(
-      JSON.stringify({ error: error.message }),
+      JSON.stringify({ error: 'Internal server error' }),
       { 
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 400 
+        status: 500, 
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       }
     )
   }
