@@ -102,7 +102,19 @@ const DomainServerManager: React.FC<DomainServerManagerProps> = ({ isOpen, onClo
         .order('created_at', { ascending: false });
 
       if (error) throw error;
-      setServers(data || []);
+      
+      // Transform the data to match our interface
+      const transformedServers = (data || []).map(server => ({
+        id: server.id,
+        server_name: server.server_name,
+        ip_address: String(server.ip_address), // Convert to string
+        port: server.port,
+        status: server.status,
+        server_config: server.server_config,
+        created_at: server.created_at
+      }));
+      
+      setServers(transformedServers);
     } catch (error) {
       console.error('Error fetching servers:', error);
       toast({
@@ -178,8 +190,7 @@ const DomainServerManager: React.FC<DomainServerManagerProps> = ({ isOpen, onClo
 
   const setupDomainDNS = async (domainId: string, domainName: string, namecheapConfig: any) => {
     try {
-      // This would typically call a Supabase Edge Function to configure DNS
-      // For now, we'll simulate the process
+      // Call the setup-domain-dns edge function
       const { error } = await supabase.functions.invoke('setup-domain-dns', {
         body: {
           domain_id: domainId,
@@ -193,19 +204,6 @@ const DomainServerManager: React.FC<DomainServerManagerProps> = ({ isOpen, onClo
         console.error('DNS setup error:', error);
         return;
       }
-
-      // Update domain status
-      await supabase
-        .from('domains')
-        .update({ 
-          is_verified: true,
-          dns_records: {
-            tracking_subdomain: `track.${domainName}`,
-            unsubscribe_subdomain: `unsubscribe.${domainName}`,
-            configured_at: new Date().toISOString()
-          }
-        })
-        .eq('id', domainId);
 
       // Refresh domains list
       fetchDomains();
@@ -247,7 +245,18 @@ const DomainServerManager: React.FC<DomainServerManagerProps> = ({ isOpen, onClo
 
       if (error) throw error;
 
-      setServers(prev => [data, ...prev]);
+      // Transform the response to match our interface
+      const transformedServer = {
+        id: data.id,
+        server_name: data.server_name,
+        ip_address: String(data.ip_address),
+        port: data.port,
+        status: data.status,
+        server_config: data.server_config,
+        created_at: data.created_at
+      };
+
+      setServers(prev => [transformedServer, ...prev]);
       setNewServer({ name: '', ip: '', port: 22, rootPassword: '' });
       
       toast({
@@ -272,7 +281,7 @@ const DomainServerManager: React.FC<DomainServerManagerProps> = ({ isOpen, onClo
 
   const setupTrackingServer = async (serverId: string) => {
     try {
-      // This would call a Supabase Edge Function to set up the tracking server
+      // Call the setup-tracking-server edge function
       const { error } = await supabase.functions.invoke('setup-tracking-server', {
         body: {
           server_id: serverId,
@@ -284,19 +293,6 @@ const DomainServerManager: React.FC<DomainServerManagerProps> = ({ isOpen, onClo
         console.error('Server setup error:', error);
         return;
       }
-
-      // Update server status
-      await supabase
-        .from('servers')
-        .update({ 
-          status: 'active',
-          server_config: {
-            setup_status: 'completed',
-            services: ['nginx', 'tracking', 'unsubscribe'],
-            setup_completed_at: new Date().toISOString()
-          }
-        })
-        .eq('id', serverId);
 
       // Refresh servers list
       fetchServers();
@@ -432,7 +428,7 @@ const DomainServerManager: React.FC<DomainServerManagerProps> = ({ isOpen, onClo
                   {loading ? 'Adding Domain...' : 'Add Domain & Configure DNS'}
                 </Button>
                 <p className="text-sm text-gray-500">
-                  This will automatically configure DNS records for email tracking, opens, clicks, and unsubscribes.
+                  This will automatically configure DNS records for email tracking, opens, clicks, and unsubscribes using Namecheap API.
                 </p>
               </CardContent>
             </Card>
@@ -556,7 +552,7 @@ const DomainServerManager: React.FC<DomainServerManagerProps> = ({ isOpen, onClo
                   {loading ? 'Adding Server...' : 'Add Server & Setup Tracking'}
                 </Button>
                 <p className="text-sm text-gray-500">
-                  This will automatically install and configure Nginx, tracking endpoints, and unsubscribe handlers.
+                  This will automatically install and configure Nginx, tracking endpoints, and unsubscribe handlers for analytics.
                 </p>
               </CardContent>
             </Card>

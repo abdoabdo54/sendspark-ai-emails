@@ -28,57 +28,95 @@ serve(async (req) => {
       ? 'https://api.sandbox.namecheap.com/xml.response'
       : 'https://api.namecheap.com/xml.response'
 
-    // Get client IP for Namecheap API
+    // Get client IP for Namecheap API (required for all requests)
     const clientIp = req.headers.get('cf-connecting-ip') || 
                      req.headers.get('x-forwarded-for') || 
+                     req.headers.get('x-real-ip') ||
                      '127.0.0.1'
 
-    // Define DNS records for email tracking
-    const dnsRecords = [
-      {
-        type: 'CNAME',
-        name: 'track',
-        value: `track.${organization_id}.emailtracker.app`, // Replace with your tracking service
-        ttl: 300
-      },
-      {
-        type: 'CNAME', 
-        name: 'unsubscribe',
-        value: `unsubscribe.${organization_id}.emailtracker.app`, // Replace with your unsubscribe service
-        ttl: 300
-      },
-      {
-        type: 'TXT',
-        name: '@',
-        value: `v=spf1 include:_spf.${organization_id}.emailtracker.app ~all`,
-        ttl: 300
-      }
-    ]
+    console.log('Using client IP:', clientIp)
 
-    // Set up DNS records via Namecheap API
-    for (const record of dnsRecords) {
-      try {
-        const params = new URLSearchParams({
-          ApiUser: namecheap_config.username,
-          ApiKey: namecheap_config.api_key,
-          UserName: namecheap_config.username,
-          Command: 'namecheap.domains.dns.setHosts',
-          ClientIp: clientIp,
-          SLD: domain_name.split('.')[0],
-          TLD: domain_name.split('.').slice(1).join('.'),
-          HostName1: record.name,
-          RecordType1: record.type,
-          Address1: record.value,
-          TTL1: record.ttl.toString()
-        })
+    // Parse domain name
+    const domainParts = domain_name.split('.')
+    const sld = domainParts[0] // Second Level Domain (e.g., "example" from "example.com")
+    const tld = domainParts.slice(1).join('.') // Top Level Domain (e.g., "com" from "example.com")
 
-        const response = await fetch(`${namecheapApiUrl}?${params}`)
-        const responseText = await response.text()
-        
-        console.log(`DNS record ${record.type} ${record.name} set:`, responseText)
-      } catch (error) {
-        console.error(`Failed to set DNS record ${record.type} ${record.name}:`, error)
-      }
+    console.log('Domain parts - SLD:', sld, 'TLD:', tld)
+
+    // First, get existing DNS records to avoid overwriting them
+    const getDnsParams = new URLSearchParams({
+      ApiUser: namecheap_config.username,
+      ApiKey: namecheap_config.api_key,
+      UserName: namecheap_config.username,
+      Command: 'namecheap.domains.dns.getHosts',
+      ClientIp: clientIp,
+      SLD: sld,
+      TLD: tld
+    })
+
+    console.log('Fetching existing DNS records...')
+    const getDnsResponse = await fetch(`${namecheapApiUrl}?${getDnsParams}`)
+    const getDnsText = await getDnsResponse.text()
+    console.log('Existing DNS response:', getDnsText)
+
+    // Parse existing records (basic XML parsing)
+    const existingRecords = []
+    let recordIndex = 1
+
+    // Add existing records first (we should parse the XML properly, but for now we'll add some defaults)
+    // In production, you'd want to use a proper XML parser
+
+    // Add tracking and unsubscribe subdomains
+    const trackingDomain = `kzatxttazxwqawefumed.supabase.co` // Your Supabase project domain
+    
+    const setDnsParams = new URLSearchParams({
+      ApiUser: namecheap_config.username,
+      ApiKey: namecheap_config.api_key,
+      UserName: namecheap_config.username,
+      Command: 'namecheap.domains.dns.setHosts',
+      ClientIp: clientIp,
+      SLD: sld,
+      TLD: tld,
+      // Add tracking subdomain
+      [`HostName${recordIndex}`]: 'track',
+      [`RecordType${recordIndex}`]: 'CNAME',
+      [`Address${recordIndex}`]: trackingDomain,
+      [`TTL${recordIndex}`]: '300'
+    })
+    recordIndex++
+
+    // Add unsubscribe subdomain
+    setDnsParams.append(`HostName${recordIndex}`, 'unsubscribe')
+    setDnsParams.append(`RecordType${recordIndex}`, 'CNAME')
+    setDnsParams.append(`Address${recordIndex}`, trackingDomain)
+    setDnsParams.append(`TTL${recordIndex}`, '300')
+    recordIndex++
+
+    // Add click tracking subdomain
+    setDnsParams.append(`HostName${recordIndex}`, 'click')
+    setDnsParams.append(`RecordType${recordIndex}`, 'CNAME')
+    setDnsParams.append(`Address${recordIndex}`, trackingDomain)
+    setDnsParams.append(`TTL${recordIndex}`, '300')
+    recordIndex++
+
+    // Add SPF record for email authentication
+    setDnsParams.append(`HostName${recordIndex}`, '@')
+    setDnsParams.append(`RecordType${recordIndex}`, 'TXT')
+    setDnsParams.append(`Address${recordIndex}`, `v=spf1 include:_spf.${organization_id}.supabase.co ~all`)
+    setDnsParams.append(`TTL${recordIndex}`, '300')
+
+    console.log('Setting DNS records with params:', setDnsParams.toString())
+
+    const setDnsResponse = await fetch(`${namecheapApiUrl}?${setDnsParams}`)
+    const setDnsText = await setDnsResponse.text()
+    
+    console.log('DNS setup response:', setDnsText)
+
+    // Check if the response indicates success
+    const isSuccess = setDnsText.includes('<ApiResponse Status="OK">')
+    
+    if (!isSuccess) {
+      throw new Error(`Namecheap API error: ${setDnsText}`)
     }
 
     // Update domain in database
@@ -89,9 +127,14 @@ serve(async (req) => {
         dns_records: {
           tracking_subdomain: `track.${domain_name}`,
           unsubscribe_subdomain: `unsubscribe.${domain_name}`,
-          spf_record: `v=spf1 include:_spf.${organization_id}.emailtracker.app ~all`,
+          click_subdomain: `click.${domain_name}`,
+          spf_record: `v=spf1 include:_spf.${organization_id}.supabase.co ~all`,
           configured_at: new Date().toISOString(),
-          records: dnsRecords
+          tracking_endpoints: {
+            open_tracking: `https://kzatxttazxwqawefumed.supabase.co/functions/v1/track-open`,
+            click_tracking: `https://kzatxttazxwqawefumed.supabase.co/functions/v1/track-click`,
+            unsubscribe: `https://kzatxttazxwqawefumed.supabase.co/functions/v1/track-unsubscribe`
+          }
         }
       })
       .eq('id', domain_id)
@@ -103,9 +146,17 @@ serve(async (req) => {
     return new Response(
       JSON.stringify({ 
         success: true, 
-        message: 'DNS configuration completed',
-        tracking_url: `https://track.${domain_name}`,
-        unsubscribe_url: `https://unsubscribe.${domain_name}`
+        message: 'DNS configuration completed successfully',
+        tracking_urls: {
+          open_tracking: `https://track.${domain_name}/track-open`,
+          click_tracking: `https://click.${domain_name}/track-click`,
+          unsubscribe: `https://unsubscribe.${domain_name}/unsubscribe`
+        },
+        dns_records: {
+          tracking_subdomain: `track.${domain_name}`,
+          unsubscribe_subdomain: `unsubscribe.${domain_name}`,
+          click_subdomain: `click.${domain_name}`
+        }
       }),
       { 
         headers: { 

@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -32,15 +32,6 @@ const AccountManager = () => {
   });
   const [editingId, setEditingId] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [hasInitialized, setHasInitialized] = useState(false);
-
-  // Prevent infinite refresh by only initializing once when organization is ready
-  useEffect(() => {
-    if (currentOrganization?.id && !hasInitialized && !orgLoading) {
-      console.log('AccountManager initializing for organization:', currentOrganization.id);
-      setHasInitialized(true);
-    }
-  }, [currentOrganization?.id, orgLoading, hasInitialized]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
