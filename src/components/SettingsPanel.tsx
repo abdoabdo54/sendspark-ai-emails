@@ -21,10 +21,10 @@ const SettingsPanel = () => {
   });
 
   const [appsScriptConfig, setAppsScriptConfig] = useState({
-    script_url: '',
-    api_key: '',
-    sender_email: '',
-    sender_name: ''
+    script_id: '',
+    deployment_id: '',
+    daily_quota: 100,
+    exec_url: ''
   });
 
   const [powerMTAConfig, setPowerMTAConfig] = useState({
