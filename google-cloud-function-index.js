@@ -1,3 +1,4 @@
+
 const functions = require('@google-cloud/functions-framework');
 const { createClient } = require('@supabase/supabase-js');
 const nodemailer = require('nodemailer');
@@ -115,7 +116,7 @@ functions.http('sendEmailCampaign', async (req, res) => {
             }`);
           }
 
-          // Create enhanced SMTP transporter configuration
+          // Create enhanced SMTP transporter configuration - FIXED: using createTransport instead of createTransporter
           const port = parseInt(smtpPort);
           const isSecurePort = port === 465;
           const isSTARTTLSPort = port === 587 || port === 25;
@@ -160,7 +161,8 @@ functions.http('sendEmailCampaign', async (req, res) => {
             user: smtpUser
           });
 
-          const transporter = nodemailer.createTransporter(transporterConfig);
+          // CRITICAL FIX: Use createTransport instead of createTransporter
+          const transporter = nodemailer.createTransport(transporterConfig);
 
           // Enhanced connection verification with detailed error handling
           try {
