@@ -7,121 +7,6 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
-interface EmailAccount {
-  id: string;
-  name: string;
-  type: string;
-  email: string;
-  config: any;
-}
-
-interface Campaign {
-  id: string;
-  from_name: string;
-  subject: string;
-  recipients: string;
-  html_content?: string;
-  text_content?: string;
-  send_method: string;
-  config?: any;
-}
-
-function generateRandomValue(type: string, length: number): string {
-  const chars = {
-    'n': '0123456789',
-    'a': 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789',
-    'l': 'abcdefghijklmnopqrstuvwxyz',
-    'u': 'ABCDEFGHIJKLMNOPQRSTUVWXYZ',
-    's': '*-_#!@$%&',
-    'lu': 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz',
-    'ln': 'abcdefghijklmnopqrstuvwxyz0123456789',
-    'un': 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
-  };
-  
-  const charset = chars[type] || chars['a'];
-  let result = '';
-  for (let i = 0; i < length; i++) {
-    result += charset.charAt(Math.floor(Math.random() * charset.length));
-  }
-  return result;
-}
-
-function processTags(content: string, recipient: any, account: EmailAccount, config: any, index: number): string {
-  let processed = content;
-  
-  // Rotation logic
-  if (config?.rotation?.useRotation) {
-    const fromNames = config.rotation.fromNames?.filter(n => n.trim()) || [];
-    const subjects = config.rotation.subjects?.filter(s => s.trim()) || [];
-    
-    if (fromNames.length > 0) {
-      const fromName = fromNames[index % fromNames.length];
-      processed = processed.replace(/\[from\]/g, fromName);
-    }
-    
-    if (subjects.length > 0) {
-      const subject = subjects[index % subjects.length];
-      processed = processed.replace(/\[subject\]/g, subject);
-    }
-  } else {
-    processed = processed.replace(/\[from\]/g, config.from_name || '');
-    processed = processed.replace(/\[subject\]/g, config.subject || '');
-  }
-  
-  // Basic tags
-  processed = processed.replace(/\[to\]/g, recipient.email || recipient);
-  
-  // SMTP tags
-  if (account.type === 'smtp') {
-    processed = processed.replace(/\[smtp\]/g, account.config?.username || '');
-    processed = processed.replace(/\[smtp_name\]/g, account.name || '');
-  }
-  
-  // Random tags with all variations
-  const randomTagPatterns = [
-    { pattern: /\[rndn_(\d+)\]/g, type: 'n' },
-    { pattern: /\[rnda_(\d+)\]/g, type: 'a' },
-    { pattern: /\[rndl_(\d+)\]/g, type: 'l' },
-    { pattern: /\[rndu_(\d+)\]/g, type: 'u' },
-    { pattern: /\[rnds_(\d+)\]/g, type: 's' },
-    { pattern: /\[rndlu_(\d+)\]/g, type: 'lu' },
-    { pattern: /\[rndln_(\d+)\]/g, type: 'ln' },
-    { pattern: /\[rndun_(\d+)\]/g, type: 'un' }
-  ];
-
-  randomTagPatterns.forEach(({ pattern, type }) => {
-    processed = processed.replace(pattern, (match, length) => {
-      return generateRandomValue(type, parseInt(length));
-    });
-  });
-  
-  return processed;
-}
-
-function addTrackingPixel(htmlContent: string, campaignId: string, recipientEmail: string): string {
-  const trackingPixel = `<img src="${Deno.env.get('SUPABASE_URL')}/functions/v1/track-open?campaign=${campaignId}&email=${encodeURIComponent(recipientEmail)}" width="1" height="1" style="display:none;" />`;
-  
-  // Add tracking pixel before closing body tag, or at the end if no body tag
-  if (htmlContent.includes('</body>')) {
-    return htmlContent.replace('</body>', `${trackingPixel}</body>`);
-  } else {
-    return htmlContent + trackingPixel;
-  }
-}
-
-function addClickTracking(htmlContent: string, campaignId: string, recipientEmail: string): string {
-  const baseUrl = `${Deno.env.get('SUPABASE_URL')}/functions/v1/track-click`;
-  
-  // Replace all links with tracked links
-  return htmlContent.replace(
-    /<a\s+href="([^"]+)"([^>]*)>/gi,
-    (match, url, attributes) => {
-      const trackedUrl = `${baseUrl}?campaign=${campaignId}&email=${encodeURIComponent(recipientEmail)}&url=${encodeURIComponent(url)}`;
-      return `<a href="${trackedUrl}"${attributes}>`;
-    }
-  );
-}
-
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
@@ -144,96 +29,101 @@ serve(async (req) => {
 
     if (campaignError) throw campaignError
 
-    // Get selected accounts from campaign config
-    const selectedAccountIds = campaign.config?.selectedAccounts || [];
-    
-    const { data: accounts, error: accountError } = await supabase
-      .from('email_accounts')
-      .select('*')
-      .in('id', selectedAccountIds)
-      .eq('is_active', true)
-
-    if (accountError) throw accountError
-    if (!accounts || accounts.length === 0) {
-      throw new Error('No active accounts found for this campaign')
+    if (campaign.status !== 'draft') {
+      throw new Error('Campaign must be in draft status to prepare')
     }
 
     // Parse recipients
-    const recipientList = campaign.recipients.split(',')
-      .map((email: string) => email.trim())
-      .filter((email: string) => email.length > 0)
+    const recipients = campaign.recipients.split(',').map((email: string) => email.trim()).filter(Boolean)
+    
+    if (recipients.length === 0) {
+      throw new Error('No valid recipients found')
+    }
 
-    console.log(`Preparing campaign ${campaignId} for ${recipientList.length} recipients using ${accounts.length} accounts`)
+    console.log(`Preparing campaign ${campaignId} for ${recipients.length} recipients`);
 
-    const preparedEmails = [];
+    // Prepare personalized emails
+    const preparedEmails = recipients.map((email: string) => {
+      let personalizedHtml = campaign.html_content || '';
+      let personalizedText = campaign.text_content || '';
+      let personalizedSubject = campaign.subject || '';
 
-    // Prepare each email
-    for (let i = 0; i < recipientList.length; i++) {
-      const recipient = recipientList[i];
+      // Add tracking pixel for opens
+      const trackingPixel = `<img src="${supabaseUrl}/functions/v1/track-open?campaign=${campaignId}&email=${encodeURIComponent(email)}" width="1" height="1" style="display:none;" alt="" />`;
       
-      // Select account based on sending method
-      let selectedAccount;
-      if (campaign.config?.sendingMethod === 'round-robin') {
-        selectedAccount = accounts[i % accounts.length];
-      } else {
-        selectedAccount = accounts[0]; // Use first account
+      // Add unsubscribe link
+      const unsubscribeLink = `${supabaseUrl}/functions/v1/track-unsubscribe?campaign=${campaignId}&email=${encodeURIComponent(email)}`;
+      const unsubscribeHtml = `<div style="text-align: center; margin-top: 2rem; padding-top: 1rem; border-top: 1px solid #e5e7eb; font-size: 12px; color: #6b7280;">
+        <a href="${unsubscribeLink}" style="color: #6b7280; text-decoration: underline;">Unsubscribe from these emails</a>
+      </div>`;
+
+      // Basic personalization - replace common placeholders
+      const personalizations = {
+        '{email}': email,
+        '{firstname}': email.split('@')[0], // Simple fallback
+        '{lastname}': '',
+        '{company}': email.split('@')[1]?.split('.')[0] || ''
+      };
+
+      // Apply personalizations
+      for (const [placeholder, value] of Object.entries(personalizations)) {
+        personalizedHtml = personalizedHtml.replace(new RegExp(placeholder, 'gi'), value);
+        personalizedText = personalizedText.replace(new RegExp(placeholder, 'gi'), value);
+        personalizedSubject = personalizedSubject.replace(new RegExp(placeholder, 'gi'), value);
       }
 
-      // Process content with tags and rotation
-      let processedHtml = processTags(campaign.html_content || '', recipient, selectedAccount, campaign, i);
-      let processedSubject = processTags(campaign.subject, recipient, selectedAccount, campaign, i);
-      let processedText = processTags(campaign.text_content || '', recipient, selectedAccount, campaign, i);
+      // Add tracking and unsubscribe to HTML
+      if (personalizedHtml) {
+        // Add tracking pixel before closing body tag, or at the end if no body tag
+        if (personalizedHtml.includes('</body>')) {
+          personalizedHtml = personalizedHtml.replace('</body>', `${trackingPixel}</body>`);
+        } else {
+          personalizedHtml += trackingPixel;
+        }
 
-      // Add tracking
-      processedHtml = addTrackingPixel(processedHtml, campaignId, recipient);
-      processedHtml = addClickTracking(processedHtml, campaignId, recipient);
-
-      // Get from name with rotation
-      let fromName = campaign.from_name;
-      if (campaign.config?.rotation?.useRotation && campaign.config.rotation.fromNames?.length > 0) {
-        const validFromNames = campaign.config.rotation.fromNames.filter(n => n.trim());
-        if (validFromNames.length > 0) {
-          fromName = validFromNames[i % validFromNames.length];
+        // Add unsubscribe link before closing body tag, or at the end if no body tag
+        if (personalizedHtml.includes('</body>')) {
+          personalizedHtml = personalizedHtml.replace('</body>', `${unsubscribeHtml}</body>`);
+        } else {
+          personalizedHtml += unsubscribeHtml;
         }
       }
 
-      const preparedEmail = {
-        recipient,
-        accountId: selectedAccount.id,
-        accountType: selectedAccount.type,
-        accountConfig: selectedAccount.config,
-        fromEmail: selectedAccount.email,
-        fromName,
-        subject: processedSubject,
-        htmlContent: processedHtml,
-        textContent: processedText,
-        status: 'prepared',
-        index: i
+      // Add unsubscribe to text version
+      if (personalizedText) {
+        personalizedText += `\n\nTo unsubscribe from these emails, visit: ${unsubscribeLink}`;
+      }
+
+      return {
+        to: email,
+        from: campaign.from_name,
+        subject: personalizedSubject,
+        html: personalizedHtml,
+        text: personalizedText,
+        campaignId: campaignId
       };
+    });
 
-      preparedEmails.push(preparedEmail);
-    }
-
-    // Update campaign with prepared emails and new status
+    // Update campaign with prepared emails and status
     const { error: updateError } = await supabase
       .from('email_campaigns')
       .update({
         status: 'prepared',
-        prepared_emails: preparedEmails
+        prepared_emails: preparedEmails,
+        total_recipients: recipients.length
       })
       .eq('id', campaignId)
 
     if (updateError) throw updateError
 
-    console.log(`✓ Campaign ${campaignId} prepared successfully with ${preparedEmails.length} emails`)
+    console.log(`Campaign ${campaignId} prepared successfully with ${preparedEmails.length} emails`);
 
     return new Response(
       JSON.stringify({ 
         success: true, 
-        preparedCount: preparedEmails.length,
-        totalRecipients: recipientList.length,
-        accountsUsed: accounts.length,
-        status: 'prepared'
+        message: 'Campaign prepared successfully',
+        totalEmails: preparedEmails.length,
+        campaignId: campaignId
       }),
       { 
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },

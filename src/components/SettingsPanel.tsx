@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -8,9 +9,10 @@ import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { Settings, Shield, Bell, Mail, Sparkles, Save, Cloud } from 'lucide-react';
+import { Settings, Shield, Bell, Mail, Sparkles, Save, Cloud, BookOpen } from 'lucide-react';
 import { toast } from "@/hooks/use-toast";
 import GlobalGoogleCloudConfig from './GlobalGoogleCloudConfig';
+import GoogleCloudSetupGuide from './GoogleCloudSetupGuide';
 
 const SettingsPanel = () => {
   const [settings, setSettings] = useState({
@@ -117,7 +119,7 @@ const SettingsPanel = () => {
       </div>
 
       <Tabs defaultValue="general" className="w-full">
-        <TabsList className="grid w-full grid-cols-5">
+        <TabsList className="grid w-full grid-cols-6">
           <TabsTrigger value="general" className="flex items-center gap-2">
             <Settings className="w-4 h-4" />
             General
@@ -129,6 +131,10 @@ const SettingsPanel = () => {
           <TabsTrigger value="cloud" className="flex items-center gap-2">
             <Cloud className="w-4 h-4" />
             Cloud Functions
+          </TabsTrigger>
+          <TabsTrigger value="setup" className="flex items-center gap-2">
+            <BookOpen className="w-4 h-4" />
+            Setup Guide
           </TabsTrigger>
           <TabsTrigger value="notifications" className="flex items-center gap-2">
             <Bell className="w-4 h-4" />
@@ -297,6 +303,10 @@ const SettingsPanel = () => {
               </div>
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="setup" className="space-y-6">
+          <GoogleCloudSetupGuide />
         </TabsContent>
 
         <TabsContent value="notifications" className="space-y-6">

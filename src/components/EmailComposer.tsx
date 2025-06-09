@@ -14,9 +14,14 @@ interface EmailComposerProps {
 
 const EmailComposer = ({ activeTab = 'bulk' }: EmailComposerProps) => {
   const { currentOrganization } = useSimpleOrganizations();
-  const { createCampaign } = useCampaigns(currentOrganization.id);
+  const { createCampaign } = useCampaigns(currentOrganization?.id);
 
   const handleBulkEmailSend = async (campaignData: any) => {
+    if (!currentOrganization?.id) {
+      console.error('No organization selected');
+      return;
+    }
+
     try {
       console.log('Creating campaign with data:', campaignData);
       
@@ -38,6 +43,11 @@ const EmailComposer = ({ activeTab = 'bulk' }: EmailComposerProps) => {
   };
 
   const handleSingleEmailSend = async (emailData: any) => {
+    if (!currentOrganization?.id) {
+      console.error('No organization selected');
+      return;
+    }
+
     try {
       console.log('Sending single email:', emailData);
       // Handle single email sending if needed
@@ -45,6 +55,14 @@ const EmailComposer = ({ activeTab = 'bulk' }: EmailComposerProps) => {
       console.error('Error sending single email:', error);
     }
   };
+
+  if (!currentOrganization?.id) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <p className="text-slate-600">Please select an organization to continue.</p>
+      </div>
+    );
+  }
 
   const renderContent = () => {
     switch (activeTab) {
