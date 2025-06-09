@@ -87,15 +87,44 @@ serve(async (req) => {
     const emailsToSend = preparedEmails.slice(resumeFromIndex)
     console.log(`Sending ${emailsToSend.length} emails starting from index ${resumeFromIndex}`)
     
-    // Group emails by account for parallel processing
+    // Group emails by account for parallel processing with enhanced configuration
     const emailsByAccount = new Map()
     emailsToSend.forEach((email, index) => {
       const accountId = email.account_id
       if (!emailsByAccount.has(accountId)) {
+        const accountConfig = email.accountConfig || {}
+        
+        // Enhanced rate limiting based on account type and configuration
+        let rateLimit = 1; // Default: 1 email per second
+        let batchSize = 1;  // Default: 1 email per batch
+        
+        if (email.accountType === 'smtp') {
+          // SMTP accounts can handle higher rates
+          rateLimit = accountConfig.emails_per_hour ? Math.floor(accountConfig.emails_per_hour / 3600) : 3;
+          batchSize = Math.min(rateLimit * 10, 50); // 10 seconds worth of emails per batch, max 50
+        } else if (email.accountType === 'apps-script') {
+          // Apps Script has daily quotas, be more conservative
+          const dailyQuota = accountConfig.daily_quota || 100;
+          rateLimit = Math.max(1, Math.floor(dailyQuota / (24 * 3600))); // Spread throughout the day
+          batchSize = Math.min(rateLimit * 60, 20); // 1 minute worth of emails per batch, max 20
+        }
+
         emailsByAccount.set(accountId, {
           type: email.accountType,
-          config: email.accountConfig,
-          emails: []
+          config: {
+            ...accountConfig,
+            // Enhanced rate limiting configuration
+            rateLimit: rateLimit,
+            batchSize: batchSize,
+            maxRetries: 3,
+            retryDelay: 5000, // 5 seconds between retries
+            connectionTimeout: 30000, // 30 seconds connection timeout
+          },
+          emails: [],
+          accountInfo: {
+            name: email.fromName || 'Unknown',
+            email: email.fromEmail || 'unknown@domain.com'
+          }
         })
       }
       emailsByAccount.get(accountId).emails.push({
@@ -111,7 +140,7 @@ serve(async (req) => {
 
     console.log(`Sending ${emailsToSend.length} emails using ${emailsByAccount.size} accounts in parallel`)
 
-    // Enhanced payload with explicit configuration
+    // Enhanced payload with comprehensive configuration
     const payload = {
       campaignId,
       emailsByAccount: Object.fromEntries(emailsByAccount),
@@ -119,38 +148,82 @@ serve(async (req) => {
       resumeFromIndex,
       supabaseUrl,
       supabaseKey,
-      // Add explicit instructions for the Google Cloud Function
+      // Enhanced configuration for Google Cloud Function
       config: {
+        // Rate limiting and batch processing
         enforceRateLimit: true,
+        respectAccountLimits: true,
+        enableBatchProcessing: true,
+        
+        // Progress tracking
         updateProgressInRealTime: true,
+        progressUpdateInterval: 10, // Update every 10 emails
+        
+        // Error handling and resilience
+        enableRetryLogic: true,
+        maxGlobalRetries: 3,
         resumeOnFailure: true,
-        batchProcessing: true
+        failureRecoveryMode: 'auto',
+        
+        // Performance optimization
+        parallelAccountProcessing: true,
+        connectionPooling: true,
+        keepAliveConnections: true,
+        
+        // Monitoring and logging
+        enableDetailedLogging: true,
+        logLevel: 'info',
+        trackDeliveryStatus: true,
+        
+        // Campaign management
+        autoCompleteOnFinish: true,
+        updateCampaignStatus: true,
+        preserveEmailOrder: false, // Allow parallel sending for speed
+        
+        // Timeout configuration
+        globalTimeout: 3600000, // 1 hour maximum execution time
+        emailTimeout: 30000,    // 30 seconds per email
+        batchTimeout: 300000,   // 5 minutes per batch
       }
     };
 
-    console.log('Sending enhanced payload to Google Cloud Functions with instructions:')
+    console.log('Sending enhanced payload to Google Cloud Functions with advanced configuration:')
     console.log('- Number of accounts:', emailsByAccount.size)
     console.log('- Total emails to send:', emailsToSend.length)
     console.log('- Resume from index:', resumeFromIndex)
     console.log('- Function URL:', gcfConfig.functionUrl)
+    console.log('- Enhanced rate limiting enabled')
+    console.log('- Parallel processing enabled')
+    console.log('- Auto-retry and recovery enabled')
 
-    // Send to Google Cloud Functions with timeout and retry logic
+    // Send to Google Cloud Functions with enhanced timeout and retry logic
     let response;
     let attempt = 0;
     const maxAttempts = 3;
+    const baseDelay = 2000; // 2 seconds base delay
     
     while (attempt < maxAttempts) {
       try {
         console.log(`Attempt ${attempt + 1} to call Google Cloud Function`)
         
+        // Enhanced fetch with longer timeout for large campaigns
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 120000); // 2 minute timeout
+        
         response = await fetch(gcfConfig.functionUrl, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
+            'User-Agent': 'Supabase-Edge-Function/1.0',
+            'X-Campaign-ID': campaignId,
+            'X-Email-Count': emailsToSend.length.toString(),
+            'X-Account-Count': emailsByAccount.size.toString(),
           },
-          body: JSON.stringify(payload)
+          body: JSON.stringify(payload),
+          signal: controller.signal
         })
 
+        clearTimeout(timeoutId);
         console.log(`Google Cloud Functions response status: ${response.status}`);
 
         if (response.ok) {
@@ -163,7 +236,10 @@ serve(async (req) => {
             // Last attempt failed, revert status
             await supabase
               .from('email_campaigns')
-              .update({ status: 'prepared' })
+              .update({ 
+                status: 'prepared',
+                error_message: `Google Cloud Function failed: ${response.status} - ${errorText}`
+              })
               .eq('id', campaignId)
             
             throw new Error(`Google Cloud Functions failed after ${maxAttempts} attempts: ${response.status} - ${errorText}`)
@@ -176,7 +252,10 @@ serve(async (req) => {
           // Last attempt failed, revert status
           await supabase
             .from('email_campaigns')
-            .update({ status: 'prepared' })
+            .update({ 
+              status: 'prepared',
+              error_message: `Network error: ${error.message}`
+            })
             .eq('id', campaignId)
           
           throw error;
@@ -184,21 +263,24 @@ serve(async (req) => {
       }
       
       attempt++;
-      // Wait before retry (exponential backoff)
-      await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 1000));
+      // Exponential backoff with jitter
+      const delay = baseDelay * Math.pow(2, attempt) + Math.random() * 1000;
+      await new Promise(resolve => setTimeout(resolve, delay));
     }
 
     const result = await response.json()
     console.log('Google Cloud Functions result:', JSON.stringify(result, null, 2))
 
-    // Enhanced status checking
-    if (result.completed) {
+    // Enhanced status checking and immediate completion handling
+    if (result.completed || result.status === 'completed') {
       console.log('Campaign completed immediately, updating status')
       await supabase
         .from('email_campaigns')
         .update({ 
           status: result.success ? 'sent' : 'failed',
-          sent_count: result.sentCount || 0
+          sent_count: result.sentCount || result.sent_count || 0,
+          completed_at: new Date().toISOString(),
+          error_message: result.error || null
         })
         .eq('id', campaignId)
     } else if (result.error) {
@@ -206,9 +288,13 @@ serve(async (req) => {
       await supabase
         .from('email_campaigns')
         .update({ 
-          status: 'failed'
+          status: 'failed',
+          error_message: result.error
         })
         .eq('id', campaignId)
+    } else if (result.processing || result.status === 'processing') {
+      console.log('Campaign is being processed asynchronously')
+      // Status remains 'sending' - the GCF will update it when complete
     }
 
     return new Response(
@@ -216,12 +302,18 @@ serve(async (req) => {
         success: true,
         message: 'Campaign sending initiated via Google Cloud Functions with enhanced configuration',
         details: result,
-        accounts_processing: emailsByAccount.size,
-        total_emails: emailsToSend.length,
+        configuration: {
+          accounts_processing: emailsByAccount.size,
+          total_emails: emailsToSend.length,
+          enhanced_rate_limiting: true,
+          parallel_processing: true,
+          auto_retry_enabled: true,
+          progress_tracking: true
+        },
         gcf_url: gcfConfig.functionUrl,
-        immediate_completion: result.completed || false,
-        enhanced_config: true,
-        retry_attempts: attempt + 1
+        immediate_completion: result.completed || result.status === 'completed',
+        retry_attempts: attempt + 1,
+        processing_mode: result.processing ? 'asynchronous' : 'synchronous'
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )
@@ -231,15 +323,20 @@ serve(async (req) => {
     
     // Try to revert campaign status on any error
     try {
-      const supabaseUrl = Deno.env.get('SUPABASE_URL')!
-      const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-      const supabase = createClient(supabaseUrl, supabaseKey)
-      
       const { campaignId } = await req.json()
-      await supabase
-        .from('email_campaigns')
-        .update({ status: 'prepared' })
-        .eq('id', campaignId)
+      if (campaignId) {
+        const supabaseUrl = Deno.env.get('SUPABASE_URL')!
+        const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+        const supabase = createClient(supabaseUrl, supabaseKey)
+        
+        await supabase
+          .from('email_campaigns')
+          .update({ 
+            status: 'prepared',
+            error_message: `Sender error: ${error.message}`
+          })
+          .eq('id', campaignId)
+      }
     } catch (revertError) {
       console.error('Failed to revert campaign status:', revertError)
     }
@@ -247,7 +344,8 @@ serve(async (req) => {
     return new Response(
       JSON.stringify({ 
         error: `Failed to initiate sending via Google Cloud Functions: ${error.message}`,
-        details: error.stack 
+        details: error.stack,
+        timestamp: new Date().toISOString()
       }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )
