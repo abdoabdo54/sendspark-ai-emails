@@ -41,7 +41,9 @@ export const useUserOrganizations = () => {
     }
 
     try {
-      // First, check if user has any organizations
+      console.log('Fetching organizations for user:', user.id);
+      
+      // Check if user has any roles/organizations
       const { data: rolesData, error: rolesError } = await supabase
         .from('user_roles')
         .select(`
@@ -53,8 +55,9 @@ export const useUserOrganizations = () => {
       if (rolesError) {
         console.error('Error fetching user roles:', rolesError);
         
-        // If no roles found, create a default organization for the user
+        // If no roles found, create a default organization
         if (rolesError.code === 'PGRST116' || !rolesData || rolesData.length === 0) {
+          console.log('No roles found, creating default organization');
           await createDefaultOrganization();
           return;
         }
@@ -62,12 +65,17 @@ export const useUserOrganizations = () => {
       }
 
       if (!rolesData || rolesData.length === 0) {
-        // Create default organization if user has no organizations
+        console.log('No organizations found, creating default');
         await createDefaultOrganization();
         return;
       }
 
-      const orgs = rolesData.map((role: any) => role.organizations).filter(Boolean);
+      // Extract organizations and roles
+      const orgs = rolesData
+        .map((role: any) => role.organizations)
+        .filter(Boolean)
+        .filter((org: any) => org.is_active);
+
       const roles = rolesData.map((role: any) => ({
         id: role.id,
         user_id: role.user_id,
@@ -76,11 +84,16 @@ export const useUserOrganizations = () => {
         created_at: role.created_at
       }));
 
+      console.log('Found organizations:', orgs.length);
       setOrganizations(orgs);
       setUserRoles(roles);
       
+      // Set current organization if not already set
       if (orgs.length > 0 && !currentOrganization) {
-        setCurrentOrganization(orgs[0]);
+        // Try to restore from localStorage first
+        const savedOrgId = localStorage.getItem('currentOrganizationId');
+        const savedOrg = savedOrgId ? orgs.find((org: any) => org.id === savedOrgId) : null;
+        setCurrentOrganization(savedOrg || orgs[0]);
       }
 
     } catch (error) {
@@ -99,12 +112,14 @@ export const useUserOrganizations = () => {
     if (!user) return;
 
     try {
+      console.log('Creating default organization for user:', user.email);
+      
       // Create organization
       const { data: orgData, error: orgError } = await supabase
         .from('organizations')
         .insert([{
-          name: `${user.email}'s Organization`,
-          subdomain: user.email?.split('@')[0] || 'default-org',
+          name: `${user.email?.split('@')[0] || 'Default'}'s Organization`,
+          subdomain: (user.email?.split('@')[0] || 'default-org').toLowerCase().replace(/[^a-z0-9-]/g, ''),
           subscription_plan: 'free',
           is_active: true,
           monthly_email_limit: 1000,
@@ -115,7 +130,12 @@ export const useUserOrganizations = () => {
         .select()
         .single();
 
-      if (orgError) throw orgError;
+      if (orgError) {
+        console.error('Error creating organization:', orgError);
+        throw orgError;
+      }
+
+      console.log('Created organization:', orgData);
 
       // Create user role as admin
       const { error: roleError } = await supabase
@@ -126,7 +146,12 @@ export const useUserOrganizations = () => {
           role: 'admin'
         }]);
 
-      if (roleError) throw roleError;
+      if (roleError) {
+        console.error('Error creating user role:', roleError);
+        throw roleError;
+      }
+
+      console.log('Created user role');
 
       setOrganizations([orgData]);
       setCurrentOrganization(orgData);
@@ -211,6 +236,7 @@ export const useUserOrganizations = () => {
   };
 
   const switchOrganization = (organization: Organization) => {
+    console.log('Switching to organization:', organization.name);
     setCurrentOrganization(organization);
     localStorage.setItem('currentOrganizationId', organization.id);
   };
@@ -225,17 +251,6 @@ export const useUserOrganizations = () => {
       setLoading(false);
     }
   }, [user]);
-
-  useEffect(() => {
-    // Restore current organization from localStorage
-    const savedOrgId = localStorage.getItem('currentOrganizationId');
-    if (savedOrgId && organizations.length > 0) {
-      const savedOrg = organizations.find(org => org.id === savedOrgId);
-      if (savedOrg) {
-        setCurrentOrganization(savedOrg);
-      }
-    }
-  }, [organizations]);
 
   return {
     organizations,

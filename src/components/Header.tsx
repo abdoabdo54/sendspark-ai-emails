@@ -11,13 +11,31 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { useAuth } from '@/hooks/useAuth';
 import { useSimpleOrganizations } from '@/contexts/SimpleOrganizationContext';
-import { Building2, Settings, Server, Globe, LogOut, Plus, ChevronDown } from 'lucide-react';
+import { 
+  Building2, 
+  Settings, 
+  Server, 
+  Globe, 
+  LogOut, 
+  Plus, 
+  ChevronDown,
+  Mail,
+  BarChart3,
+  Users,
+  History,
+  User
+} from 'lucide-react';
 import OrganizationDialog from './OrganizationDialog';
 import DomainServerManager from './DomainServerManager';
 
-const Header = () => {
+interface HeaderProps {
+  activeTab?: string;
+  onTabChange?: (tab: string) => void;
+}
+
+const Header: React.FC<HeaderProps> = ({ activeTab, onTabChange }) => {
   const { user, signOut } = useAuth();
-  const { currentOrganization, organizations } = useSimpleOrganizations();
+  const { currentOrganization, organizations, setCurrentOrganization } = useSimpleOrganizations();
   const [showOrgDialog, setShowOrgDialog] = useState(false);
   const [showDomainManager, setShowDomainManager] = useState(false);
 
@@ -28,6 +46,25 @@ const Header = () => {
       console.error('Sign out error:', error);
     }
   };
+
+  const handleOrgSwitch = (org: any) => {
+    setCurrentOrganization(org);
+  };
+
+  const navItems = [
+    { id: 'bulk', label: 'Bulk Email', icon: Mail },
+    { id: 'single', label: 'Single Email', icon: Mail },
+    { id: 'testing', label: 'Testing', icon: BarChart3 },
+    { id: 'analytics', label: 'Analytics', icon: BarChart3 },
+    { id: 'accounts', label: 'Accounts', icon: User },
+  ];
+
+  const sidebarItems = [
+    { id: 'accounts-local', label: 'Accounts', icon: User },
+    { id: 'subscribers', label: 'Subscribers', icon: Users },
+    { id: 'history', label: 'History', icon: History },
+    { id: 'settings', label: 'Settings', icon: Settings },
+  ];
 
   return (
     <>
@@ -45,6 +82,22 @@ const Header = () => {
           </div>
 
           <div className="flex items-center space-x-4">
+            {/* Navigation Tabs */}
+            <div className="hidden md:flex items-center space-x-2">
+              {navItems.map((item) => (
+                <Button
+                  key={item.id}
+                  variant={activeTab === item.id ? "default" : "ghost"}
+                  size="sm"
+                  onClick={() => onTabChange?.(item.id)}
+                  className="flex items-center gap-2"
+                >
+                  <item.icon className="w-4 h-4" />
+                  {item.label}
+                </Button>
+              ))}
+            </div>
+
             {/* Domain & Server Management */}
             <Button
               variant="outline"
@@ -76,6 +129,7 @@ const Header = () => {
                     className={`cursor-pointer ${
                       currentOrganization?.id === org.id ? 'bg-blue-50' : ''
                     }`}
+                    onClick={() => handleOrgSwitch(org)}
                   >
                     <div className="flex flex-col">
                       <span className="font-medium">{org.name}</span>
@@ -103,7 +157,7 @@ const Header = () => {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuItem>
+                <DropdownMenuItem onClick={() => onTabChange?.('settings')}>
                   <Settings className="w-4 h-4 mr-2" />
                   Settings
                 </DropdownMenuItem>
@@ -114,6 +168,42 @@ const Header = () => {
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
+          </div>
+        </div>
+
+        {/* Mobile Navigation */}
+        <div className="md:hidden mt-4 border-t pt-4">
+          <div className="flex flex-wrap gap-2">
+            {navItems.map((item) => (
+              <Button
+                key={item.id}
+                variant={activeTab === item.id ? "default" : "ghost"}
+                size="sm"
+                onClick={() => onTabChange?.(item.id)}
+                className="flex items-center gap-2"
+              >
+                <item.icon className="w-4 h-4" />
+                {item.label}
+              </Button>
+            ))}
+          </div>
+        </div>
+
+        {/* Sidebar Navigation */}
+        <div className="mt-4 border-t pt-4">
+          <div className="flex flex-wrap gap-2">
+            {sidebarItems.map((item) => (
+              <Button
+                key={item.id}
+                variant={activeTab === item.id ? "default" : "ghost"}
+                size="sm"
+                onClick={() => onTabChange?.(item.id)}
+                className="flex items-center gap-2"
+              >
+                <item.icon className="w-4 h-4" />
+                {item.label}
+              </Button>
+            ))}
           </div>
         </div>
       </header>

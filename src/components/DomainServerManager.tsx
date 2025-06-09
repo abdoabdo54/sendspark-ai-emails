@@ -67,12 +67,15 @@ const DomainServerManager: React.FC<DomainServerManagerProps> = ({ isOpen, onClo
 
     try {
       const { data, error } = await supabase
-        .from('domains')
+        .from('domains' as any)
         .select('*')
         .eq('organization_id', currentOrganization.id)
         .order('created_at', { ascending: false });
 
-      if (error) throw error;
+      if (error) {
+        console.error('Error fetching domains:', error);
+        return;
+      }
       setDomains(data || []);
     } catch (error) {
       console.error('Error fetching domains:', error);
@@ -84,12 +87,15 @@ const DomainServerManager: React.FC<DomainServerManagerProps> = ({ isOpen, onClo
 
     try {
       const { data, error } = await supabase
-        .from('servers')
+        .from('servers' as any)
         .select('*')
         .eq('organization_id', currentOrganization.id)
         .order('created_at', { ascending: false });
 
-      if (error) throw error;
+      if (error) {
+        console.error('Error fetching servers:', error);
+        return;
+      }
       setServers(data || []);
     } catch (error) {
       console.error('Error fetching servers:', error);
@@ -102,7 +108,7 @@ const DomainServerManager: React.FC<DomainServerManagerProps> = ({ isOpen, onClo
     try {
       setLoading(true);
       const { data, error } = await supabase
-        .from('domains')
+        .from('domains' as any)
         .insert([{
           organization_id: currentOrganization.id,
           domain_name: newDomain.trim(),
@@ -139,7 +145,7 @@ const DomainServerManager: React.FC<DomainServerManagerProps> = ({ isOpen, onClo
     try {
       setLoading(true);
       const { data, error } = await supabase
-        .from('servers')
+        .from('servers' as any)
         .insert([{
           organization_id: currentOrganization.id,
           server_name: newServer.name.trim(),
@@ -147,7 +153,7 @@ const DomainServerManager: React.FC<DomainServerManagerProps> = ({ isOpen, onClo
           port: newServer.port,
           status: 'pending',
           server_config: {
-            root_password: newServer.rootPassword // In production, this should be encrypted
+            root_password: newServer.rootPassword
           }
         }])
         .select()
@@ -177,7 +183,7 @@ const DomainServerManager: React.FC<DomainServerManagerProps> = ({ isOpen, onClo
   const deleteDomain = async (domainId: string) => {
     try {
       const { error } = await supabase
-        .from('domains')
+        .from('domains' as any)
         .delete()
         .eq('id', domainId);
 
@@ -202,7 +208,7 @@ const DomainServerManager: React.FC<DomainServerManagerProps> = ({ isOpen, onClo
   const deleteServer = async (serverId: string) => {
     try {
       const { error } = await supabase
-        .from('servers')
+        .from('servers' as any)
         .delete()
         .eq('id', serverId);
 

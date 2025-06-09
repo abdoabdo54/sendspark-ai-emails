@@ -1,3 +1,4 @@
+
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import EmailComposer from "@/components/EmailComposer";
@@ -52,7 +53,7 @@ const Index = ({ activeTab, onTabChange }: IndexProps) => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-slate-100">
-      <Header />
+      <Header activeTab={activeTab} onTabChange={onTabChange} />
       
       <div className="container mx-auto p-6">
         {/* Organization info */}
