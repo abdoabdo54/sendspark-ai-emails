@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
@@ -258,7 +259,8 @@ export const useCampaigns = (organizationId?: string) => {
       // Default rate limits (emails per hour converted to emails per second for the function)
       const rateLimit = {};
       accounts.forEach(account => {
-        const emailsPerHour = account.config?.emails_per_hour || 3600;
+        const accountConfig = account.config as any; // Safely cast the config
+        const emailsPerHour = accountConfig?.emails_per_hour || 3600;
         rateLimit[account.id] = emailsPerHour; // Keep as emails per hour, function will convert
       });
 
