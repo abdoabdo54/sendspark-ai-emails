@@ -23,7 +23,8 @@ import {
   BarChart3,
   Users,
   History,
-  User
+  User,
+  Campaign
 } from 'lucide-react';
 import OrganizationDialog from './OrganizationDialog';
 import DomainServerManager from './DomainServerManager';
@@ -54,7 +55,7 @@ const Header: React.FC<HeaderProps> = ({ activeTab, onTabChange }) => {
   const navItems = [
     { id: 'bulk', label: 'Bulk Email', icon: Mail },
     { id: 'single', label: 'Single Email', icon: Mail },
-    { id: 'testing', label: 'Testing', icon: BarChart3 },
+    { id: 'campaigns', label: 'Campaigns', icon: Campaign },
     { id: 'analytics', label: 'Analytics', icon: BarChart3 },
     { id: 'accounts', label: 'Accounts', icon: User },
   ];

@@ -70,8 +70,10 @@ const EmailComposer = ({ activeTab = 'bulk' }: EmailComposerProps) => {
         return <BulkEmailComposer onSend={handleBulkEmailSend} />;
       case 'single':
         return <SingleEmailComposer onSend={handleSingleEmailSend} />;
-      case 'testing':
-        return <CampaignTesting />;
+      case 'campaigns':
+        // Redirect to campaigns page by setting window location
+        window.location.href = '/campaigns';
+        return <div>Redirecting to campaigns...</div>;
       case 'analytics':
         return <CampaignAnalytics />;
       case 'accounts':

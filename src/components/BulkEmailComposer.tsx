@@ -48,11 +48,23 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
     }
   }, [formData.recipients]);
 
-  // Force refresh accounts when component mounts
+  // Force refresh accounts when component mounts or organization changes
   useEffect(() => {
     if (currentOrganization?.id) {
-      console.log('BulkEmailComposer: Refreshing accounts for organization:', currentOrganization.id);
+      console.log('BulkEmailComposer: Organization changed, refreshing accounts for:', currentOrganization.id);
       refetch();
+    }
+  }, [currentOrganization?.id, refetch]);
+
+  // Auto-refresh accounts every 10 seconds to catch new additions
+  useEffect(() => {
+    if (currentOrganization?.id) {
+      const interval = setInterval(() => {
+        console.log('BulkEmailComposer: Auto-refreshing accounts');
+        refetch();
+      }, 10000); // Refresh every 10 seconds
+
+      return () => clearInterval(interval);
     }
   }, [currentOrganization?.id, refetch]);
 
@@ -147,6 +159,15 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
     }
   };
 
+  const handleRefreshAccounts = () => {
+    console.log('Manual account refresh triggered');
+    refetch();
+    toast({
+      title: "Refreshing",
+      description: "Checking for new email accounts..."
+    });
+  };
+
   if (!currentOrganization?.id) {
     return (
       <Alert>
@@ -172,7 +193,7 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
               type="button"
               variant="outline" 
               size="sm" 
-              onClick={refetch}
+              onClick={handleRefreshAccounts}
               disabled={accountsLoading}
             >
               <RefreshCw className={`w-4 h-4 mr-1 ${accountsLoading ? 'animate-spin' : ''}`} />
@@ -180,7 +201,7 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
             </Button>
           </CardTitle>
           <CardDescription>
-            Select the email account to send from
+            Select the email account to send from. Total accounts: {accounts.length}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -193,7 +214,7 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
             <Alert>
               <AlertCircle className="h-4 w-4" />
               <AlertDescription>
-                No email accounts found. Please add an email account first in the Accounts section.
+                No email accounts found for organization "{currentOrganization.name}". Please add an email account first in the Accounts section.
               </AlertDescription>
             </Alert>
           ) : (
@@ -229,6 +250,11 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
                   Selected: {accounts.find(acc => acc.id === formData.email_account_id)?.email}
                 </div>
               )}
+
+              {/* Debug info */}
+              <div className="text-xs text-slate-400 bg-slate-50 p-2 rounded">
+                Debug: Organization ID: {currentOrganization.id} | Accounts found: {accounts.length}
+              </div>
             </div>
           )}
         </CardContent>

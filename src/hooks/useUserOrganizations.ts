@@ -66,8 +66,8 @@ export const useUserOrganizations = () => {
         domain: org.org_domain,
         subscription_plan: org.subscription_plan,
         is_active: Boolean(org.is_active), // Ensure this is properly cast to boolean
-        monthly_email_limit: org.monthly_email_limit,
-        emails_sent_this_month: org.emails_sent_this_month,
+        monthly_email_limit: org.monthly_email_limit || 1000,
+        emails_sent_this_month: org.emails_sent_this_month || 0,
         created_at: org.created_at,
         updated_at: org.created_at // Using created_at as fallback for updated_at
       }));

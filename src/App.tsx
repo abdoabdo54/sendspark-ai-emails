@@ -7,6 +7,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/hooks/useAuth";
 import { SimpleOrganizationProvider } from "@/contexts/SimpleOrganizationContext";
 import Index from "./pages/Index";
+import Campaigns from "./pages/Campaigns";
 import AuthForm from "./components/AuthForm";
 import { useState } from "react";
 
@@ -33,7 +34,10 @@ const AppContent = () => {
 
   return (
     <SimpleOrganizationProvider>
-      <Index activeTab={activeTab} onTabChange={setActiveTab} />
+      <Routes>
+        <Route path="/" element={<Index activeTab={activeTab} onTabChange={setActiveTab} />} />
+        <Route path="/campaigns" element={<Campaigns />} />
+      </Routes>
     </SimpleOrganizationProvider>
   );
 };
@@ -46,9 +50,7 @@ const App = () => {
           <Toaster />
           <Sonner />
           <BrowserRouter>
-            <Routes>
-              <Route path="/" element={<AppContent />} />
-            </Routes>
+            <AppContent />
           </BrowserRouter>
         </TooltipProvider>
       </AuthProvider>
