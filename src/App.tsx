@@ -9,6 +9,7 @@ import Header from "./components/Header";
 import Index from "./pages/Index";
 import Tools from "./pages/Tools";
 import Campaigns from "./pages/Campaigns";
+import Settings from "./pages/Settings";
 import NotFound from "./pages/NotFound";
 import { SimpleOrganizationProvider } from "./contexts/SimpleOrganizationContext";
 
@@ -25,11 +26,12 @@ const App = () => {
           <Sonner />
           <BrowserRouter>
             <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-slate-100">
-              <Header activeTab={activeTab} onTabChange={setActiveTab} />
+              <Header />
               <Routes>
                 <Route path="/" element={<Index activeTab={activeTab} onTabChange={setActiveTab} />} />
                 <Route path="/tools" element={<Tools />} />
                 <Route path="/campaigns" element={<Campaigns />} />
+                <Route path="/settings" element={<Settings />} />
                 <Route path="*" element={<NotFound />} />
               </Routes>
             </div>
