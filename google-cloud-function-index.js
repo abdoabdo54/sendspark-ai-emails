@@ -88,26 +88,31 @@ functions.http('sendEmailCampaign', async (req, res) => {
       
       try {
         if (accountType === 'smtp') {
-          // Validate SMTP configuration
-          if (!accountConfig.host || !accountConfig.port || !accountConfig.user || !accountConfig.pass) {
+          // Validate SMTP configuration - check for both possible field names
+          const smtpHost = accountConfig.host;
+          const smtpPort = accountConfig.port;
+          const smtpUser = accountConfig.user || accountConfig.username;
+          const smtpPass = accountConfig.pass || accountConfig.password;
+          
+          if (!smtpHost || !smtpPort || !smtpUser || !smtpPass) {
             throw new Error(`SMTP configuration incomplete for ${accountInfo.email}. Missing: ${
               [
-                !accountConfig.host && 'host',
-                !accountConfig.port && 'port', 
-                !accountConfig.user && 'username',
-                !accountConfig.pass && 'password'
+                !smtpHost && 'host',
+                !smtpPort && 'port', 
+                !smtpUser && 'username',
+                !smtpPass && 'password'
               ].filter(Boolean).join(', ')
             }`);
           }
 
           // Create MAXIMUM SPEED SMTP transporter with enhanced reliability
           const transporterConfig = {
-            host: accountConfig.host,
-            port: parseInt(accountConfig.port) || 587,
-            secure: accountConfig.port == 465, // Use SSL for port 465
+            host: smtpHost,
+            port: parseInt(smtpPort) || 587,
+            secure: parseInt(smtpPort) === 465, // Use SSL for port 465
             auth: {
-              user: accountConfig.user || accountConfig.username,
-              pass: accountConfig.pass || accountConfig.password
+              user: smtpUser,
+              pass: smtpPass
             },
             pool: true,
             maxConnections: 2, // Conservative for reliability
@@ -125,10 +130,10 @@ functions.http('sendEmailCampaign', async (req, res) => {
           };
 
           console.log(`📧 Creating SMTP transporter for ${accountInfo.email}:`, {
-            host: accountConfig.host,
-            port: accountConfig.port,
+            host: smtpHost,
+            port: smtpPort,
             secure: transporterConfig.secure,
-            user: transporterConfig.auth.user
+            user: smtpUser
           });
 
           const transporter = nodemailer.createTransporter(transporterConfig);
@@ -235,6 +240,10 @@ functions.http('sendEmailCampaign', async (req, res) => {
           }
 
           const scriptUrl = accountConfig.exec_url || accountConfig.script_url;
+
+          if (!scriptUrl) {
+            throw new Error(`Apps Script URL missing for ${accountInfo.email}`);
+          }
 
           // MAXIMUM SPEED Apps Script processing
           const batchSize = 5; // Smaller batch for Apps Script
