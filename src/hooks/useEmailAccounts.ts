@@ -1,5 +1,4 @@
-
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
 
@@ -19,9 +18,10 @@ export const useEmailAccounts = (organizationId?: string) => {
   const [accounts, setAccounts] = useState<EmailAccount[]>([]);
   const [loading, setLoading] = useState(false);
 
-  const fetchAccounts = async () => {
+  const fetchAccounts = useCallback(async () => {
     if (!organizationId) {
       console.log('No organization ID provided for fetching accounts');
+      setAccounts([]);
       return;
     }
 
@@ -59,7 +59,7 @@ export const useEmailAccounts = (organizationId?: string) => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [organizationId]);
 
   const addAccount = async (accountData: Omit<EmailAccount, 'id' | 'created_at' | 'updated_at' | 'organization_id'>) => {
     if (!organizationId) {
@@ -206,10 +206,8 @@ export const useEmailAccounts = (organizationId?: string) => {
   };
 
   useEffect(() => {
-    if (organizationId) {
-      fetchAccounts();
-    }
-  }, [organizationId]);
+    fetchAccounts();
+  }, [fetchAccounts]);
 
   return {
     accounts,
