@@ -10,7 +10,7 @@ const corsHeaders = {
 interface EmailAccount {
   id: string;
   name: string;
-  type: 'smtp' | 'apps-script';
+  type: 'smtp' | 'apps-script' | 'powermta';
   email: string;
   config: {
     emails_per_second?: number;
@@ -71,16 +71,25 @@ serve(async (req) => {
       )
     }
 
-    // Get all active email accounts for this organization
+    // Get selected accounts from campaign config
+    const selectedAccountIds = campaign.config?.selectedAccounts || []
+    if (selectedAccountIds.length === 0) {
+      return new Response(
+        JSON.stringify({ error: 'No accounts selected for this campaign' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
+    // Get selected email accounts
     const { data: accounts, error: accountsError } = await supabase
       .from('email_accounts')
       .select('*')
-      .eq('organization_id', campaign.organization_id)
+      .in('id', selectedAccountIds)
       .eq('is_active', true)
 
     if (accountsError || !accounts || accounts.length === 0) {
       return new Response(
-        JSON.stringify({ error: 'No active email accounts found' }),
+        JSON.stringify({ error: 'No active email accounts found for this campaign' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
@@ -104,12 +113,22 @@ serve(async (req) => {
     let currentTime = new Date()
     let globalOrderIndex = 0
 
-    // Calculate total emails per second across all accounts
+    // Calculate total emails per second across all accounts (respecting hour limits)
     const totalEmailsPerSecond = accounts.reduce((total, account) => {
-      return total + (account.config?.emails_per_second || 1)
+      const perSecond = account.config?.emails_per_second || 1
+      const perHour = account.config?.emails_per_hour || 3600
+      // Don't exceed hourly rate when calculated per second
+      const maxPerSecondFromHourly = perHour / 3600
+      const effectivePerSecond = Math.min(perSecond, maxPerSecondFromHourly)
+      return total + effectivePerSecond
     }, 0)
 
     console.log(`Total sending capacity: ${totalEmailsPerSecond} emails/second`)
+
+    // Get rotation settings from campaign config
+    const rotationConfig = campaign.config?.rotation || {}
+    const campaignFromNames = rotationConfig.fromNames || []
+    const campaignSubjects = rotationConfig.subjects || []
 
     // Distribute recipients across accounts in round-robin fashion
     for (let i = 0; i < recipients.length; i++) {
@@ -117,22 +136,27 @@ serve(async (req) => {
       const accountIndex = i % accounts.length
       const account = accounts[accountIndex] as EmailAccount
 
-      // Handle FROM name rotation
+      // Handle FROM name rotation (campaign level takes precedence)
       let fromName = campaign.from_name
-      if (account.config?.rotation_enabled && account.config?.from_names?.length > 0) {
+      if (rotationConfig.useFromNameRotation && campaignFromNames.length > 0) {
+        const rotationIndex = Math.floor(i / accounts.length) % campaignFromNames.length
+        fromName = campaignFromNames[rotationIndex] || campaign.from_name
+      } else if (account.config?.rotation_enabled && account.config?.from_names?.length > 0) {
         const rotationIndex = Math.floor(i / accounts.length) % account.config.from_names.length
         fromName = account.config.from_names[rotationIndex] || campaign.from_name
       }
 
-      // Handle subject rotation
+      // Handle subject rotation (campaign level takes precedence)
       let subject = campaign.subject
-      if (account.config?.rotation_enabled && account.config?.subjects?.length > 0) {
+      if (rotationConfig.useSubjectRotation && campaignSubjects.length > 0) {
+        const rotationIndex = Math.floor(i / accounts.length) % campaignSubjects.length
+        subject = campaignSubjects[rotationIndex] || campaign.subject
+      } else if (account.config?.rotation_enabled && account.config?.subjects?.length > 0) {
         const rotationIndex = Math.floor(i / accounts.length) % account.config.subjects.length
         subject = account.config.subjects[rotationIndex] || campaign.subject
       }
 
-      // Calculate delay based on account rate limit
-      const accountEmailsPerSecond = account.config?.emails_per_second || 1
+      // Calculate delay based on total capacity
       const delaySeconds = Math.floor(globalOrderIndex / totalEmailsPerSecond)
       const estimatedSendTime = new Date(currentTime.getTime() + (delaySeconds * 1000))
 
@@ -202,11 +226,18 @@ serve(async (req) => {
       estimated_duration_seconds: Math.ceil(recipients.length / totalEmailsPerSecond),
       total_capacity_per_second: totalEmailsPerSecond,
       preparation_timestamp: new Date().toISOString(),
+      rotation_settings: {
+        campaign_from_names: campaignFromNames.length,
+        campaign_subjects: campaignSubjects.length,
+        using_campaign_rotation: rotationConfig.useFromNameRotation || rotationConfig.useSubjectRotation
+      },
       account_distribution: accounts.map(account => ({
         account_id: account.id,
         account_name: account.name,
+        account_type: account.type,
         emails_assigned: preparedEmails.filter(e => e.account_id === account.id).length,
-        rate_limit: account.config?.emails_per_second || 1
+        rate_limit_per_second: account.config?.emails_per_second || 1,
+        rate_limit_per_hour: account.config?.emails_per_hour || 3600
       }))
     }
 

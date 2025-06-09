@@ -13,7 +13,7 @@ import { Switch } from "@/components/ui/switch";
 import { Plus, Trash2, Edit } from 'lucide-react';
 import { Campaign, useCampaigns } from '@/hooks/useCampaigns';
 import { useEmailAccounts } from '@/hooks/useEmailAccounts';
-import { useOrganizations } from '@/hooks/useOrganizations';
+import { useSimpleOrganizations } from '@/contexts/SimpleOrganizationContext';
 import { toast } from '@/hooks/use-toast';
 
 interface CampaignEditDialogProps {
@@ -22,7 +22,7 @@ interface CampaignEditDialogProps {
 }
 
 const CampaignEditDialog = ({ campaign, trigger }: CampaignEditDialogProps) => {
-  const { currentOrganization } = useOrganizations();
+  const { currentOrganization } = useSimpleOrganizations();
   const { updateCampaign } = useCampaigns(currentOrganization?.id);
   const { accounts } = useEmailAccounts(currentOrganization?.id);
 
@@ -33,12 +33,13 @@ const CampaignEditDialog = ({ campaign, trigger }: CampaignEditDialogProps) => {
   const [htmlContent, setHtmlContent] = useState(campaign.html_content || '');
   const [textContent, setTextContent] = useState(campaign.text_content || '');
   const [selectedAccounts, setSelectedAccounts] = useState<string[]>(campaign.config?.selectedAccounts || []);
-  const [sendingMethod, setSendingMethod] = useState(campaign.config?.sendingMethod || 'sequential');
+  const [sendingMethod, setSendingMethod] = useState(campaign.config?.sendingMethod || 'round-robin');
   
   // Rotation settings
-  const [useRotation, setUseRotation] = useState(campaign.config?.rotation?.useRotation || false);
-  const [rotationFromNames, setRotationFromNames] = useState<string[]>(campaign.config?.rotation?.fromNames || ['']);
-  const [rotationSubjects, setRotationSubjects] = useState<string[]>(campaign.config?.rotation?.subjects || ['']);
+  const [useFromNameRotation, setUseFromNameRotation] = useState(campaign.config?.rotation?.useFromNameRotation || false);
+  const [fromNameRotations, setFromNameRotations] = useState<string[]>(campaign.config?.rotation?.fromNames || ['']);
+  const [useSubjectRotation, setUseSubjectRotation] = useState(campaign.config?.rotation?.useSubjectRotation || false);
+  const [subjectRotations, setSubjectRotations] = useState<string[]>(campaign.config?.rotation?.subjects || ['']);
   
   const [loading, setLoading] = useState(false);
 
@@ -52,28 +53,28 @@ const CampaignEditDialog = ({ campaign, trigger }: CampaignEditDialogProps) => {
     );
   };
 
-  const addRotationFromName = () => {
-    setRotationFromNames(prev => [...prev, '']);
+  const addFromNameRotation = () => {
+    setFromNameRotations(prev => [...prev, '']);
   };
 
-  const updateRotationFromName = (index: number, value: string) => {
-    setRotationFromNames(prev => prev.map((name, i) => i === index ? value : name));
+  const updateFromNameRotation = (index: number, value: string) => {
+    setFromNameRotations(prev => prev.map((name, i) => i === index ? value : name));
   };
 
-  const removeRotationFromName = (index: number) => {
-    setRotationFromNames(prev => prev.filter((_, i) => i !== index));
+  const removeFromNameRotation = (index: number) => {
+    setFromNameRotations(prev => prev.filter((_, i) => i !== index));
   };
 
-  const addRotationSubject = () => {
-    setRotationSubjects(prev => [...prev, '']);
+  const addSubjectRotation = () => {
+    setSubjectRotations(prev => [...prev, '']);
   };
 
-  const updateRotationSubject = (index: number, value: string) => {
-    setRotationSubjects(prev => prev.map((subject, i) => i === index ? value : subject));
+  const updateSubjectRotation = (index: number, value: string) => {
+    setSubjectRotations(prev => prev.map((subject, i) => i === index ? value : subject));
   };
 
-  const removeRotationSubject = (index: number) => {
-    setRotationSubjects(prev => prev.filter((_, i) => i !== index));
+  const removeSubjectRotation = (index: number) => {
+    setSubjectRotations(prev => prev.filter((_, i) => i !== index));
   };
 
   const handleSave = async () => {
@@ -104,9 +105,10 @@ const CampaignEditDialog = ({ campaign, trigger }: CampaignEditDialogProps) => {
         selectedAccounts,
         sendingMethod,
         rotation: {
-          useRotation,
-          fromNames: useRotation ? rotationFromNames.filter(name => name.trim()) : [],
-          subjects: useRotation ? rotationSubjects.filter(subject => subject.trim()) : []
+          useFromNameRotation,
+          fromNames: useFromNameRotation ? fromNameRotations.filter(name => name.trim()) : [],
+          useSubjectRotation,
+          subjects: useSubjectRotation ? subjectRotations.filter(subject => subject.trim()) : []
         }
       };
 
@@ -141,8 +143,8 @@ const CampaignEditDialog = ({ campaign, trigger }: CampaignEditDialogProps) => {
   };
 
   const recipientCount = recipients.split(',').filter(email => email.trim()).length;
-  const validFromNames = rotationFromNames.filter(name => name.trim());
-  const validSubjects = rotationSubjects.filter(subject => subject.trim());
+  const validFromNames = fromNameRotations.filter(name => name.trim());
+  const validSubjects = subjectRotations.filter(subject => subject.trim());
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -184,6 +186,84 @@ const CampaignEditDialog = ({ campaign, trigger }: CampaignEditDialogProps) => {
                 required
               />
             </div>
+          </div>
+
+          {/* FROM Name Rotation */}
+          <div className="space-y-4">
+            <div className="flex items-center space-x-2">
+              <Label>FROM Name Rotation</Label>
+              <Switch
+                checked={useFromNameRotation}
+                onCheckedChange={setUseFromNameRotation}
+              />
+            </div>
+            
+            {useFromNameRotation && (
+              <div className="space-y-3 border rounded-lg p-4">
+                <div className="flex items-center justify-between">
+                  <Label>FROM Names (will rotate instead of main FROM name)</Label>
+                  <Button type="button" variant="outline" size="sm" onClick={addFromNameRotation}>
+                    <Plus className="h-4 w-4" />
+                  </Button>
+                </div>
+                {fromNameRotations.map((name, index) => (
+                  <div key={index} className="flex items-center space-x-2">
+                    <Input
+                      value={name}
+                      onChange={(e) => updateFromNameRotation(index, e.target.value)}
+                      placeholder={`FROM name ${index + 1}`}
+                    />
+                    {fromNameRotations.length > 1 && (
+                      <Button type="button" variant="outline" size="sm" onClick={() => removeFromNameRotation(index)}>
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    )}
+                  </div>
+                ))}
+                {validFromNames.length > 1 && (
+                  <Badge variant="outline">{validFromNames.length} FROM names will rotate</Badge>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Subject Rotation */}
+          <div className="space-y-4">
+            <div className="flex items-center space-x-2">
+              <Label>Subject Rotation</Label>
+              <Switch
+                checked={useSubjectRotation}
+                onCheckedChange={setUseSubjectRotation}
+              />
+            </div>
+            
+            {useSubjectRotation && (
+              <div className="space-y-3 border rounded-lg p-4">
+                <div className="flex items-center justify-between">
+                  <Label>Subject Lines (will rotate instead of main subject)</Label>
+                  <Button type="button" variant="outline" size="sm" onClick={addSubjectRotation}>
+                    <Plus className="h-4 w-4" />
+                  </Button>
+                </div>
+                {subjectRotations.map((subjectLine, index) => (
+                  <div key={index} className="flex items-center space-x-2">
+                    <Input
+                      value={subjectLine}
+                      onChange={(e) => updateSubjectRotation(index, e.target.value)}
+                      placeholder={`Subject line ${index + 1}`}
+                    />
+                    {subjectRotations.length > 1 && (
+                      <Button type="button" variant="outline" size="sm" onClick={() => removeSubjectRotation(index)}>
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    )}
+                  </div>
+                ))}
+                {validSubjects.length > 1 && (
+                  <Badge variant="outline">{validSubjects.length} subjects will rotate</Badge>
+                )}
+              </div>
+            )}
           </div>
 
           <div className="space-y-2">
@@ -264,6 +344,9 @@ const CampaignEditDialog = ({ campaign, trigger }: CampaignEditDialogProps) => {
                         <Badge variant="outline">{account.type}</Badge>
                       </div>
                       <p className="text-sm text-gray-600">{account.email}</p>
+                      <div className="text-xs text-gray-500 mt-1">
+                        Rate: {account.config?.emails_per_second || 1}/sec, {account.config?.emails_per_hour || 3600}/hour
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -276,79 +359,13 @@ const CampaignEditDialog = ({ campaign, trigger }: CampaignEditDialogProps) => {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="sequential">Sequential (use first account)</SelectItem>
                         <SelectItem value="round-robin">Round Robin (rotate accounts)</SelectItem>
+                        <SelectItem value="sequential">Sequential (use first account)</SelectItem>
+                        <SelectItem value="parallel">Parallel (all accounts simultaneously)</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
                 )}
-              </div>
-            )}
-          </div>
-
-          {/* Content Rotation */}
-          <div className="space-y-4">
-            <div className="flex items-center space-x-2">
-              <Label>Content Rotation</Label>
-              <Switch
-                checked={useRotation}
-                onCheckedChange={setUseRotation}
-              />
-            </div>
-            
-            {useRotation && (
-              <div className="space-y-4 border rounded-lg p-4">
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <Label>From Names</Label>
-                    <Button type="button" variant="outline" size="sm" onClick={addRotationFromName}>
-                      <Plus className="h-4 w-4" />
-                    </Button>
-                  </div>
-                  {rotationFromNames.map((name, index) => (
-                    <div key={index} className="flex items-center space-x-2">
-                      <Input
-                        value={name}
-                        onChange={(e) => updateRotationFromName(index, e.target.value)}
-                        placeholder={`From name ${index + 1}`}
-                      />
-                      {rotationFromNames.length > 1 && (
-                        <Button type="button" variant="outline" size="sm" onClick={() => removeRotationFromName(index)}>
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      )}
-                    </div>
-                  ))}
-                  {validFromNames.length > 1 && (
-                    <Badge variant="outline">{validFromNames.length} from names will rotate</Badge>
-                  )}
-                </div>
-
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <Label>Subject Lines</Label>
-                    <Button type="button" variant="outline" size="sm" onClick={addRotationSubject}>
-                      <Plus className="h-4 w-4" />
-                    </Button>
-                  </div>
-                  {rotationSubjects.map((subjectLine, index) => (
-                    <div key={index} className="flex items-center space-x-2">
-                      <Input
-                        value={subjectLine}
-                        onChange={(e) => updateRotationSubject(index, e.target.value)}
-                        placeholder={`Subject line ${index + 1}`}
-                      />
-                      {rotationSubjects.length > 1 && (
-                        <Button type="button" variant="outline" size="sm" onClick={() => removeRotationSubject(index)}>
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      )}
-                    </div>
-                  ))}
-                  {validSubjects.length > 1 && (
-                    <Badge variant="outline">{validSubjects.length} subjects will rotate</Badge>
-                  )}
-                </div>
               </div>
             )}
           </div>

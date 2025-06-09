@@ -8,6 +8,7 @@ import { useCampaigns } from '@/hooks/useCampaigns';
 import { useSimpleOrganizations } from '@/contexts/SimpleOrganizationContext';
 import { format } from 'date-fns';
 import CampaignAnalyticsDropdown from './CampaignAnalyticsDropdown';
+import CampaignEditDialog from './CampaignEditDialog';
 
 const CampaignHistory = () => {
   const { currentOrganization } = useSimpleOrganizations();
@@ -97,6 +98,20 @@ const CampaignHistory = () => {
                         Recipients: {campaign.total_recipients} | 
                         Sent: {campaign.sent_count}
                       </p>
+                      
+                      {/* Show selected accounts and rotation info */}
+                      {campaign.config?.selectedAccounts && (
+                        <div className="text-xs text-slate-500 mt-2">
+                          <div>Accounts: {campaign.config.selectedAccounts.length} selected</div>
+                          {campaign.config.rotation?.useFromNameRotation && (
+                            <div>FROM rotation: {campaign.config.rotation.fromNames?.length || 0} variants</div>
+                          )}
+                          {campaign.config.rotation?.useSubjectRotation && (
+                            <div>Subject rotation: {campaign.config.rotation.subjects?.length || 0} variants</div>
+                          )}
+                        </div>
+                      )}
+                      
                       <p className="text-xs text-slate-500 mt-2">
                         Created: {format(new Date(campaign.created_at), 'MMM dd, yyyy HH:mm')}
                         {campaign.sent_at && (
@@ -153,6 +168,18 @@ const CampaignHistory = () => {
                         <Play className="w-4 h-4 mr-1" />
                         Resume
                       </Button>
+                    )}
+
+                    {campaign.status !== 'sending' && (
+                      <CampaignEditDialog 
+                        campaign={campaign}
+                        trigger={
+                          <Button size="sm" variant="outline">
+                            <Edit className="w-4 h-4 mr-1" />
+                            Edit
+                          </Button>
+                        }
+                      />
                     )}
 
                     <Button
