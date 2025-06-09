@@ -58,18 +58,18 @@ export const useUserOrganizations = () => {
         return;
       }
 
-      // Transform the data to match our interface - include is_active properly
+      // Transform the data to match our interface - ensure all properties are included
       const transformedOrgs = orgsData.map((org: any) => ({
         id: org.org_id,
         name: org.org_name,
         subdomain: org.org_subdomain,
         domain: org.org_domain,
         subscription_plan: org.subscription_plan,
-        is_active: org.is_active, // Ensure this is included
+        is_active: Boolean(org.is_active), // Ensure this is properly cast to boolean
         monthly_email_limit: org.monthly_email_limit,
         emails_sent_this_month: org.emails_sent_this_month,
         created_at: org.created_at,
-        updated_at: org.created_at
+        updated_at: org.created_at // Using created_at as fallback for updated_at
       }));
 
       const transformedRoles = orgsData.map((org: any) => ({
