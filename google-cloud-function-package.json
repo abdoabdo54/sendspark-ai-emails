@@ -1,8 +1,8 @@
 
 {
-  "name": "send-email-campaign-optimized",
-  "version": "2.0.0",
-  "description": "Optimized Google Cloud Function for high-speed email campaigns",
+  "name": "send-email-campaign-maximum-speed",
+  "version": "3.0.0",
+  "description": "MAXIMUM SPEED Google Cloud Function for ultra-fast email campaigns",
   "main": "index.js",
   "dependencies": {
     "@google-cloud/functions-framework": "^3.0.0",
@@ -11,7 +11,7 @@
   },
   "scripts": {
     "start": "functions-framework --target=sendEmailCampaign",
-    "deploy": "gcloud functions deploy sendEmailCampaign --runtime nodejs18 --trigger-http --allow-unauthenticated"
+    "deploy": "gcloud functions deploy sendEmailCampaign --runtime nodejs18 --trigger-http --allow-unauthenticated --memory=2GB --timeout=540s"
   },
   "engines": {
     "node": ">=18.0.0"

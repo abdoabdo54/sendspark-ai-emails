@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
@@ -55,8 +56,8 @@ export const useCampaigns = (organizationId?: string) => {
         sent_at: item.sent_at || undefined,
         config: typeof item.config === 'object' && item.config !== null ? item.config : {},
         prepared_emails: Array.isArray(item.prepared_emails) ? item.prepared_emails : [],
-        error_message: (item as any).error_message || undefined,
-        completed_at: (item as any).completed_at || undefined
+        error_message: item.error_message || undefined,
+        completed_at: item.completed_at || undefined
       }));
       
       setCampaigns(typedCampaigns);
@@ -84,7 +85,7 @@ export const useCampaigns = (organizationId?: string) => {
       } else {
         stopPolling();
       }
-    }, 5000); // Poll every 5 seconds instead of 3
+    }, 3000); // Fast polling every 3 seconds for real-time updates
     
     setPollingInterval(interval);
   };
@@ -192,7 +193,6 @@ export const useCampaigns = (organizationId?: string) => {
     try {
       console.log('Updating campaign:', campaignId, updates);
 
-      // Use upsert to avoid "no rows returned" error
       const { data, error } = await supabase
         .from('email_campaigns')
         .update(updates)
@@ -225,7 +225,9 @@ export const useCampaigns = (organizationId?: string) => {
         created_at: updatedCampaign.created_at || '',
         sent_at: updatedCampaign.sent_at || undefined,
         config: typeof updatedCampaign.config === 'object' && updatedCampaign.config !== null ? updatedCampaign.config : {},
-        prepared_emails: Array.isArray(updatedCampaign.prepared_emails) ? updatedCampaign.prepared_emails : []
+        prepared_emails: Array.isArray(updatedCampaign.prepared_emails) ? updatedCampaign.prepared_emails : [],
+        error_message: updatedCampaign.error_message || undefined,
+        completed_at: updatedCampaign.completed_at || undefined
       };
 
       setCampaigns(prev => prev.map(campaign => 
@@ -345,26 +347,31 @@ export const useCampaigns = (organizationId?: string) => {
 
   const sendCampaignViaGoogleCloud = async (campaignId: string, resumeFromIndex = 0) => {
     try {
-      console.log('Initiating Google Cloud send for campaign:', campaignId);
+      console.log('🚀 Initiating MAXIMUM SPEED Google Cloud send for campaign:', campaignId);
 
       const campaign = campaigns.find(c => c.id === campaignId);
       if (!campaign) {
         throw new Error('Campaign not found');
       }
 
-      // Update status to sending immediately
+      if (campaign.status === 'sending') {
+        throw new Error('Campaign is already being sent');
+      }
+
+      // Update status to sending immediately for immediate UI feedback
       await updateCampaign(campaignId, { 
         status: 'sending',
-        sent_at: new Date().toISOString()
+        sent_at: new Date().toISOString(),
+        error_message: null
       });
 
-      // Call the enhanced Google Cloud sender
+      // Call the ULTRA-HIGH-SPEED Google Cloud sender
       const { data, error } = await supabase.functions.invoke('send-via-google-cloud-advanced', {
         body: { campaignId, resumeFromIndex }
       });
 
       if (error) {
-        console.error('Error calling Google Cloud sender:', error);
+        console.error('❌ Google Cloud sender error:', error);
         
         // Revert status on error
         await updateCampaign(campaignId, { 
@@ -375,31 +382,31 @@ export const useCampaigns = (organizationId?: string) => {
         throw error;
       }
 
-      console.log('Google Cloud send initiated:', data);
+      console.log('✅ Google Cloud HIGH-SPEED send initiated:', data);
 
       if (data.success) {
         toast({
-          title: "Campaign Sending Started!",
-          description: `Processing ${data.configuration?.total_emails || 0} emails. The system will handle sending at maximum speed.`
+          title: "🚀 MAXIMUM SPEED Campaign Started!",
+          description: `Processing ${data.configuration?.total_emails || 0} emails at MAXIMUM SPEED via Google Cloud Functions. Real-time updates every 3 seconds.`
         });
 
-        // Start polling for updates
+        // Start aggressive polling for real-time updates
         startPolling();
       } else {
-        throw new Error(data.error || 'Failed to start campaign sending');
+        throw new Error(data.error || 'Failed to start high-speed campaign sending');
       }
 
       await fetchCampaigns();
       return data;
     } catch (error) {
-      console.error('Error sending campaign via Google Cloud:', error);
+      console.error('💥 CRITICAL ERROR in Google Cloud send:', error);
       
       const errorMsg = error.message.includes('non-2xx status code')
-        ? 'Google Cloud Function error. Please check your configuration and try again.'
-        : `Failed to send campaign: ${error.message}`;
+        ? 'Google Cloud Function error. Check your function URL and deployment.'
+        : `High-speed campaign failed: ${error.message}`;
       
       toast({
-        title: "Campaign Send Failed",
+        title: "⚡ High-Speed Campaign Failed",
         description: errorMsg,
         variant: "destructive"
       });
@@ -533,7 +540,7 @@ export const useCampaigns = (organizationId?: string) => {
     createCampaign,
     updateCampaign,
     prepareCampaign,
-    sendCampaign,
+    sendCampaign: sendCampaignViaGoogleCloud, // Always use Google Cloud for maximum speed
     sendCampaignViaGoogleCloud,
     pauseCampaign,
     resumeCampaign,
