@@ -1,6 +1,6 @@
 
 import React, { createContext, useContext } from 'react';
-import { useOrganizations } from '@/hooks/useOrganizations';
+import { useUserOrganizations } from '@/hooks/useUserOrganizations';
 
 interface Organization {
   id: string;
@@ -34,8 +34,9 @@ export const SimpleOrganizationProvider: React.FC<{ children: React.ReactNode }>
     currentOrganization, 
     organizations, 
     loading, 
-    createOrganization 
-  } = useOrganizations();
+    createOrganization,
+    switchOrganization
+  } = useUserOrganizations();
 
   // Transform the organization data to match the interface
   const transformedCurrentOrganization = currentOrganization ? {
@@ -59,7 +60,7 @@ export const SimpleOrganizationProvider: React.FC<{ children: React.ReactNode }>
   return (
     <SimpleOrganizationContext.Provider value={{
       currentOrganization: transformedCurrentOrganization,
-      setCurrentOrganization: () => {}, // Not needed since useOrganizations handles this
+      setCurrentOrganization: switchOrganization,
       organizations: transformedOrganizations,
       loading,
       createOrganization

@@ -1,4 +1,3 @@
-
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import EmailComposer from "@/components/EmailComposer";
@@ -7,9 +6,8 @@ import SettingsPanel from "@/components/SettingsPanel";
 import SubscriberManager from "@/components/SubscriberManager";
 import DashboardStats from "@/components/DashboardStats";
 import AccountManager from "@/components/AccountManager";
-import OrganizationSetup from "@/components/OrganizationSetup";
-import { useOrganizations } from '@/hooks/useOrganizations';
-import { Mail, Settings, History, Users, Server } from 'lucide-react';
+import Header from "@/components/Header";
+import { useSimpleOrganizations } from '@/contexts/SimpleOrganizationContext';
 
 interface IndexProps {
   activeTab: string;
@@ -17,7 +15,7 @@ interface IndexProps {
 }
 
 const Index = ({ activeTab, onTabChange }: IndexProps) => {
-  const { currentOrganization, loading } = useOrganizations();
+  const { currentOrganization, loading } = useSimpleOrganizations();
 
   // Show loading state
   if (loading) {
@@ -29,11 +27,6 @@ const Index = ({ activeTab, onTabChange }: IndexProps) => {
         </div>
       </div>
     );
-  }
-
-  // Show organization setup if no organization exists
-  if (!currentOrganization) {
-    return <OrganizationSetup />;
   }
 
   const renderMainContent = () => {
@@ -59,27 +52,31 @@ const Index = ({ activeTab, onTabChange }: IndexProps) => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-slate-100">
+      <Header />
+      
       <div className="container mx-auto p-6">
-        {/* Header */}
-        <div className="mb-8 flex justify-between items-center">
-          <div>
-            <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent mb-2">
-              Email Campaign Pro
-            </h1>
-            <p className="text-slate-600 text-lg">
-              Professional email marketing platform for {currentOrganization.name}
-            </p>
+        {/* Organization info */}
+        {currentOrganization && (
+          <div className="mb-6 flex justify-between items-center">
+            <div>
+              <h2 className="text-2xl font-bold text-slate-800">
+                Welcome to {currentOrganization.name}
+              </h2>
+              <p className="text-slate-600">
+                Manage your email campaigns and subscribers
+              </p>
+            </div>
+            
+            <div className="flex items-center gap-4">
+              <Badge variant="outline" className="text-sm bg-green-50 text-green-700 border-green-200">
+                {currentOrganization.subscription_plan.charAt(0).toUpperCase() + currentOrganization.subscription_plan.slice(1)} Plan
+              </Badge>
+              <Badge variant="outline" className="text-sm bg-blue-50 text-blue-700 border-blue-200">
+                {currentOrganization.emails_sent_this_month.toLocaleString()} / {currentOrganization.monthly_email_limit.toLocaleString()} emails
+              </Badge>
+            </div>
           </div>
-          
-          <div className="flex items-center gap-4">
-            <Badge variant="outline" className="text-sm bg-green-50 text-green-700 border-green-200">
-              {currentOrganization.subscription_plan.charAt(0).toUpperCase() + currentOrganization.subscription_plan.slice(1)} Plan
-            </Badge>
-            <Badge variant="outline" className="text-sm bg-blue-50 text-blue-700 border-blue-200">
-              {currentOrganization.emails_sent_this_month.toLocaleString()} / {currentOrganization.monthly_email_limit.toLocaleString()} emails
-            </Badge>
-          </div>
-        </div>
+        )}
 
         {/* Dashboard Stats */}
         <DashboardStats />
