@@ -33,12 +33,10 @@ const AppContent = () => {
   }
 
   return (
-    <SimpleOrganizationProvider>
-      <Routes>
-        <Route path="/" element={<Index activeTab={activeTab} onTabChange={setActiveTab} />} />
-        <Route path="/campaigns" element={<Campaigns />} />
-      </Routes>
-    </SimpleOrganizationProvider>
+    <Routes>
+      <Route path="/" element={<Index activeTab={activeTab} onTabChange={setActiveTab} />} />
+      <Route path="/campaigns" element={<Campaigns />} />
+    </Routes>
   );
 };
 
@@ -46,13 +44,15 @@ const App = () => {
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
-        <TooltipProvider>
-          <Toaster />
-          <Sonner />
-          <BrowserRouter>
-            <AppContent />
-          </BrowserRouter>
-        </TooltipProvider>
+        <SimpleOrganizationProvider>
+          <TooltipProvider>
+            <Toaster />
+            <Sonner />
+            <BrowserRouter>
+              <AppContent />
+            </BrowserRouter>
+          </TooltipProvider>
+        </SimpleOrganizationProvider>
       </AuthProvider>
     </QueryClientProvider>
   );
