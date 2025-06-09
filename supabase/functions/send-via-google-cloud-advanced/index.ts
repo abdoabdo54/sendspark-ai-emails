@@ -16,7 +16,7 @@ serve(async (req) => {
   let campaignId: string | null = null;
 
   try {
-    // Parse request body and store it
+    // Parse request body once and store it
     const bodyText = await req.text();
     console.log('Raw request body:', bodyText);
     
@@ -24,7 +24,13 @@ serve(async (req) => {
       throw new Error('Empty request body');
     }
 
-    requestBody = JSON.parse(bodyText);
+    try {
+      requestBody = JSON.parse(bodyText);
+    } catch (parseError) {
+      console.error('Failed to parse request body:', parseError);
+      throw new Error('Invalid JSON in request body');
+    }
+
     campaignId = requestBody.campaignId;
     const resumeFromIndex = requestBody.resumeFromIndex || 0;
 
@@ -105,7 +111,7 @@ serve(async (req) => {
       );
     }
 
-    // Get Google Cloud Functions configuration - FIX: Check campaign config first
+    // Get Google Cloud Functions configuration - Check campaign config first
     let gcfConfig = null;
     
     // First check campaign config for Google Cloud Functions
@@ -113,7 +119,6 @@ serve(async (req) => {
       gcfConfig = campaign.config.googleCloudFunctions;
       console.log('Using campaign-level Google Cloud config');
     } else {
-      // Fallback to localStorage-based config (for backward compatibility)
       console.log('No campaign-level Google Cloud config found, checking for global config');
     }
     
@@ -153,7 +158,7 @@ serve(async (req) => {
     const emailsToSend = preparedEmails.slice(resumeFromIndex);
     console.log(`⚡ SENDING ${emailsToSend.length} emails at MAXIMUM SPEED starting from index ${resumeFromIndex}`);
     
-    // FIX: Respect user's account selection from campaign config
+    // Respect user's account selection from campaign config
     const selectedAccountIds = campaign.config?.selectedAccounts || [];
     console.log('Selected account IDs from campaign:', selectedAccountIds);
     
@@ -162,7 +167,7 @@ serve(async (req) => {
     emailsToSend.forEach((email, index) => {
       const accountId = email.account_id;
       
-      // FIX: Only include emails from selected accounts
+      // Only include emails from selected accounts
       if (selectedAccountIds.length > 0 && !selectedAccountIds.includes(accountId)) {
         console.log(`Skipping email for non-selected account: ${accountId}`);
         return;
@@ -234,77 +239,94 @@ serve(async (req) => {
       throw new Error('Invalid Google Cloud Function URL. Must start with https://');
     }
 
-    // Send to Google Cloud Functions with MAXIMUM SPEED settings
-    const response = await fetch(gcfConfig.functionUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'User-Agent': 'Supabase-MaxSpeed/3.2',
-        'X-Campaign-ID': campaignId,
-        'X-Email-Count': actualEmailsToSend.toString(),
-        'X-Max-Speed': 'true',
-        'X-Ultra-Fast': 'true'
-      },
-      body: JSON.stringify(payload)
-    });
+    // Send to Google Cloud Functions with MAXIMUM SPEED settings and timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 120000); // 2 minute timeout
 
-    console.log(`⚡ Google Cloud MAXIMUM SPEED response: ${response.status}`);
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error(`💥 Google Cloud CRITICAL ERROR: ${response.status} - ${errorText}`);
-      
-      // Update campaign with error
-      await supabase
-        .from('email_campaigns')
-        .update({ 
-          status: 'failed',
-          error_message: `Google Cloud error: ${response.status} - ${errorText}. Check your function URL: ${gcfConfig.functionUrl}`,
-          completed_at: new Date().toISOString()
-        })
-        .eq('id', campaignId);
-      
-      throw new Error(`Google Cloud Functions failed: ${response.status} - ${errorText}. Check your function URL.`);
-    }
-
-    const result = await response.json();
-    console.log('✅ MAXIMUM SPEED Google Cloud response:', JSON.stringify(result, null, 2));
-
-    // Handle response based on completion status
-    if (result.success && result.completed) {
-      console.log('🎉 MAXIMUM SPEED Campaign completed successfully!');
-      
-      // Final status update
-      await supabase
-        .from('email_campaigns')
-        .update({ 
-          status: result.sentCount > 0 ? 'sent' : 'failed',
-          sent_count: result.sentCount || 0,
-          completed_at: new Date().toISOString(),
-          error_message: result.failedCount > 0 ? `${result.failedCount} emails failed to send` : null
-        })
-        .eq('id', campaignId);
-    }
-
-    return new Response(
-      JSON.stringify({ 
-        success: true,
-        message: 'MAXIMUM SPEED campaign processing via Google Cloud Functions',
-        details: result,
-        configuration: {
-          accounts_processing: emailsByAccount.size,
-          total_emails: actualEmailsToSend,
-          selected_accounts: selectedAccountIds.length,
-          max_speed_mode: true,
-          ultra_fast_processing: true,
-          parallel_processing: true
+    try {
+      const response = await fetch(gcfConfig.functionUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'User-Agent': 'Supabase-MaxSpeed/3.3',
+          'X-Campaign-ID': campaignId,
+          'X-Email-Count': actualEmailsToSend.toString(),
+          'X-Max-Speed': 'true',
+          'X-Ultra-Fast': 'true'
         },
-        gcf_url: gcfConfig.functionUrl,
-        completed: result.completed || false,
-        performance: { ...result.performance, maxSpeed: true, ultraFast: true }
-      }),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    );
+        body: JSON.stringify(payload),
+        signal: controller.signal
+      });
+
+      clearTimeout(timeoutId);
+
+      console.log(`⚡ Google Cloud MAXIMUM SPEED response: ${response.status}`);
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`💥 Google Cloud CRITICAL ERROR: ${response.status} - ${errorText}`);
+        
+        // Update campaign with error
+        await supabase
+          .from('email_campaigns')
+          .update({ 
+            status: 'failed',
+            error_message: `Google Cloud error: ${response.status} - ${errorText}. Check your function URL: ${gcfConfig.functionUrl}`,
+            completed_at: new Date().toISOString()
+          })
+          .eq('id', campaignId);
+        
+        throw new Error(`Google Cloud Functions failed: ${response.status} - ${errorText}. Check your function URL.`);
+      }
+
+      const result = await response.json();
+      console.log('✅ MAXIMUM SPEED Google Cloud response:', JSON.stringify(result, null, 2));
+
+      // Handle response based on completion status
+      if (result.success && result.completed) {
+        console.log('🎉 MAXIMUM SPEED Campaign completed successfully!');
+        
+        // Final status update
+        await supabase
+          .from('email_campaigns')
+          .update({ 
+            status: result.sentCount > 0 ? 'sent' : 'failed',
+            sent_count: result.sentCount || 0,
+            completed_at: new Date().toISOString(),
+            error_message: result.failedCount > 0 ? `${result.failedCount} emails failed to send` : null
+          })
+          .eq('id', campaignId);
+      }
+
+      return new Response(
+        JSON.stringify({ 
+          success: true,
+          message: 'MAXIMUM SPEED campaign processing via Google Cloud Functions',
+          details: result,
+          configuration: {
+            accounts_processing: emailsByAccount.size,
+            total_emails: actualEmailsToSend,
+            selected_accounts: selectedAccountIds.length,
+            max_speed_mode: true,
+            ultra_fast_processing: true,
+            parallel_processing: true
+          },
+          gcf_url: gcfConfig.functionUrl,
+          completed: result.completed || false,
+          performance: { ...result.performance, maxSpeed: true, ultraFast: true }
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+
+    } catch (fetchError) {
+      clearTimeout(timeoutId);
+      
+      if (fetchError.name === 'AbortError') {
+        throw new Error('Google Cloud Function request timed out after 2 minutes');
+      }
+      
+      throw fetchError;
+    }
 
   } catch (error) {
     console.error('💥 CRITICAL MAXIMUM SPEED ERROR:', error);

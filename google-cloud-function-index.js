@@ -19,7 +19,9 @@ functions.http('sendEmailCampaign', async (req, res) => {
 
   try {
     console.log('🚀 Google Cloud Function started - MAXIMUM SPEED MODE');
-    console.log('Request body keys:', Object.keys(req.body || {}));
+    console.log('Request method:', req.method);
+    console.log('Request headers:', req.headers);
+    console.log('Raw request body:', JSON.stringify(req.body, null, 2));
 
     const { 
       campaignId, 
@@ -27,38 +29,46 @@ functions.http('sendEmailCampaign', async (req, res) => {
       supabaseUrl, 
       supabaseKey,
       config = {}
-    } = req.body;
+    } = req.body || {};
     
+    // Validate required fields
     if (!campaignId) {
       console.error('Missing campaignId in request');
-      throw new Error('Campaign ID is required');
+      const error = new Error('Campaign ID is required');
+      throw error;
     }
 
-    if (!emailsByAccount) {
-      console.error('Missing emailsByAccount in request');
-      throw new Error('Emails by account data is required');
+    if (!emailsByAccount || Object.keys(emailsByAccount).length === 0) {
+      console.error('Missing or empty emailsByAccount in request');
+      const error = new Error('Emails by account data is required and cannot be empty');
+      throw error;
     }
 
     if (!supabaseUrl || !supabaseKey) {
       console.error('Missing Supabase credentials');
-      throw new Error('Supabase credentials are required');
+      const error = new Error('Supabase credentials are required');
+      throw error;
     }
 
     console.log(`🚀 STARTING MAXIMUM SPEED CAMPAIGN ${campaignId}`);
-    console.log(`⚡ Processing ${Object.keys(emailsByAccount || {}).length} accounts at MAXIMUM SPEED`);
+    console.log(`⚡ Processing ${Object.keys(emailsByAccount).length} accounts at MAXIMUM SPEED`);
 
     // Initialize Supabase client
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     // Ensure campaign is marked as sending
-    await supabase
-      .from('email_campaigns')
-      .update({ 
-        status: 'sending',
-        sent_at: new Date().toISOString(),
-        error_message: null
-      })
-      .eq('id', campaignId);
+    try {
+      await supabase
+        .from('email_campaigns')
+        .update({ 
+          status: 'sending',
+          sent_at: new Date().toISOString(),
+          error_message: null
+        })
+        .eq('id', campaignId);
+    } catch (supabaseError) {
+      console.error('Failed to update campaign status:', supabaseError);
+    }
 
     let totalSent = 0;
     let totalFailed = 0;
@@ -66,15 +76,28 @@ functions.http('sendEmailCampaign', async (req, res) => {
 
     // Process all accounts in MAXIMUM PARALLEL for ultra speed
     const accountPromises = Object.entries(emailsByAccount).map(async ([accountId, accountData]) => {
-      const { type, config: accountConfig, emails, accountInfo } = accountData;
+      console.log(`Processing account ${accountId}:`, accountData);
       
-      console.log(`⚡ MAXIMUM SPEED processing ${type} account: ${accountInfo.email} (${emails.length} emails)`);
+      // Safely extract account data with fallbacks
+      const accountType = accountData.type || 'smtp';
+      const accountConfig = accountData.config || {};
+      const emails = accountData.emails || [];
+      const accountInfo = accountData.accountInfo || { name: 'Unknown', email: 'unknown@domain.com' };
+      
+      console.log(`⚡ MAXIMUM SPEED processing ${accountType} account: ${accountInfo.email} (${emails.length} emails)`);
       
       try {
-        if (type === 'smtp') {
+        if (accountType === 'smtp') {
           // Validate SMTP configuration
           if (!accountConfig.host || !accountConfig.port || !accountConfig.user || !accountConfig.pass) {
-            throw new Error(`SMTP configuration incomplete for ${accountInfo.email}. Missing host, port, username, or password.`);
+            throw new Error(`SMTP configuration incomplete for ${accountInfo.email}. Missing: ${
+              [
+                !accountConfig.host && 'host',
+                !accountConfig.port && 'port', 
+                !accountConfig.user && 'username',
+                !accountConfig.pass && 'password'
+              ].filter(Boolean).join(', ')
+            }`);
           }
 
           // Create MAXIMUM SPEED SMTP transporter with enhanced reliability
@@ -87,8 +110,8 @@ functions.http('sendEmailCampaign', async (req, res) => {
               pass: accountConfig.pass || accountConfig.password
             },
             pool: true,
-            maxConnections: 3, // Conservative for reliability
-            maxMessages: 50,   // Conservative for reliability
+            maxConnections: 2, // Conservative for reliability
+            maxMessages: 20,   // Conservative for reliability
             rateLimit: false,   // NO rate limiting for maximum speed
             connectionTimeout: 30000, // 30 second timeout
             greetingTimeout: 15000,   // 15 second timeout
@@ -114,7 +137,7 @@ functions.http('sendEmailCampaign', async (req, res) => {
           try {
             const verifyPromise = transporter.verify();
             const timeoutPromise = new Promise((_, reject) => 
-              setTimeout(() => reject(new Error('SMTP verification timeout')), 15000)
+              setTimeout(() => reject(new Error('SMTP verification timeout')), 10000)
             );
             
             await Promise.race([verifyPromise, timeoutPromise]);
@@ -125,7 +148,7 @@ functions.http('sendEmailCampaign', async (req, res) => {
           }
 
           // Send emails in smaller batches for better reliability
-          const batchSize = 5; // Very small batch for reliability
+          const batchSize = 3; // Very small batch for reliability
           const batches = [];
           
           for (let i = 0; i < emails.length; i += batchSize) {
@@ -199,20 +222,22 @@ functions.http('sendEmailCampaign', async (req, res) => {
             
             // Small delay between batches to prevent overwhelming
             if (batchIndex < batches.length - 1) {
-              await new Promise(resolve => setTimeout(resolve, 2000)); // 2 second delay
+              await new Promise(resolve => setTimeout(resolve, 1000)); // 1 second delay
             }
           }
 
           await transporter.close();
 
-        } else if (type === 'apps-script') {
+        } else if (accountType === 'apps-script') {
           // Validate Apps Script configuration
-          if (!accountConfig.exec_url) {
+          if (!accountConfig.exec_url && !accountConfig.script_url) {
             throw new Error(`Apps Script URL missing for ${accountInfo.email}`);
           }
 
+          const scriptUrl = accountConfig.exec_url || accountConfig.script_url;
+
           // MAXIMUM SPEED Apps Script processing
-          const batchSize = 10; // Smaller batch for Apps Script
+          const batchSize = 5; // Smaller batch for Apps Script
           const batches = [];
           
           for (let i = 0; i < emails.length; i += batchSize) {
@@ -232,9 +257,9 @@ functions.http('sendEmailCampaign', async (req, res) => {
                 }
 
                 const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 20000); // 20 second timeout
+                const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
 
-                const response = await fetch(accountConfig.exec_url, {
+                const response = await fetch(scriptUrl, {
                   method: 'POST',
                   headers: { 
                     'Content-Type': 'application/json',
@@ -290,11 +315,11 @@ functions.http('sendEmailCampaign', async (req, res) => {
             
             // Small delay between batches
             if (batchIndex < batches.length - 1) {
-              await new Promise(resolve => setTimeout(resolve, 1000));
+              await new Promise(resolve => setTimeout(resolve, 500));
             }
           }
         } else {
-          throw new Error(`Unsupported account type: ${type}`);
+          throw new Error(`Unsupported account type: ${accountType}`);
         }
 
       } catch (accountError) {
@@ -375,11 +400,12 @@ functions.http('sendEmailCampaign', async (req, res) => {
         optimized_batching: true,
         record_time: true
       },
-      sampleResults: results.slice(0, 10)
+      sampleResults: results.slice(0, 5)
     });
 
   } catch (error) {
     console.error('💥 MAXIMUM SPEED CRITICAL ERROR:', error);
+    console.error('Error stack:', error.stack);
     
     // Revert campaign status on error
     try {
@@ -404,7 +430,8 @@ functions.http('sendEmailCampaign', async (req, res) => {
       error: error.message || 'Internal server error',
       campaignId: req.body?.campaignId || 'unknown',
       timestamp: new Date().toISOString(),
-      maxSpeedMode: true
+      maxSpeedMode: true,
+      stack: error.stack
     });
   }
 });
