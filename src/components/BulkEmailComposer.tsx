@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -79,6 +78,15 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
       toast({
         title: "Error",
         description: "Please add valid email recipients",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    if (formData.config.selectedAccounts.length === 0) {
+      toast({
+        title: "Error",
+        description: "Please select at least one email account",
         variant: "destructive"
       });
       return;
@@ -199,15 +207,27 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
     );
   }
 
+  // Check if button should be disabled and why
+  const isButtonDisabled = isSubmitting || recipientCount === 0 || formData.config.selectedAccounts.length === 0;
+  const getDisabledReason = () => {
+    if (isSubmitting) return "Creating campaign...";
+    if (recipientCount === 0) return "Add email recipients";
+    if (formData.config.selectedAccounts.length === 0) return "Select email account(s)";
+    return "";
+  };
+
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
-      {/* Email Account Selection */}
-      <Card>
+      {/* Email Account Selection - MADE MORE PROMINENT */}
+      <Card className={formData.config.selectedAccounts.length === 0 ? 'border-red-500 border-2' : ''}>
         <CardHeader>
           <CardTitle className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Mail className="w-5 h-5" />
-              Email Accounts
+              Email Accounts 
+              {formData.config.selectedAccounts.length === 0 && (
+                <Badge variant="destructive" className="ml-2">Required</Badge>
+              )}
             </div>
             <Button 
               type="button"
@@ -222,6 +242,9 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
           </CardTitle>
           <CardDescription>
             Select email accounts for sending. Total accounts: {accounts.length}
+            {formData.config.selectedAccounts.length === 0 && (
+              <span className="text-red-500 font-medium"> - You must select at least one account!</span>
+            )}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -431,25 +454,32 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
         </CardContent>
       </Card>
 
-      {/* Submit Button */}
+      {/* Submit Button - ENHANCED WITH BETTER FEEDBACK */}
       <div className="flex justify-end">
-        <Button 
-          type="submit" 
-          disabled={isSubmitting || recipientCount === 0 || formData.config.selectedAccounts.length === 0}
-          className="min-w-32"
-        >
-          {isSubmitting ? (
-            <>
-              <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
-              Creating...
-            </>
-          ) : (
-            <>
-              <Send className="w-4 h-4 mr-2" />
-              Create Campaign ({recipientCount} emails)
-            </>
+        <div className="space-y-2">
+          {isButtonDisabled && (
+            <p className="text-sm text-red-500 text-right">
+              {getDisabledReason()}
+            </p>
           )}
-        </Button>
+          <Button 
+            type="submit" 
+            disabled={isButtonDisabled}
+            className="min-w-32"
+          >
+            {isSubmitting ? (
+              <>
+                <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                Creating...
+              </>
+            ) : (
+              <>
+                <Send className="w-4 h-4 mr-2" />
+                Create Campaign ({recipientCount} emails)
+              </>
+            )}
+          </Button>
+        </div>
       </div>
     </form>
   );
