@@ -1,3 +1,4 @@
+
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import EmailComposer from "@/components/EmailComposer";
@@ -6,7 +7,8 @@ import SettingsPanel from "@/components/SettingsPanel";
 import SubscriberManager from "@/components/SubscriberManager";
 import DashboardStats from "@/components/DashboardStats";
 import AccountManager from "@/components/AccountManager";
-import { useSimpleOrganizations } from '@/contexts/SimpleOrganizationContext';
+import OrganizationSetup from "@/components/OrganizationSetup";
+import { useOrganizations } from '@/hooks/useOrganizations';
 import { Mail, Settings, History, Users, Server } from 'lucide-react';
 
 interface IndexProps {
@@ -15,7 +17,24 @@ interface IndexProps {
 }
 
 const Index = ({ activeTab, onTabChange }: IndexProps) => {
-  const { currentOrganization } = useSimpleOrganizations();
+  const { currentOrganization, loading } = useOrganizations();
+
+  // Show loading state
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-slate-100 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-slate-600">Loading organization...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Show organization setup if no organization exists
+  if (!currentOrganization) {
+    return <OrganizationSetup />;
+  }
 
   const renderMainContent = () => {
     // If activeTab is one of the header tabs, show EmailComposer

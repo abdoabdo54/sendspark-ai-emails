@@ -1,5 +1,4 @@
-
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Send, Users, Upload, Type, Plus, Trash2 } from 'lucide-react';
+import { Send, Users, Upload, Type, Plus, Trash2, RefreshCw } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import CSVDataImporter from './CSVDataImporter';
 import { useEmailAccounts } from '@/hooks/useEmailAccounts';
@@ -21,8 +20,8 @@ interface BulkEmailComposerProps {
 }
 
 const BulkEmailComposer: React.FC<BulkEmailComposerProps> = ({ onSend }) => {
-  const { currentOrganization } = useSimpleOrganizations();
-  const { accounts } = useEmailAccounts(currentOrganization?.id);
+  const { currentOrganization, loading: orgLoading } = useSimpleOrganizations();
+  const { accounts, loading: accountsLoading, refetch } = useEmailAccounts(currentOrganization?.id);
   
   const [fromName, setFromName] = useState('');
   const [subject, setSubject] = useState('');
@@ -40,6 +39,13 @@ const BulkEmailComposer: React.FC<BulkEmailComposerProps> = ({ onSend }) => {
   const [subjectRotations, setSubjectRotations] = useState<string[]>(['']);
 
   const activeAccounts = accounts.filter(account => account.is_active);
+
+  // Refresh accounts when organization changes
+  useEffect(() => {
+    if (currentOrganization?.id) {
+      refetch();
+    }
+  }, [currentOrganization?.id, refetch]);
 
   const handleCSVImport = (data: Array<{ [key: string]: any }>) => {
     setRecipientsData(data);
@@ -82,6 +88,15 @@ const BulkEmailComposer: React.FC<BulkEmailComposerProps> = ({ onSend }) => {
   };
 
   const handleSend = () => {
+    if (!currentOrganization?.id) {
+      toast({
+        title: "Organization Required",
+        description: "Please set up your organization first",
+        variant: "destructive"
+      });
+      return;
+    }
+
     let finalRecipients = '';
     
     if (recipientsData.length > 0) {
@@ -149,6 +164,23 @@ const BulkEmailComposer: React.FC<BulkEmailComposerProps> = ({ onSend }) => {
 
   const validFromNames = fromNameRotations.filter(name => name.trim());
   const validSubjects = subjectRotations.filter(subject => subject.trim());
+
+  if (orgLoading) {
+    return (
+      <div className="text-center py-8">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
+        <p className="text-slate-600">Loading organization...</p>
+      </div>
+    );
+  }
+
+  if (!currentOrganization?.id) {
+    return (
+      <div className="text-center py-8 text-slate-500">
+        Please set up your organization first to create campaigns.
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -265,12 +297,29 @@ const BulkEmailComposer: React.FC<BulkEmailComposerProps> = ({ onSend }) => {
 
           {/* Email Accounts Selection */}
           <div className="space-y-3">
-            <Label>Email Accounts *</Label>
-            {activeAccounts.length === 0 ? (
+            <div className="flex items-center justify-between">
+              <Label>Email Accounts *</Label>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={refetch}
+                disabled={accountsLoading}
+              >
+                <RefreshCw className={`w-4 h-4 mr-1 ${accountsLoading ? 'animate-spin' : ''}`} />
+                Refresh
+              </Button>
+            </div>
+            
+            {accountsLoading ? (
+              <div className="p-4 border rounded-lg text-center">
+                <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600 mx-auto mb-2"></div>
+                <p className="text-gray-500">Loading accounts...</p>
+              </div>
+            ) : activeAccounts.length === 0 ? (
               <div className="p-4 border rounded-lg text-center">
                 <p className="text-gray-500 mb-2">No active email accounts found.</p>
                 <p className="text-sm text-gray-400">
-                  Please add email accounts in Settings → Email Accounts first.
+                  Please add email accounts in the Accounts section first.
                 </p>
               </div>
             ) : (
@@ -388,7 +437,7 @@ const BulkEmailComposer: React.FC<BulkEmailComposerProps> = ({ onSend }) => {
             onClick={handleSend}
             className="w-full"
             size="lg"
-            disabled={!fromName || !subject || selectedAccounts.length === 0}
+            disabled={!fromName || !subject || selectedAccounts.length === 0 || !currentOrganization?.id}
           >
             <Send className="w-4 h-4 mr-2" />
             Create Campaign

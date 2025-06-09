@@ -1,5 +1,6 @@
 
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext } from 'react';
+import { useOrganizations } from '@/hooks/useOrganizations';
 
 interface Organization {
   id: string;
@@ -14,6 +15,8 @@ interface SimpleOrganizationContextType {
   currentOrganization: Organization | null;
   setCurrentOrganization: (org: Organization | null) => void;
   organizations: Organization[];
+  loading: boolean;
+  createOrganization: (orgData: { name: string; subdomain: string; domain?: string }) => Promise<any>;
 }
 
 const SimpleOrganizationContext = createContext<SimpleOrganizationContextType | undefined>(undefined);
@@ -27,34 +30,39 @@ export const useSimpleOrganizations = () => {
 };
 
 export const SimpleOrganizationProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [currentOrganization, setCurrentOrganization] = useState<Organization | null>({
-    id: '550e8400-e29b-41d4-a716-446655440000',
-    name: 'Demo Organization',
-    subdomain: 'demo',
-    subscription_plan: 'pro',
-    emails_sent_this_month: 0,
-    monthly_email_limit: 10000
-  });
-  const [organizations] = useState<Organization[]>([
-    {
-      id: '550e8400-e29b-41d4-a716-446655440000',
-      name: 'Demo Organization',
-      subdomain: 'demo',
-      subscription_plan: 'pro',
-      emails_sent_this_month: 0,
-      monthly_email_limit: 10000
-    }
-  ]);
+  const { 
+    currentOrganization, 
+    organizations, 
+    loading, 
+    createOrganization 
+  } = useOrganizations();
 
-  useEffect(() => {
-    console.log('SimpleOrganizationProvider initialized with organization:', currentOrganization);
-  }, []);
+  // Transform the organization data to match the interface
+  const transformedCurrentOrganization = currentOrganization ? {
+    id: currentOrganization.id,
+    name: currentOrganization.name,
+    subdomain: currentOrganization.subdomain,
+    subscription_plan: currentOrganization.subscription_plan,
+    emails_sent_this_month: currentOrganization.emails_sent_this_month,
+    monthly_email_limit: currentOrganization.monthly_email_limit
+  } : null;
+
+  const transformedOrganizations = organizations.map(org => ({
+    id: org.id,
+    name: org.name,
+    subdomain: org.subdomain,
+    subscription_plan: org.subscription_plan,
+    emails_sent_this_month: org.emails_sent_this_month,
+    monthly_email_limit: org.monthly_email_limit
+  }));
 
   return (
     <SimpleOrganizationContext.Provider value={{
-      currentOrganization,
-      setCurrentOrganization,
-      organizations
+      currentOrganization: transformedCurrentOrganization,
+      setCurrentOrganization: () => {}, // Not needed since useOrganizations handles this
+      organizations: transformedOrganizations,
+      loading,
+      createOrganization
     }}>
       {children}
     </SimpleOrganizationContext.Provider>
