@@ -6,15 +6,15 @@ import CampaignAnalytics from './CampaignAnalytics';
 import CampaignTesting from './CampaignTesting';
 import AccountManager from './AccountManager';
 import { useCampaigns } from '@/hooks/useCampaigns';
-import { useSimpleOrganization } from '@/contexts/SimpleOrganizationContext';
+import { useSimpleOrganizations } from '@/contexts/SimpleOrganizationContext';
 
 interface EmailComposerProps {
   activeTab?: string;
 }
 
 const EmailComposer = ({ activeTab = 'bulk' }: EmailComposerProps) => {
-  const { organizationId } = useSimpleOrganization();
-  const { createCampaign } = useCampaigns(organizationId);
+  const { currentOrganization } = useSimpleOrganizations();
+  const { createCampaign } = useCampaigns(currentOrganization.id);
 
   const handleBulkEmailSend = async (campaignData: any) => {
     try {
