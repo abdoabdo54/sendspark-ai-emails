@@ -241,10 +241,69 @@ export const useCampaigns = (organizationId?: string) => {
     }
   };
 
+  const sendCampaignViaGoogleCloud = async (campaignId: string, rateLimit: number = 60, batchSize: number = 10) => {
+    try {
+      console.log('Sending campaign via Google Cloud Functions:', campaignId);
+
+      // Call the Google Cloud Functions integration
+      const { data, error } = await supabase.functions.invoke('send-via-google-cloud', {
+        body: { campaignId, rateLimit, batchSize }
+      });
+
+      if (error) {
+        console.error('Error calling Google Cloud Functions:', error);
+        throw error;
+      }
+
+      console.log('Google Cloud Functions result:', data);
+
+      toast({
+        title: "Success",
+        description: "Campaign is being sent via Google Cloud Functions"
+      });
+
+      // Refresh campaigns to get updated status
+      await fetchCampaigns();
+      
+      return data;
+    } catch (error) {
+      console.error('Error sending campaign via Google Cloud:', error);
+      
+      // Revert status back to prepared on error
+      await supabase
+        .from('email_campaigns')
+        .update({ status: 'prepared' })
+        .eq('id', campaignId);
+      
+      toast({
+        title: "Error",
+        description: `Failed to send campaign via Google Cloud: ${error.message}`,
+        variant: "destructive"
+      });
+      
+      await fetchCampaigns();
+      throw error;
+    }
+  };
+
   const sendCampaign = async (campaignId: string) => {
     try {
       console.log('Sending campaign:', campaignId);
 
+      // Find the campaign to check if it should use Google Cloud Functions
+      const campaign = campaigns.find(c => c.id === campaignId);
+      if (!campaign) {
+        throw new Error('Campaign not found');
+      }
+
+      // Check if Google Cloud Functions is enabled for this campaign
+      if (campaign.config?.googleCloud?.enabled) {
+        const rateLimit = campaign.config.googleCloud.rateLimit || 60;
+        const batchSize = campaign.config.googleCloud.batchSize || 10;
+        return await sendCampaignViaGoogleCloud(campaignId, rateLimit, batchSize);
+      }
+
+      // Continue with existing implementation for non-Google Cloud campaigns
       // Update campaign status to sending
       const { error: updateError } = await supabase
         .from('email_campaigns')
@@ -406,6 +465,7 @@ export const useCampaigns = (organizationId?: string) => {
     updateCampaign,
     prepareCampaign,
     sendCampaign,
+    sendCampaignViaGoogleCloud,
     pauseCampaign,
     resumeCampaign,
     duplicateCampaign,
