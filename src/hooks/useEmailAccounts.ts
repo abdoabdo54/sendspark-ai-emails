@@ -30,11 +30,26 @@ export const useEmailAccounts = (organizationId?: string) => {
       setLoading(true);
       console.log('Fetching accounts for organization:', organizationId);
       
+      // First check current user
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      console.log('Current user:', user?.id, 'Error:', userError);
+      
+      // Check user roles for this organization
+      const { data: userRoles, error: rolesError } = await supabase
+        .from('user_roles')
+        .select('*')
+        .eq('user_id', user?.id)
+        .eq('organization_id', organizationId);
+      
+      console.log('User roles for org:', userRoles, 'Error:', rolesError);
+      
       const { data, error } = await supabase
         .from('email_accounts')
         .select('*')
         .eq('organization_id', organizationId)
         .order('created_at', { ascending: false });
+
+      console.log('Email accounts query result:', { data, error });
 
       if (error) {
         console.error('Supabase error fetching accounts:', error);

@@ -788,6 +788,12 @@ export type Database = {
         }
         Returns: string
       }
+      get_user_organization_ids: {
+        Args: { user_id_param: string }
+        Returns: {
+          organization_id: string
+        }[]
+      }
       get_user_organizations: {
         Args: { user_id: string }
         Returns: {
@@ -809,6 +815,14 @@ export type Database = {
           user_role: string
           created_at: string
         }[]
+      }
+      user_has_role_in_org: {
+        Args: {
+          user_id_param: string
+          org_id_param: string
+          required_roles: string[]
+        }
+        Returns: boolean
       }
     }
     Enums: {
