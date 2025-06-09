@@ -18,6 +18,7 @@ export interface Campaign {
   sent_at?: string;
   config?: any;
   prepared_emails?: any[];
+  error_message?: string;
 }
 
 export const useCampaigns = (organizationId?: string) => {
@@ -53,7 +54,8 @@ export const useCampaigns = (organizationId?: string) => {
         created_at: item.created_at || '',
         sent_at: item.sent_at || undefined,
         config: typeof item.config === 'object' && item.config !== null ? item.config : {},
-        prepared_emails: Array.isArray(item.prepared_emails) ? item.prepared_emails : []
+        prepared_emails: Array.isArray(item.prepared_emails) ? item.prepared_emails : [],
+        error_message: item.error_message || undefined
       }));
       
       setCampaigns(typedCampaigns);
@@ -376,32 +378,41 @@ export const useCampaigns = (organizationId?: string) => {
 
   const sendCampaignViaGoogleCloud = async (campaignId: string, resumeFromIndex = 0) => {
     try {
-      console.log('Sending campaign via advanced Google Cloud Functions:', campaignId, 'from index:', resumeFromIndex);
+      console.log('Sending campaign via Google Cloud Functions:', campaignId, 'from index:', resumeFromIndex);
 
-      // Call the advanced Google Cloud sender with enhanced logging
+      // First check if campaign has Google Cloud config
+      const campaign = campaigns.find(c => c.id === campaignId);
+      if (!campaign) {
+        throw new Error('Campaign not found');
+      }
+
+      if (!campaign.config?.googleCloudFunctions?.functionUrl) {
+        throw new Error('Google Cloud Functions not configured. Please prepare the campaign again with Google Cloud Functions enabled.');
+      }
+
+      // Call the Google Cloud sender
       const { data, error } = await supabase.functions.invoke('send-via-google-cloud-advanced', {
         body: { campaignId, resumeFromIndex }
       });
 
       if (error) {
-        console.error('Error calling advanced Google Cloud sender:', error);
+        console.error('Error calling Google Cloud sender:', error);
         throw error;
       }
 
-      console.log('Advanced Google Cloud sending result:', data);
+      console.log('Google Cloud sending result:', data);
 
-      // Enhanced success message with more details
-      const accountsText = data.accounts_processing === 1 ? 'account' : 'accounts';
-      const enhancedText = data.enhanced_config ? ' with enhanced configuration' : '';
-      const retryText = data.retry_attempts > 1 ? ` (succeeded after ${data.retry_attempts} attempts)` : '';
-      
-      toast({
-        title: "Campaign Sending Initiated!",
-        description: `Processing ${data.total_emails} emails across ${data.accounts_processing} ${accountsText} in parallel${enhancedText}${retryText}.`
-      });
+      if (data.success) {
+        toast({
+          title: "Campaign Sending Started!",
+          description: `Processing ${data.total_emails} emails across ${data.accounts_processing} accounts. Check back in a few minutes for results.`
+        });
 
-      // Start more aggressive polling for this campaign
-      startPolling();
+        // Start polling for updates
+        startPolling();
+      } else {
+        throw new Error(data.error || 'Failed to start campaign sending');
+      }
 
       // Refresh campaigns to get updated status
       await fetchCampaigns();
@@ -410,9 +421,16 @@ export const useCampaigns = (organizationId?: string) => {
     } catch (error) {
       console.error('Error sending campaign via Google Cloud:', error);
       
+      // Show detailed error message
+      const errorMsg = error.message.includes('Google Cloud Functions not configured') 
+        ? 'Google Cloud Functions not configured. Please go to Settings and configure your Google Cloud Function URL, then prepare the campaign again.'
+        : error.message.includes('non-2xx status code')
+        ? 'Google Cloud Function returned an error. Please check your function deployment and configuration.'
+        : `Failed to send campaign: ${error.message}`;
+      
       toast({
-        title: "Error",
-        description: `Failed to send campaign via Google Cloud: ${error.message}. Please check your Google Cloud Function configuration and try again.`,
+        title: "Campaign Send Failed",
+        description: errorMsg,
         variant: "destructive"
       });
       

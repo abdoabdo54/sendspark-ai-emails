@@ -87,38 +87,14 @@ serve(async (req) => {
     const emailsToSend = preparedEmails.slice(resumeFromIndex)
     console.log(`Sending ${emailsToSend.length} emails starting from index ${resumeFromIndex}`)
     
-    // Group emails by account for immediate parallel processing
+    // Group emails by account for processing
     const emailsByAccount = new Map()
     emailsToSend.forEach((email, index) => {
       const accountId = email.account_id
       if (!emailsByAccount.has(accountId)) {
-        const accountConfig = email.accountConfig || {}
-        
-        // IMMEDIATE PROCESSING - No delays, maximum speed
-        let rateLimit = 10; // 10 emails per second - FAST
-        let batchSize = 50;  // Large batches for speed
-        
-        if (email.accountType === 'smtp') {
-          rateLimit = 10; // 10 emails per second
-          batchSize = 50; // Process 50 emails at once
-        } else if (email.accountType === 'apps-script') {
-          rateLimit = 5; // 5 emails per second for Apps Script
-          batchSize = 20; // Smaller batches for Apps Script
-        }
-
         emailsByAccount.set(accountId, {
           type: email.accountType,
-          config: {
-            ...accountConfig,
-            // IMMEDIATE PROCESSING CONFIGURATION
-            rateLimit: rateLimit,
-            batchSize: batchSize,
-            maxRetries: 2, // Fewer retries for speed
-            retryDelay: 1000, // 1 second between retries
-            connectionTimeout: 10000, // 10 seconds timeout
-            immediateStart: true, // Start immediately
-            noDelay: true, // No artificial delays
-          },
+          config: email.accountConfig || {},
           emails: [],
           accountInfo: {
             name: email.fromName || 'Unknown',
@@ -137,9 +113,9 @@ serve(async (req) => {
       })
     })
 
-    console.log(`IMMEDIATE SENDING: ${emailsToSend.length} emails using ${emailsByAccount.size} accounts`)
+    console.log(`Sending ${emailsToSend.length} emails using ${emailsByAccount.size} accounts`)
 
-    // IMMEDIATE PROCESSING payload - optimized for speed
+    // Prepare payload for Google Cloud Function (matching the expected format)
     const payload = {
       campaignId,
       emailsByAccount: Object.fromEntries(emailsByAccount),
@@ -147,82 +123,40 @@ serve(async (req) => {
       resumeFromIndex,
       supabaseUrl,
       supabaseKey,
-      // IMMEDIATE PROCESSING CONFIGURATION
       config: {
-        // SPEED OPTIMIZED SETTINGS
         immediateStart: true,
-        noDelays: true,
         maxSpeed: true,
-        
-        // Rate limiting - but fast
-        enforceRateLimit: true,
-        respectAccountLimits: false, // Ignore limits for testing
-        enableBatchProcessing: true,
-        
-        // Progress tracking
-        updateProgressInRealTime: true,
-        progressUpdateInterval: 5, // Update every 5 emails
-        
-        // Error handling - minimal for speed
-        enableRetryLogic: true,
-        maxGlobalRetries: 2,
-        resumeOnFailure: true,
-        failureRecoveryMode: 'fast',
-        
-        // Performance optimization - MAXIMUM SPEED
         parallelAccountProcessing: true,
-        connectionPooling: true,
-        keepAliveConnections: true,
-        maxConcurrentConnections: 20,
-        
-        // Monitoring and logging - minimal
-        enableDetailedLogging: false,
-        logLevel: 'error',
-        trackDeliveryStatus: true,
-        
-        // Campaign management
-        autoCompleteOnFinish: true,
-        updateCampaignStatus: true,
-        preserveEmailOrder: false,
-        
-        // Timeout configuration - AGGRESSIVE
-        globalTimeout: 300000, // 5 minutes maximum
-        emailTimeout: 5000,    // 5 seconds per email
-        batchTimeout: 60000,   // 1 minute per batch
+        updateProgressInRealTime: true
       }
     };
 
-    console.log('IMMEDIATE SENDING - Enhanced payload for MAXIMUM SPEED:')
+    console.log('Sending payload to Google Cloud Function:')
+    console.log('- Campaign ID:', campaignId)
     console.log('- Number of accounts:', emailsByAccount.size)
     console.log('- Total emails to send:', emailsToSend.length)
     console.log('- Resume from index:', resumeFromIndex)
     console.log('- Function URL:', gcfConfig.functionUrl)
-    console.log('- IMMEDIATE START MODE ENABLED')
-    console.log('- NO DELAYS - MAXIMUM SPEED')
 
-    // Send to Google Cloud Functions with IMMEDIATE processing
+    // Send to Google Cloud Functions
     let response;
     let attempt = 0;
-    const maxAttempts = 2; // Reduced for speed
-    const baseDelay = 500; // Reduced delay
+    const maxAttempts = 3;
     
     while (attempt < maxAttempts) {
       try {
-        console.log(`IMMEDIATE ATTEMPT ${attempt + 1} to call Google Cloud Function`)
+        console.log(`Attempt ${attempt + 1} to call Google Cloud Function`)
         
-        // Faster timeout for immediate processing
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+        const timeoutId = setTimeout(() => controller.abort(), 60000); // 60 second timeout
         
         response = await fetch(gcfConfig.functionUrl, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'User-Agent': 'Supabase-Edge-Function-Immediate/1.0',
+            'User-Agent': 'Supabase-Edge-Function/1.0',
             'X-Campaign-ID': campaignId,
             'X-Email-Count': emailsToSend.length.toString(),
-            'X-Account-Count': emailsByAccount.size.toString(),
-            'X-Immediate-Mode': 'true',
           },
           body: JSON.stringify(payload),
           signal: controller.signal
@@ -268,22 +202,21 @@ serve(async (req) => {
       }
       
       attempt++;
-      // Minimal delay for immediate processing
-      const delay = baseDelay * Math.pow(1.5, attempt);
-      await new Promise(resolve => setTimeout(resolve, delay));
+      // Wait before retry
+      await new Promise(resolve => setTimeout(resolve, 2000 * attempt));
     }
 
     const result = await response.json()
-    console.log('Google Cloud Functions IMMEDIATE result:', JSON.stringify(result, null, 2))
+    console.log('Google Cloud Functions result:', JSON.stringify(result, null, 2))
 
-    // Enhanced status checking for immediate completion
-    if (result.completed || result.status === 'completed') {
-      console.log('Campaign completed immediately, updating status')
+    // Check if the campaign completed successfully
+    if (result.success && result.completed) {
+      console.log('Campaign completed successfully')
       await supabase
         .from('email_campaigns')
         .update({ 
-          status: result.success ? 'sent' : 'failed',
-          sent_count: result.sentCount || result.sent_count || 0,
+          status: result.sentCount > 0 ? 'sent' : 'failed',
+          sent_count: result.sentCount || 0,
           completed_at: new Date().toISOString(),
           error_message: result.error || null
         })
@@ -297,34 +230,31 @@ serve(async (req) => {
           error_message: result.error
         })
         .eq('id', campaignId)
-    } else if (result.processing || result.status === 'processing') {
-      console.log('Campaign is being processed IMMEDIATELY')
-      // Status remains 'sending' - the GCF will update it when complete
+    } else if (result.success && !result.completed) {
+      console.log('Campaign is being processed')
+      // The Google Cloud Function is handling the sending
+      // Status will be updated by the function itself
     }
 
     return new Response(
       JSON.stringify({ 
         success: true,
-        message: 'IMMEDIATE CAMPAIGN SENDING initiated via Google Cloud Functions',
+        message: 'Campaign sending initiated via Google Cloud Functions',
         details: result,
         configuration: {
           accounts_processing: emailsByAccount.size,
           total_emails: emailsToSend.length,
-          immediate_mode: true,
-          max_speed_enabled: true,
-          no_delays: true,
-          fast_processing: true
+          immediate_mode: true
         },
         gcf_url: gcfConfig.functionUrl,
-        immediate_completion: result.completed || result.status === 'completed',
-        retry_attempts: attempt + 1,
-        processing_mode: 'IMMEDIATE_MAXIMUM_SPEED'
+        completed: result.completed || false,
+        retry_attempts: attempt + 1
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )
 
   } catch (error) {
-    console.error('Error in IMMEDIATE Google Cloud sender:', error)
+    console.error('Error in Google Cloud sender:', error)
     
     // Try to revert campaign status on any error
     try {
@@ -338,7 +268,7 @@ serve(async (req) => {
           .from('email_campaigns')
           .update({ 
             status: 'prepared',
-            error_message: `IMMEDIATE sender error: ${error.message}`
+            error_message: `Sender error: ${error.message}`
           })
           .eq('id', campaignId)
       }
@@ -348,7 +278,7 @@ serve(async (req) => {
     
     return new Response(
       JSON.stringify({ 
-        error: `Failed to initiate IMMEDIATE sending via Google Cloud Functions: ${error.message}`,
+        error: `Failed to send via Google Cloud Functions: ${error.message}`,
         details: error.stack,
         timestamp: new Date().toISOString()
       }),
