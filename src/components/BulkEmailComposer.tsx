@@ -56,18 +56,6 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
     }
   }, [currentOrganization?.id, refetch]);
 
-  // Auto-refresh accounts every 10 seconds to catch new additions
-  useEffect(() => {
-    if (currentOrganization?.id) {
-      const interval = setInterval(() => {
-        console.log('BulkEmailComposer: Auto-refreshing accounts');
-        refetch();
-      }, 10000); // Refresh every 10 seconds
-
-      return () => clearInterval(interval);
-    }
-  }, [currentOrganization?.id, refetch]);
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     

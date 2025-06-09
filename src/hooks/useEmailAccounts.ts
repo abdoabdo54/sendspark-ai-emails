@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
@@ -75,23 +76,6 @@ export const useEmailAccounts = (organizationId?: string) => {
       console.log('Creating account with data:', accountData);
       console.log('Organization ID:', organizationId);
       
-      // First, verify the organization exists
-      const { data: orgCheck, error: orgError } = await supabase
-        .from('organizations')
-        .select('id')
-        .eq('id', organizationId)
-        .single();
-
-      if (orgError || !orgCheck) {
-        console.error('Organization not found:', orgError);
-        toast({
-          title: "Error",
-          description: "Organization not found. Please refresh the page.",
-          variant: "destructive"
-        });
-        return;
-      }
-
       const accountToCreate = {
         name: accountData.name,
         type: accountData.type,
