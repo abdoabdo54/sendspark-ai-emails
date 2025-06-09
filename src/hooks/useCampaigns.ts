@@ -209,9 +209,76 @@ export const useCampaigns = (organizationId?: string) => {
     try {
       console.log('Preparing campaign with advanced system:', campaignId);
 
-      // Call the advanced prepare function
+      // Get all active email accounts for this organization
+      const { data: accounts, error: accountsError } = await supabase
+        .from('email_accounts')
+        .select('*')
+        .eq('organization_id', organizationId)
+        .eq('is_active', true);
+
+      if (accountsError) {
+        console.error('Error fetching accounts:', accountsError);
+        throw new Error('Failed to fetch email accounts');
+      }
+
+      if (!accounts || accounts.length === 0) {
+        throw new Error('No active email accounts found. Please add and activate at least one email account in Settings.');
+      }
+
+      // Use all available accounts
+      const selectedAccounts = accounts.map(account => account.id);
+
+      // Get Google Cloud Functions configuration from localStorage
+      let googleCloudConfig = null;
+      try {
+        const savedSettings = localStorage.getItem('emailCampaignSettings');
+        if (savedSettings) {
+          const parsed = JSON.parse(savedSettings);
+          if (parsed.googleCloudFunctions?.enabled && parsed.googleCloudFunctions?.functionUrl) {
+            googleCloudConfig = {
+              enabled: true,
+              functionUrl: parsed.googleCloudFunctions.functionUrl,
+              defaultRateLimit: parsed.googleCloudFunctions.defaultRateLimit || 3600,
+              defaultBatchSize: parsed.googleCloudFunctions.defaultBatchSize || 10
+            };
+          }
+        }
+      } catch (error) {
+        console.error('Error parsing saved settings:', error);
+      }
+
+      // Default configuration for campaign preparation
+      const rotation = {
+        useFromNameRotation: false,
+        fromNames: [],
+        useSubjectRotation: false,
+        subjects: []
+      };
+
+      // Default rate limits (emails per hour converted to emails per second for the function)
+      const rateLimit = {};
+      accounts.forEach(account => {
+        const emailsPerHour = account.config?.emails_per_hour || 3600;
+        rateLimit[account.id] = emailsPerHour; // Keep as emails per hour, function will convert
+      });
+
+      console.log('Preparing campaign with:', {
+        campaignId,
+        selectedAccounts,
+        rotation,
+        rateLimit,
+        googleCloudConfig
+      });
+
+      // Call the advanced prepare function with all required parameters
       const { data, error } = await supabase.functions.invoke('prepare-campaign-advanced', {
-        body: { campaignId }
+        body: { 
+          campaignId,
+          selectedAccounts,
+          rotation,
+          rateLimit,
+          googleCloudConfig
+        }
       });
 
       if (error) {
@@ -223,7 +290,7 @@ export const useCampaigns = (organizationId?: string) => {
 
       toast({
         title: "Success",
-        description: `Campaign prepared successfully! ${data.prepared_count} emails ready across ${data.accounts_used} accounts. Estimated duration: ${data.estimated_duration_minutes} minutes.`
+        description: `Campaign prepared successfully! ${data.totalEmails} emails ready across ${data.accountsUsed} accounts.`
       });
 
       // Refresh campaigns to get updated status
