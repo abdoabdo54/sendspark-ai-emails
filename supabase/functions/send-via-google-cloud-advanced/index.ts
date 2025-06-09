@@ -178,14 +178,14 @@ serve(async (req) => {
       }
     };
 
-    console.log(`🎯 MAXIMUM SPEED payload: ${emailsByAccount.size} accounts, ${emailsToSend.length} emails`)
+    console.log(`🎯 MAXIMUM SPEED payload prepared for ${emailsByAccount.size} accounts, ${emailsToSend.length} emails`)
 
     // Send to Google Cloud Functions with MAXIMUM SPEED settings
     const response = await fetch(gcfConfig.functionUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'User-Agent': 'Supabase-MaxSpeed/3.0',
+        'User-Agent': 'Supabase-MaxSpeed/3.1',
         'X-Campaign-ID': campaignId,
         'X-Email-Count': emailsToSend.length.toString(),
         'X-Max-Speed': 'true',
@@ -227,7 +227,7 @@ serve(async (req) => {
           status: result.sentCount > 0 ? 'sent' : 'failed',
           sent_count: result.sentCount || 0,
           completed_at: new Date().toISOString(),
-          error_message: result.failedCount > 0 ? `${result.failedCount} emails failed` : null
+          error_message: result.failedCount > 0 ? `${result.failedCount} emails failed to send` : null
         })
         .eq('id', campaignId)
     }

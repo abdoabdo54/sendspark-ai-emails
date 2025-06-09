@@ -57,26 +57,49 @@ functions.http('sendEmailCampaign', async (req, res) => {
       
       try {
         if (type === 'smtp') {
-          // Create MAXIMUM SPEED SMTP transporter
-          const transporter = nodemailer.createTransporter({
+          // Create MAXIMUM SPEED SMTP transporter with better error handling
+          const transporterConfig = {
             host: accountConfig.host,
-            port: accountConfig.port,
-            secure: accountConfig.encryption === 'ssl',
+            port: parseInt(accountConfig.port) || 587,
+            secure: accountConfig.port == 465, // Use SSL for port 465
             auth: {
-              user: accountConfig.username,
-              pass: accountConfig.password
+              user: accountConfig.user || accountConfig.username,
+              pass: accountConfig.pass || accountConfig.password
             },
             pool: true,
             maxConnections: 20, // MAXIMUM connections
             maxMessages: 2000,  // MAXIMUM messages per connection
             rateLimit: false,   // NO rate limiting for maximum speed
-            connectionTimeout: 10000,
-            greetingTimeout: 5000,
-            socketTimeout: 30000
+            connectionTimeout: 30000, // Increased timeout
+            greetingTimeout: 30000,   // Increased timeout
+            socketTimeout: 60000,     // Increased timeout
+            logger: true,
+            debug: true,
+            tls: {
+              rejectUnauthorized: false // For Office 365 compatibility
+            }
+          };
+
+          console.log(`📧 Creating SMTP transporter for ${accountInfo.email}:`, {
+            host: accountConfig.host,
+            port: accountConfig.port,
+            secure: transporterConfig.secure,
+            user: transporterConfig.auth.user
           });
 
+          const transporter = nodemailer.createTransporter(transporterConfig);
+
+          // Test connection first
+          try {
+            await transporter.verify();
+            console.log(`✅ SMTP connection verified for ${accountInfo.email}`);
+          } catch (verifyError) {
+            console.error(`❌ SMTP verification failed for ${accountInfo.email}:`, verifyError);
+            throw new Error(`SMTP connection failed: ${verifyError.message}`);
+          }
+
           // Send emails in MAXIMUM SPEED batches
-          const batchSize = 50; // INCREASED batch size for maximum throughput
+          const batchSize = 25; // Reduced for better reliability
           const batches = [];
           
           for (let i = 0; i < emails.length; i += batchSize) {
@@ -85,21 +108,26 @@ functions.http('sendEmailCampaign', async (req, res) => {
 
           console.log(`⚡ SMTP ${accountInfo.email}: ${batches.length} batches of ${batchSize} emails each`);
 
-          // Process batches in MAXIMUM PARALLEL
-          const batchPromises = batches.map(async (batch, batchIndex) => {
-            const batchResults = await Promise.all(
+          // Process batches sequentially for SMTP to avoid overwhelming
+          for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
+            const batch = batches[batchIndex];
+            
+            const batchResults = await Promise.allSettled(
               batch.map(async (emailData) => {
                 try {
-                  const info = await transporter.sendMail({
+                  const mailOptions = {
                     from: `${emailData.fromName} <${emailData.fromEmail}>`,
                     to: emailData.recipient,
                     subject: emailData.subject,
                     html: emailData.htmlContent,
                     text: emailData.textContent
-                  });
+                  };
+
+                  console.log(`📤 Sending email to ${emailData.recipient} via ${accountInfo.email}`);
+                  const info = await transporter.sendMail(mailOptions);
 
                   totalSent++;
-                  console.log(`✅ SENT: ${emailData.recipient} via SMTP (Speed: MAXIMUM)`);
+                  console.log(`✅ SENT: ${emailData.recipient} via SMTP (MessageID: ${info.messageId})`);
                   
                   return { success: true, recipient: emailData.recipient, messageId: info.messageId };
                 } catch (error) {
@@ -110,21 +138,28 @@ functions.http('sendEmailCampaign', async (req, res) => {
               })
             );
 
+            batchResults.forEach(result => {
+              if (result.status === 'fulfilled') {
+                results.push(result.value);
+              } else {
+                totalFailed++;
+                results.push({ success: false, error: result.reason?.message || 'Unknown error' });
+              }
+            });
+
             // Real-time progress updates every batch
-            if (batchIndex % 2 === 0) { // Update every 2 batches for balance
-              await supabase
-                .from('email_campaigns')
-                .update({ sent_count: totalSent })
-                .eq('id', campaignId);
-            }
+            await supabase
+              .from('email_campaigns')
+              .update({ sent_count: totalSent })
+              .eq('id', campaignId);
               
             console.log(`⚡ MAXIMUM SPEED Batch ${batchIndex + 1}/${batches.length}: ${totalSent} sent, ${totalFailed} failed`);
             
-            return batchResults;
-          });
-
-          const allBatchResults = await Promise.all(batchPromises);
-          results.push(...allBatchResults.flat());
+            // Small delay between batches to prevent overwhelming
+            if (batchIndex < batches.length - 1) {
+              await new Promise(resolve => setTimeout(resolve, 1000));
+            }
+          }
 
           await transporter.close();
 

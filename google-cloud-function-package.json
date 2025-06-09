@@ -1,17 +1,17 @@
 
 {
   "name": "send-email-campaign-maximum-speed",
-  "version": "3.0.0",
-  "description": "MAXIMUM SPEED Google Cloud Function for ultra-fast email campaigns",
+  "version": "3.1.0",
+  "description": "MAXIMUM SPEED Google Cloud Function for ultra-fast email campaigns with enhanced SMTP support",
   "main": "index.js",
   "dependencies": {
-    "@google-cloud/functions-framework": "^3.0.0",
+    "@google-cloud/functions-framework": "^3.4.0",
     "@supabase/supabase-js": "^2.49.8",
-    "nodemailer": "^6.9.0"
+    "nodemailer": "^6.9.8"
   },
   "scripts": {
     "start": "functions-framework --target=sendEmailCampaign",
-    "deploy": "gcloud functions deploy sendEmailCampaign --runtime nodejs18 --trigger-http --allow-unauthenticated --memory=2GB --timeout=540s"
+    "deploy": "gcloud functions deploy sendEmailCampaign --runtime nodejs18 --trigger-http --allow-unauthenticated --memory=2GB --timeout=540s --max-instances=10"
   },
   "engines": {
     "node": ">=18.0.0"
