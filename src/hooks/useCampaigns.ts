@@ -207,23 +207,23 @@ export const useCampaigns = (organizationId?: string) => {
 
   const prepareCampaign = async (campaignId: string) => {
     try {
-      console.log('Preparing campaign:', campaignId);
+      console.log('Preparing campaign with advanced system:', campaignId);
 
-      // Call the prepare function
-      const { data, error } = await supabase.functions.invoke('prepare-campaign', {
+      // Call the advanced prepare function
+      const { data, error } = await supabase.functions.invoke('prepare-campaign-advanced', {
         body: { campaignId }
       });
 
       if (error) {
-        console.error('Error calling prepare-campaign:', error);
+        console.error('Error calling prepare-campaign-advanced:', error);
         throw error;
       }
 
-      console.log('Campaign preparation result:', data);
+      console.log('Advanced campaign preparation result:', data);
 
       toast({
         title: "Success",
-        description: "Campaign has been prepared and is ready to send"
+        description: `Campaign prepared successfully! ${data.prepared_count} emails ready across ${data.accounts_used} accounts. Estimated duration: ${data.estimated_duration_minutes} minutes.`
       });
 
       // Refresh campaigns to get updated status
@@ -241,49 +241,25 @@ export const useCampaigns = (organizationId?: string) => {
     }
   };
 
-  const getGlobalGoogleCloudSettings = () => {
+  const sendCampaignViaGoogleCloud = async (campaignId: string, resumeFromIndex = 0) => {
     try {
-      const savedSettings = localStorage.getItem('emailCampaignSettings');
-      if (savedSettings) {
-        const parsed = JSON.parse(savedSettings);
-        return parsed.googleCloudFunctions;
-      }
-    } catch (error) {
-      console.error('Error loading global settings:', error);
-    }
-    return null;
-  };
+      console.log('Sending campaign via advanced Google Cloud Functions:', campaignId);
 
-  const sendCampaignViaGoogleCloud = async (campaignId: string, campaignConfig?: any) => {
-    try {
-      console.log('Sending campaign via Google Cloud Functions:', campaignId);
-
-      // Use campaign-specific config or fall back to global settings
-      const globalSettings = getGlobalGoogleCloudSettings();
-      const gcfConfig = campaignConfig || globalSettings;
-
-      if (!gcfConfig?.functionUrl) {
-        throw new Error('Google Cloud Functions URL not configured. Please check global settings.');
-      }
-
-      const rateLimit = gcfConfig.rateLimit || gcfConfig.defaultRateLimit || 3600;
-      const batchSize = gcfConfig.batchSize || gcfConfig.defaultBatchSize || 10;
-
-      // Call the Google Cloud Functions integration
-      const { data, error } = await supabase.functions.invoke('send-via-google-cloud', {
-        body: { campaignId, rateLimit, batchSize }
+      // Call the advanced Google Cloud sender
+      const { data, error } = await supabase.functions.invoke('send-via-google-cloud-advanced', {
+        body: { campaignId, resumeFromIndex }
       });
 
       if (error) {
-        console.error('Error calling Google Cloud Functions:', error);
+        console.error('Error calling advanced Google Cloud sender:', error);
         throw error;
       }
 
-      console.log('Google Cloud Functions result:', data);
+      console.log('Advanced Google Cloud sending result:', data);
 
       toast({
         title: "Success",
-        description: `Campaign is being sent via Google Cloud Functions at ${rateLimit} emails/hour`
+        description: `Campaign sending initiated! Processing ${data.total_emails} emails across ${data.accounts_processing} accounts in parallel.`
       });
 
       // Refresh campaigns to get updated status
@@ -292,12 +268,6 @@ export const useCampaigns = (organizationId?: string) => {
       return data;
     } catch (error) {
       console.error('Error sending campaign via Google Cloud:', error);
-      
-      // Revert status back to prepared on error
-      await supabase
-        .from('email_campaigns')
-        .update({ status: 'prepared' })
-        .eq('id', campaignId);
       
       toast({
         title: "Error",
@@ -322,13 +292,12 @@ export const useCampaigns = (organizationId?: string) => {
 
       // Check if Google Cloud Functions is enabled (campaign config or global)
       const campaignGCFEnabled = campaign.config?.googleCloud?.enabled;
-      const globalSettings = getGlobalGoogleCloudSettings();
-      const globalGCFEnabled = globalSettings?.enabled;
+      const globalSettings = localStorage.getItem('emailCampaignSettings');
+      const globalGCFEnabled = globalSettings ? JSON.parse(globalSettings)?.googleCloudFunctions?.enabled : false;
 
       if (campaignGCFEnabled || (globalGCFEnabled && !campaign.config?.googleCloud?.hasOwnProperty('enabled'))) {
         // Use Google Cloud Functions
-        const gcfConfig = campaign.config?.googleCloud || globalSettings;
-        return await sendCampaignViaGoogleCloud(campaignId, gcfConfig);
+        return await sendCampaignViaGoogleCloud(campaignId);
       }
 
       // Continue with existing implementation for non-Google Cloud campaigns
@@ -392,7 +361,7 @@ export const useCampaigns = (organizationId?: string) => {
       await updateCampaign(campaignId, { status: 'paused' });
       toast({
         title: "Success",
-        description: "Campaign has been paused"
+        description: "Campaign paused successfully. You can resume sending anytime."
       });
     } catch (error) {
       console.error('Error pausing campaign:', error);
@@ -402,17 +371,20 @@ export const useCampaigns = (organizationId?: string) => {
 
   const resumeCampaign = async (campaignId: string) => {
     try {
-      // Find the campaign
       const campaign = campaigns.find(c => c.id === campaignId);
       if (!campaign) {
         throw new Error('Campaign not found');
       }
 
-      // If campaign is prepared, resume sending
-      if (campaign.status === 'prepared' || campaign.status === 'paused') {
-        await sendCampaign(campaignId);
+      if (campaign.status === 'paused') {
+        // Resume from where we left off
+        const sentCount = campaign.sent_count || 0;
+        await sendCampaignViaGoogleCloud(campaignId, sentCount);
+      } else if (campaign.status === 'prepared') {
+        // Start sending from the beginning
+        await sendCampaignViaGoogleCloud(campaignId, 0);
       } else {
-        throw new Error('Campaign must be prepared before resuming');
+        throw new Error('Campaign must be prepared or paused to resume');
       }
     } catch (error) {
       console.error('Error resuming campaign:', error);

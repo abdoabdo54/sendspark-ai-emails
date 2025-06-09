@@ -1,103 +1,187 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import SMTPConfigForm from './SMTPConfigForm';
-import AppsScriptConfigForm from './AppsScriptConfigForm';
-import PowerMTAConfigForm from './PowerMTAConfigForm';
 import GoogleCloudConfigForm from './GoogleCloudConfigForm';
-import GoogleCloudSetupGuide from './GoogleCloudSetupGuide';
-import { Separator } from "@/components/ui/separator";
+import AccountManagementPanel from './AccountManagementPanel';
+import GlobalGoogleCloudConfig from './GlobalGoogleCloudConfig';
 import { toast } from '@/hooks/use-toast';
 
 const SettingsPanel = () => {
-  const [smtpConfig, setSMTPConfig] = useState({
-    host: '',
-    port: 587,
-    username: '',
-    password: '',
-    encryption: 'tls' as 'none' | 'tls' | 'ssl',
-    auth_required: true
+  const [globalCloudConfig, setGlobalCloudConfig] = useState({
+    enabled: false,
+    functionUrl: '',
+    projectId: '',
+    region: 'us-central1',
+    functionName: 'sendEmailCampaign',
+    defaultRateLimit: 3600,
+    defaultBatchSize: 10
   });
 
-  const [appsScriptConfig, setAppsScriptConfig] = useState({
-    script_id: '',
-    deployment_id: '',
-    daily_quota: 100,
-    exec_url: ''
-  });
+  // Load saved settings from localStorage
+  useEffect(() => {
+    try {
+      const savedSettings = localStorage.getItem('emailCampaignSettings');
+      if (savedSettings) {
+        const parsed = JSON.parse(savedSettings);
+        if (parsed.googleCloudFunctions) {
+          setGlobalCloudConfig(prev => ({
+            ...prev,
+            ...parsed.googleCloudFunctions
+          }));
+        }
+      }
+    } catch (error) {
+      console.error('Error loading settings:', error);
+    }
+  }, []);
 
-  const [powerMTAConfig, setPowerMTAConfig] = useState({
-    server_host: '',
-    api_port: 25,
-    username: '',
-    password: '',
-    virtual_mta: '',
-    job_pool: '',
-    max_hourly_rate: 10000
-  });
-
-  const handleSMTPTest = () => {
-    toast({
-      title: "SMTP Test",
-      description: "Testing SMTP configuration...",
-    });
+  const handleGlobalCloudSave = (config: any) => {
+    setGlobalCloudConfig(config);
+    
+    // Save to localStorage
+    try {
+      const currentSettings = JSON.parse(localStorage.getItem('emailCampaignSettings') || '{}');
+      const updatedSettings = {
+        ...currentSettings,
+        googleCloudFunctions: config
+      };
+      localStorage.setItem('emailCampaignSettings', JSON.stringify(updatedSettings));
+      
+      toast({
+        title: "Success",
+        description: "Google Cloud Functions configuration saved successfully"
+      });
+    } catch (error) {
+      console.error('Error saving settings:', error);
+      toast({
+        title: "Error",
+        description: "Failed to save configuration",
+        variant: "destructive"
+      });
+    }
   };
 
-  const handleGoogleCloudSave = (config: any) => {
-    toast({
-      title: "Success",
-      description: "Google Cloud configuration saved successfully",
-    });
+  const testGoogleCloudConnection = async (config: any) => {
+    try {
+      if (!config.functionUrl) {
+        throw new Error('Function URL is required');
+      }
+
+      // Test the connection by making a simple request
+      const response = await fetch(config.functionUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ test: true })
+      });
+
+      return response.ok;
+    } catch (error) {
+      console.error('Google Cloud test error:', error);
+      return false;
+    }
   };
 
   return (
-    <div className="w-full max-w-4xl mx-auto p-6">
+    <div className="w-full max-w-6xl mx-auto p-6">
       <Card>
         <CardHeader>
           <CardTitle>Email Campaign Settings</CardTitle>
-          <p className="text-slate-600">Configure your email sending methods and preferences</p>
+          <p className="text-slate-600">Configure your email accounts, sending methods, and cloud functions</p>
         </CardHeader>
         <CardContent>
-          <Tabs defaultValue="smtp" className="w-full">
-            <TabsList className="grid w-full grid-cols-5">
-              <TabsTrigger value="smtp">SMTP</TabsTrigger>
-              <TabsTrigger value="apps-script">Apps Script</TabsTrigger>
-              <TabsTrigger value="powermta">PowerMTA</TabsTrigger>
+          <Tabs defaultValue="accounts" className="w-full">
+            <TabsList className="grid w-full grid-cols-3">
+              <TabsTrigger value="accounts">Email Accounts</TabsTrigger>
               <TabsTrigger value="cloud-functions">Cloud Functions</TabsTrigger>
               <TabsTrigger value="setup-guide">Setup Guide</TabsTrigger>
             </TabsList>
             
-            <TabsContent value="smtp" className="space-y-4">
-              <SMTPConfigForm 
-                config={smtpConfig}
-                onChange={setSMTPConfig}
-                onTest={handleSMTPTest}
-              />
-            </TabsContent>
-            
-            <TabsContent value="apps-script" className="space-y-4">
-              <AppsScriptConfigForm 
-                config={appsScriptConfig}
-                onChange={setAppsScriptConfig}
-              />
-            </TabsContent>
-            
-            <TabsContent value="powermta" className="space-y-4">
-              <PowerMTAConfigForm 
-                config={powerMTAConfig}
-                onChange={setPowerMTAConfig}
-              />
+            <TabsContent value="accounts" className="space-y-4">
+              <AccountManagementPanel />
             </TabsContent>
             
             <TabsContent value="cloud-functions" className="space-y-4">
-              <GoogleCloudConfigForm 
-                onSave={handleGoogleCloudSave}
+              <GlobalGoogleCloudConfig
+                config={globalCloudConfig}
+                onSave={handleGlobalCloudSave}
+                onTest={testGoogleCloudConnection}
               />
             </TabsContent>
             
             <TabsContent value="setup-guide" className="space-y-4">
-              <GoogleCloudSetupGuide />
+              <Card>
+                <CardHeader>
+                  <CardTitle>Google Cloud Functions Setup Guide</CardTitle>
+                </CardHeader>
+                <CardContent className="prose max-w-none">
+                  <div className="space-y-6">
+                    <div>
+                      <h3 className="text-lg font-semibold">Step 1: Create Google Cloud Project</h3>
+                      <ol className="list-decimal list-inside space-y-2 text-sm">
+                        <li>Go to <a href="https://console.cloud.google.com/" target="_blank" className="text-blue-600 hover:underline">Google Cloud Console</a></li>
+                        <li>Create a new project or select an existing one</li>
+                        <li>Note your Project ID for configuration</li>
+                        <li>Enable billing for your project</li>
+                      </ol>
+                    </div>
+
+                    <div>
+                      <h3 className="text-lg font-semibold">Step 2: Enable Required APIs</h3>
+                      <p className="text-sm text-gray-600 mb-2">Run these commands in Cloud Shell:</p>
+                      <pre className="bg-gray-100 p-3 rounded text-sm overflow-x-auto">
+{`gcloud services enable cloudfunctions.googleapis.com
+gcloud services enable cloudbuild.googleapis.com
+gcloud services enable run.googleapis.com`}
+                      </pre>
+                    </div>
+
+                    <div>
+                      <h3 className="text-lg font-semibold">Step 3: Deploy the Function</h3>
+                      <p className="text-sm text-gray-600 mb-2">Create a directory and add the function code:</p>
+                      <pre className="bg-gray-100 p-3 rounded text-sm overflow-x-auto">
+{`mkdir email-campaign-function && cd email-campaign-function
+# Copy the function code from the project's google-cloud-function-example.js
+# Then deploy:
+gcloud functions deploy sendEmailCampaign \\
+  --runtime nodejs20 \\
+  --trigger-http \\
+  --allow-unauthenticated \\
+  --memory 1GB \\
+  --timeout 540s \\
+  --region us-central1 \\
+  --set-env-vars SUPABASE_URL=YOUR_SUPABASE_URL,SUPABASE_SERVICE_ROLE_KEY=YOUR_KEY`}
+                      </pre>
+                    </div>
+
+                    <div>
+                      <h3 className="text-lg font-semibold">Step 4: Configure in Application</h3>
+                      <ol className="list-decimal list-inside space-y-2 text-sm">
+                        <li>Go to the "Cloud Functions" tab above</li>
+                        <li>Enable Google Cloud Functions</li>
+                        <li>Enter your Project ID</li>
+                        <li>The Function URL will auto-generate</li>
+                        <li>Test the connection</li>
+                        <li>Save the configuration</li>
+                      </ol>
+                    </div>
+
+                    <div className="bg-blue-50 p-4 rounded">
+                      <h4 className="font-semibold text-blue-800">Advanced Features</h4>
+                      <ul className="list-disc list-inside space-y-1 text-sm text-blue-700">
+                        <li>Parallel processing with multiple accounts</li>
+                        <li>Individual rate limiting per account (emails/second)</li>
+                        <li>Round-robin rotation for FROM names and subjects</li>
+                        <li>Separated campaign preparation and sending</li>
+                        <li>PowerMTA-style pause/resume functionality</li>
+                        <li>Unlimited email capacity with intelligent queuing</li>
+                      </ul>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
             </TabsContent>
           </Tabs>
         </CardContent>
