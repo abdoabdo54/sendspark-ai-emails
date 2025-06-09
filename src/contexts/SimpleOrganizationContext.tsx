@@ -5,6 +5,9 @@ interface Organization {
   id: string;
   name: string;
   subdomain: string;
+  subscription_plan: string;
+  emails_sent_this_month: number;
+  monthly_email_limit: number;
 }
 
 interface SimpleOrganizationContextType {
@@ -27,13 +30,19 @@ export const SimpleOrganizationProvider: React.FC<{ children: React.ReactNode }>
   const [currentOrganization, setCurrentOrganization] = useState<Organization | null>({
     id: '550e8400-e29b-41d4-a716-446655440000',
     name: 'Demo Organization',
-    subdomain: 'demo'
+    subdomain: 'demo',
+    subscription_plan: 'free',
+    emails_sent_this_month: 0,
+    monthly_email_limit: 1000
   });
   const [organizations] = useState<Organization[]>([
     {
       id: '550e8400-e29b-41d4-a716-446655440000',
       name: 'Demo Organization',
-      subdomain: 'demo'
+      subdomain: 'demo',
+      subscription_plan: 'free',
+      emails_sent_this_month: 0,
+      monthly_email_limit: 1000
     }
   ]);
 

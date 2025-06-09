@@ -13,12 +13,12 @@ import { toast } from '@/hooks/use-toast';
 
 const AccountManager = () => {
   const { currentOrganization } = useSimpleOrganizations();
-  const { accounts, loading, createAccount, updateAccount, deleteAccount, refetch } = useEmailAccounts(currentOrganization?.id);
+  const { accounts, loading, addAccount, updateAccount, deleteAccount, refetch } = useEmailAccounts(currentOrganization?.id);
   
   const [formData, setFormData] = useState({
     name: '',
     email: '',
-    type: 'smtp',
+    type: 'smtp' as 'smtp' | 'apps-script' | 'powermta',
     config: {
       host: '',
       port: 587,
@@ -49,15 +49,18 @@ const AccountManager = () => {
 
     try {
       const accountData = {
-        ...formData,
-        organization_id: currentOrganization.id
+        name: formData.name,
+        email: formData.email,
+        type: formData.type,
+        is_active: true,
+        config: formData.config
       };
 
       if (editingId) {
         await updateAccount(editingId, accountData);
         setEditingId(null);
       } else {
-        await createAccount(accountData);
+        await addAccount(accountData);
       }
       
       // Reset form
@@ -164,7 +167,7 @@ const AccountManager = () => {
 
             <div>
               <Label htmlFor="type">Account Type</Label>
-              <Select value={formData.type} onValueChange={(value) => setFormData(prev => ({ ...prev, type: value }))}>
+              <Select value={formData.type} onValueChange={(value: 'smtp' | 'apps-script' | 'powermta') => setFormData(prev => ({ ...prev, type: value }))}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
@@ -183,7 +186,10 @@ const AccountManager = () => {
                   <Input
                     id="host"
                     value={formData.config.host}
-                    onChange={(e) => handleConfigChange('host', e.target.value)}
+                    onChange={(e) => setFormData(prev => ({
+                      ...prev,
+                      config: { ...prev.config, host: e.target.value }
+                    }))}
                     placeholder="smtp.gmail.com"
                     required
                   />
@@ -195,7 +201,10 @@ const AccountManager = () => {
                     id="port"
                     type="number"
                     value={formData.config.port}
-                    onChange={(e) => handleConfigChange('port', parseInt(e.target.value))}
+                    onChange={(e) => setFormData(prev => ({
+                      ...prev,
+                      config: { ...prev.config, port: parseInt(e.target.value) }
+                    }))}
                     required
                   />
                 </div>
@@ -205,7 +214,10 @@ const AccountManager = () => {
                   <Input
                     id="user"
                     value={formData.config.user}
-                    onChange={(e) => handleConfigChange('user', e.target.value)}
+                    onChange={(e) => setFormData(prev => ({
+                      ...prev,
+                      config: { ...prev.config, user: e.target.value }
+                    }))}
                     placeholder="your@email.com"
                     required
                   />
@@ -217,7 +229,10 @@ const AccountManager = () => {
                     id="pass"
                     type="password"
                     value={formData.config.pass}
-                    onChange={(e) => handleConfigChange('pass', e.target.value)}
+                    onChange={(e) => setFormData(prev => ({
+                      ...prev,
+                      config: { ...prev.config, pass: e.target.value }
+                    }))}
                     placeholder="Your app password"
                     required
                   />
