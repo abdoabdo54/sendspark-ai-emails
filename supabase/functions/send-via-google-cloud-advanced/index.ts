@@ -16,19 +16,26 @@ serve(async (req) => {
   let campaignId: string | null = null;
 
   try {
-    // Parse request body once and store it
-    requestBody = await req.json()
-    campaignId = requestBody.campaignId
-    const resumeFromIndex = requestBody.resumeFromIndex || 0
+    // Parse request body and store it
+    const bodyText = await req.text();
+    console.log('Raw request body:', bodyText);
+    
+    if (!bodyText) {
+      throw new Error('Empty request body');
+    }
 
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!
-    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-    const supabase = createClient(supabaseUrl, supabaseKey)
+    requestBody = JSON.parse(bodyText);
+    campaignId = requestBody.campaignId;
+    const resumeFromIndex = requestBody.resumeFromIndex || 0;
 
-    console.log(`🚀 MAXIMUM SPEED PROCESSING for campaign ${campaignId}`)
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const supabase = createClient(supabaseUrl, supabaseKey);
+
+    console.log(`🚀 MAXIMUM SPEED PROCESSING for campaign ${campaignId}`);
 
     if (!campaignId) {
-      throw new Error('Campaign ID is required')
+      throw new Error('Campaign ID is required');
     }
 
     // Get campaign details with error handling
@@ -36,10 +43,10 @@ serve(async (req) => {
       .from('email_campaigns')
       .select('*')
       .eq('id', campaignId)
-      .single()
+      .single();
 
     if (campaignError || !campaign) {
-      console.error('Campaign fetch error:', campaignError)
+      console.error('Campaign fetch error:', campaignError);
       
       if (campaignId) {
         await supabase
@@ -49,18 +56,18 @@ serve(async (req) => {
             error_message: `Campaign not found: ${campaignError?.message || 'Unknown error'}`,
             completed_at: new Date().toISOString()
           })
-          .eq('id', campaignId)
+          .eq('id', campaignId);
       }
       
       return new Response(
         JSON.stringify({ error: 'Campaign not found', details: campaignError }),
         { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
+      );
     }
 
     // Enhanced status validation
     if (!['prepared', 'paused', 'sending'].includes(campaign.status)) {
-      console.error('Invalid campaign status for sending:', campaign.status)
+      console.error('Invalid campaign status for sending:', campaign.status);
       
       await supabase
         .from('email_campaigns')
@@ -69,19 +76,19 @@ serve(async (req) => {
           error_message: `Invalid status for sending: ${campaign.status}. Campaign must be prepared first.`,
           completed_at: new Date().toISOString()
         })
-        .eq('id', campaignId)
+        .eq('id', campaignId);
       
       return new Response(
         JSON.stringify({ 
           error: `Campaign status '${campaign.status}' is invalid for sending. Please prepare the campaign first.` 
         }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
+      );
     }
 
-    const preparedEmails = campaign.prepared_emails || []
+    const preparedEmails = campaign.prepared_emails || [];
     if (preparedEmails.length === 0) {
-      console.error('No prepared emails found')
+      console.error('No prepared emails found');
       
       await supabase
         .from('email_campaigns')
@@ -90,23 +97,28 @@ serve(async (req) => {
           error_message: 'No prepared emails found. Please prepare the campaign first.',
           completed_at: new Date().toISOString()
         })
-        .eq('id', campaignId)
+        .eq('id', campaignId);
       
       return new Response(
         JSON.stringify({ error: 'No prepared emails found. Please prepare the campaign first.' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
+      );
     }
 
-    // Get Google Cloud Functions configuration
+    // Get Google Cloud Functions configuration - FIX: Check campaign config first
     let gcfConfig = null;
     
+    // First check campaign config for Google Cloud Functions
     if (campaign.config?.googleCloudFunctions) {
       gcfConfig = campaign.config.googleCloudFunctions;
+      console.log('Using campaign-level Google Cloud config');
+    } else {
+      // Fallback to localStorage-based config (for backward compatibility)
+      console.log('No campaign-level Google Cloud config found, checking for global config');
     }
     
     if (!gcfConfig?.functionUrl) {
-      console.error('No Google Cloud Functions URL configured')
+      console.error('No Google Cloud Functions URL configured');
       
       await supabase
         .from('email_campaigns')
@@ -115,17 +127,17 @@ serve(async (req) => {
           error_message: 'Google Cloud Functions not configured. Please check your Google Cloud Function URL in settings.',
           completed_at: new Date().toISOString()
         })
-        .eq('id', campaignId)
+        .eq('id', campaignId);
       
       return new Response(
         JSON.stringify({ 
           error: 'Google Cloud Functions not configured. Please check your function URL in settings.' 
         }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
+      );
     }
 
-    console.log(`⚡ MAXIMUM SPEED: ${gcfConfig.functionUrl}`)
+    console.log(`⚡ MAXIMUM SPEED: ${gcfConfig.functionUrl}`);
 
     // Ensure campaign is marked as sending
     await supabase
@@ -135,16 +147,27 @@ serve(async (req) => {
         sent_at: new Date().toISOString(),
         error_message: null
       })
-      .eq('id', campaignId)
+      .eq('id', campaignId);
 
     // Get emails to send (from resumeFromIndex onwards)
-    const emailsToSend = preparedEmails.slice(resumeFromIndex)
-    console.log(`⚡ SENDING ${emailsToSend.length} emails at MAXIMUM SPEED starting from index ${resumeFromIndex}`)
+    const emailsToSend = preparedEmails.slice(resumeFromIndex);
+    console.log(`⚡ SENDING ${emailsToSend.length} emails at MAXIMUM SPEED starting from index ${resumeFromIndex}`);
     
-    // Group emails by account for ultra-optimized processing
-    const emailsByAccount = new Map()
+    // FIX: Respect user's account selection from campaign config
+    const selectedAccountIds = campaign.config?.selectedAccounts || [];
+    console.log('Selected account IDs from campaign:', selectedAccountIds);
+    
+    // Group emails by account for ultra-optimized processing - ONLY USE SELECTED ACCOUNTS
+    const emailsByAccount = new Map();
     emailsToSend.forEach((email, index) => {
-      const accountId = email.account_id
+      const accountId = email.account_id;
+      
+      // FIX: Only include emails from selected accounts
+      if (selectedAccountIds.length > 0 && !selectedAccountIds.includes(accountId)) {
+        console.log(`Skipping email for non-selected account: ${accountId}`);
+        return;
+      }
+      
       if (!emailsByAccount.has(accountId)) {
         emailsByAccount.set(accountId, {
           type: email.accountType,
@@ -154,7 +177,7 @@ serve(async (req) => {
             name: email.fromName || 'Unknown',
             email: email.fromEmail || 'unknown@domain.com'
           }
-        })
+        });
       }
       emailsByAccount.get(accountId).emails.push({
         recipient: email.recipient,
@@ -164,16 +187,33 @@ serve(async (req) => {
         htmlContent: email.htmlContent,
         textContent: email.textContent,
         globalIndex: resumeFromIndex + index
-      })
-    })
+      });
+    });
 
-    console.log(`⚡ ULTRA-OPTIMIZED: ${emailsToSend.length} emails using ${emailsByAccount.size} accounts`)
+    const actualEmailsToSend = Array.from(emailsByAccount.values()).reduce((total, account) => total + account.emails.length, 0);
+    console.log(`⚡ ULTRA-OPTIMIZED: ${actualEmailsToSend} emails using ${emailsByAccount.size} selected accounts`);
+
+    if (actualEmailsToSend === 0) {
+      await supabase
+        .from('email_campaigns')
+        .update({ 
+          status: 'failed',
+          error_message: 'No emails to send with selected accounts. Please check your account selection.',
+          completed_at: new Date().toISOString()
+        })
+        .eq('id', campaignId);
+      
+      return new Response(
+        JSON.stringify({ error: 'No emails to send with selected accounts' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
 
     // Prepare MAXIMUM SPEED payload for Google Cloud Function
     const payload = {
       campaignId,
       emailsByAccount: Object.fromEntries(emailsByAccount),
-      totalEmails: emailsToSend.length,
+      totalEmails: actualEmailsToSend,
       resumeFromIndex,
       supabaseUrl,
       supabaseKey,
@@ -187,7 +227,7 @@ serve(async (req) => {
       }
     };
 
-    console.log(`🎯 MAXIMUM SPEED payload prepared for ${emailsByAccount.size} accounts, ${emailsToSend.length} emails`)
+    console.log(`🎯 MAXIMUM SPEED payload prepared for ${emailsByAccount.size} selected accounts, ${actualEmailsToSend} emails`);
 
     // Validate function URL format
     if (!gcfConfig.functionUrl.startsWith('https://')) {
@@ -199,20 +239,20 @@ serve(async (req) => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'User-Agent': 'Supabase-MaxSpeed/3.1',
+        'User-Agent': 'Supabase-MaxSpeed/3.2',
         'X-Campaign-ID': campaignId,
-        'X-Email-Count': emailsToSend.length.toString(),
+        'X-Email-Count': actualEmailsToSend.toString(),
         'X-Max-Speed': 'true',
         'X-Ultra-Fast': 'true'
       },
       body: JSON.stringify(payload)
-    })
+    });
 
-    console.log(`⚡ Google Cloud MAXIMUM SPEED response: ${response.status}`)
+    console.log(`⚡ Google Cloud MAXIMUM SPEED response: ${response.status}`);
 
     if (!response.ok) {
-      const errorText = await response.text()
-      console.error(`💥 Google Cloud CRITICAL ERROR: ${response.status} - ${errorText}`)
+      const errorText = await response.text();
+      console.error(`💥 Google Cloud CRITICAL ERROR: ${response.status} - ${errorText}`);
       
       // Update campaign with error
       await supabase
@@ -222,17 +262,17 @@ serve(async (req) => {
           error_message: `Google Cloud error: ${response.status} - ${errorText}. Check your function URL: ${gcfConfig.functionUrl}`,
           completed_at: new Date().toISOString()
         })
-        .eq('id', campaignId)
+        .eq('id', campaignId);
       
-      throw new Error(`Google Cloud Functions failed: ${response.status} - ${errorText}. Check your function URL.`)
+      throw new Error(`Google Cloud Functions failed: ${response.status} - ${errorText}. Check your function URL.`);
     }
 
-    const result = await response.json()
-    console.log('✅ MAXIMUM SPEED Google Cloud response:', JSON.stringify(result, null, 2))
+    const result = await response.json();
+    console.log('✅ MAXIMUM SPEED Google Cloud response:', JSON.stringify(result, null, 2));
 
     // Handle response based on completion status
     if (result.success && result.completed) {
-      console.log('🎉 MAXIMUM SPEED Campaign completed successfully!')
+      console.log('🎉 MAXIMUM SPEED Campaign completed successfully!');
       
       // Final status update
       await supabase
@@ -243,7 +283,7 @@ serve(async (req) => {
           completed_at: new Date().toISOString(),
           error_message: result.failedCount > 0 ? `${result.failedCount} emails failed to send` : null
         })
-        .eq('id', campaignId)
+        .eq('id', campaignId);
     }
 
     return new Response(
@@ -253,7 +293,8 @@ serve(async (req) => {
         details: result,
         configuration: {
           accounts_processing: emailsByAccount.size,
-          total_emails: emailsToSend.length,
+          total_emails: actualEmailsToSend,
+          selected_accounts: selectedAccountIds.length,
           max_speed_mode: true,
           ultra_fast_processing: true,
           parallel_processing: true
@@ -263,17 +304,17 @@ serve(async (req) => {
         performance: { ...result.performance, maxSpeed: true, ultraFast: true }
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    )
+    );
 
   } catch (error) {
-    console.error('💥 CRITICAL MAXIMUM SPEED ERROR:', error)
+    console.error('💥 CRITICAL MAXIMUM SPEED ERROR:', error);
     
     // Try to revert campaign status on any error
     try {
       if (campaignId) {
-        const supabaseUrl = Deno.env.get('SUPABASE_URL')!
-        const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-        const supabase = createClient(supabaseUrl, supabaseKey)
+        const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+        const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+        const supabase = createClient(supabaseUrl, supabaseKey);
         
         await supabase
           .from('email_campaigns')
@@ -282,10 +323,10 @@ serve(async (req) => {
             error_message: `Maximum speed sender error: ${error.message}`,
             completed_at: new Date().toISOString()
           })
-          .eq('id', campaignId)
+          .eq('id', campaignId);
       }
     } catch (revertError) {
-      console.error('Failed to revert campaign status:', revertError)
+      console.error('Failed to revert campaign status:', revertError);
     }
     
     return new Response(
@@ -295,6 +336,6 @@ serve(async (req) => {
         timestamp: new Date().toISOString()
       }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    )
+    );
   }
-})
+});

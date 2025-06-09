@@ -18,7 +18,7 @@ functions.http('sendEmailCampaign', async (req, res) => {
   }
 
   try {
-    console.log('🚀 Google Cloud Function started');
+    console.log('🚀 Google Cloud Function started - MAXIMUM SPEED MODE');
     console.log('Request body keys:', Object.keys(req.body || {}));
 
     const { 
@@ -77,7 +77,7 @@ functions.http('sendEmailCampaign', async (req, res) => {
             throw new Error(`SMTP configuration incomplete for ${accountInfo.email}. Missing host, port, username, or password.`);
           }
 
-          // Create MAXIMUM SPEED SMTP transporter with better error handling
+          // Create MAXIMUM SPEED SMTP transporter with enhanced reliability
           const transporterConfig = {
             host: accountConfig.host,
             port: parseInt(accountConfig.port) || 587,
@@ -87,16 +87,17 @@ functions.http('sendEmailCampaign', async (req, res) => {
               pass: accountConfig.pass || accountConfig.password
             },
             pool: true,
-            maxConnections: 5, // Reduced for better reliability
-            maxMessages: 100,  // Reduced for better reliability
+            maxConnections: 3, // Conservative for reliability
+            maxMessages: 50,   // Conservative for reliability
             rateLimit: false,   // NO rate limiting for maximum speed
-            connectionTimeout: 60000, // Increased timeout
-            greetingTimeout: 30000,   // Increased timeout
-            socketTimeout: 60000,     // Increased timeout
+            connectionTimeout: 30000, // 30 second timeout
+            greetingTimeout: 15000,   // 15 second timeout
+            socketTimeout: 30000,     // 30 second timeout
             logger: false, // Disable detailed logging for performance
             debug: false,  // Disable debug for performance
             tls: {
-              rejectUnauthorized: false // For compatibility
+              rejectUnauthorized: false, // For compatibility
+              ciphers: 'SSLv3'
             }
           };
 
@@ -109,9 +110,14 @@ functions.http('sendEmailCampaign', async (req, res) => {
 
           const transporter = nodemailer.createTransporter(transporterConfig);
 
-          // Test connection first
+          // Test connection first with timeout
           try {
-            await transporter.verify();
+            const verifyPromise = transporter.verify();
+            const timeoutPromise = new Promise((_, reject) => 
+              setTimeout(() => reject(new Error('SMTP verification timeout')), 15000)
+            );
+            
+            await Promise.race([verifyPromise, timeoutPromise]);
             console.log(`✅ SMTP connection verified for ${accountInfo.email}`);
           } catch (verifyError) {
             console.error(`❌ SMTP verification failed for ${accountInfo.email}:`, verifyError.message);
@@ -119,7 +125,7 @@ functions.http('sendEmailCampaign', async (req, res) => {
           }
 
           // Send emails in smaller batches for better reliability
-          const batchSize = 10; // Smaller batch size
+          const batchSize = 5; // Very small batch for reliability
           const batches = [];
           
           for (let i = 0; i < emails.length; i += batchSize) {
@@ -149,7 +155,14 @@ functions.http('sendEmailCampaign', async (req, res) => {
                   };
 
                   console.log(`📤 Sending email to ${emailData.recipient} via ${accountInfo.email}`);
-                  const info = await transporter.sendMail(mailOptions);
+                  
+                  // Add timeout to sendMail
+                  const sendPromise = transporter.sendMail(mailOptions);
+                  const timeoutPromise = new Promise((_, reject) => 
+                    setTimeout(() => reject(new Error('Send timeout')), 30000)
+                  );
+                  
+                  const info = await Promise.race([sendPromise, timeoutPromise]);
 
                   totalSent++;
                   console.log(`✅ SENT: ${emailData.recipient} via SMTP (MessageID: ${info.messageId})`);
@@ -173,10 +186,14 @@ functions.http('sendEmailCampaign', async (req, res) => {
             });
 
             // Real-time progress updates every batch
-            await supabase
-              .from('email_campaigns')
-              .update({ sent_count: totalSent })
-              .eq('id', campaignId);
+            try {
+              await supabase
+                .from('email_campaigns')
+                .update({ sent_count: totalSent })
+                .eq('id', campaignId);
+            } catch (updateError) {
+              console.error('Failed to update progress:', updateError);
+            }
               
             console.log(`⚡ MAXIMUM SPEED Batch ${batchIndex + 1}/${batches.length}: ${totalSent} sent, ${totalFailed} failed`);
             
@@ -195,7 +212,7 @@ functions.http('sendEmailCampaign', async (req, res) => {
           }
 
           // MAXIMUM SPEED Apps Script processing
-          const batchSize = 15; // Smaller batch for Apps Script
+          const batchSize = 10; // Smaller batch for Apps Script
           const batches = [];
           
           for (let i = 0; i < emails.length; i += batchSize) {
@@ -214,6 +231,9 @@ functions.http('sendEmailCampaign', async (req, res) => {
                   throw new Error('Missing recipient or subject');
                 }
 
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 20000); // 20 second timeout
+
                 const response = await fetch(accountConfig.exec_url, {
                   method: 'POST',
                   headers: { 
@@ -228,8 +248,10 @@ functions.http('sendEmailCampaign', async (req, res) => {
                     fromName: emailData.fromName || accountInfo.name,
                     fromAlias: emailData.fromEmail || accountInfo.email
                   }),
-                  timeout: 30000 // 30 second timeout
+                  signal: controller.signal
                 });
+
+                clearTimeout(timeoutId);
 
                 if (response.ok) {
                   const result = await response.json();
@@ -255,10 +277,14 @@ functions.http('sendEmailCampaign', async (req, res) => {
             results.push(...batchResults);
 
             // Real-time progress updates
-            await supabase
-              .from('email_campaigns')
-              .update({ sent_count: totalSent })
-              .eq('id', campaignId);
+            try {
+              await supabase
+                .from('email_campaigns')
+                .update({ sent_count: totalSent })
+                .eq('id', campaignId);
+            } catch (updateError) {
+              console.error('Failed to update progress:', updateError);
+            }
 
             console.log(`⚡ MAXIMUM SPEED Apps Script batch ${batchIndex + 1}/${batches.length} completed`);
             
@@ -279,13 +305,17 @@ functions.http('sendEmailCampaign', async (req, res) => {
         totalFailed += failedCount;
         
         // Update campaign with account error
-        await supabase
-          .from('email_campaigns')
-          .update({ 
-            error_message: `Account ${accountInfo.email} failed: ${accountError.message}`,
-            sent_count: totalSent
-          })
-          .eq('id', campaignId);
+        try {
+          await supabase
+            .from('email_campaigns')
+            .update({ 
+              error_message: `Account ${accountInfo.email} failed: ${accountError.message}`,
+              sent_count: totalSent
+            })
+            .eq('id', campaignId);
+        } catch (updateError) {
+          console.error('Failed to update error status:', updateError);
+        }
 
         // Add failed results for this account
         emails.forEach(email => {
@@ -316,10 +346,14 @@ functions.http('sendEmailCampaign', async (req, res) => {
       updateData.error_message = null; // Clear any previous errors on success
     }
 
-    await supabase
-      .from('email_campaigns')
-      .update(updateData)
-      .eq('id', campaignId);
+    try {
+      await supabase
+        .from('email_campaigns')
+        .update(updateData)
+        .eq('id', campaignId);
+    } catch (updateError) {
+      console.error('Failed to update final status:', updateError);
+    }
 
     console.log(`🎉 MAXIMUM SPEED CAMPAIGN COMPLETED: ${totalSent} sent, ${totalFailed} failed in RECORD TIME`);
 
