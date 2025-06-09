@@ -36,54 +36,6 @@ const SettingsPanel = () => {
     }
   }, []);
 
-  const handleGlobalCloudSave = (config: any) => {
-    setGlobalCloudConfig(config);
-    
-    // Save to localStorage
-    try {
-      const currentSettings = JSON.parse(localStorage.getItem('emailCampaignSettings') || '{}');
-      const updatedSettings = {
-        ...currentSettings,
-        googleCloudFunctions: config
-      };
-      localStorage.setItem('emailCampaignSettings', JSON.stringify(updatedSettings));
-      
-      toast({
-        title: "Success",
-        description: "Google Cloud Functions configuration saved successfully"
-      });
-    } catch (error) {
-      console.error('Error saving settings:', error);
-      toast({
-        title: "Error",
-        description: "Failed to save configuration",
-        variant: "destructive"
-      });
-    }
-  };
-
-  const testGoogleCloudConnection = async (config: any) => {
-    try {
-      if (!config.functionUrl) {
-        throw new Error('Function URL is required');
-      }
-
-      // Test the connection by making a simple request
-      const response = await fetch(config.functionUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ test: true })
-      });
-
-      return response.ok;
-    } catch (error) {
-      console.error('Google Cloud test error:', error);
-      return false;
-    }
-  };
-
   return (
     <div className="w-full max-w-6xl mx-auto p-6">
       <Card>
@@ -104,11 +56,7 @@ const SettingsPanel = () => {
             </TabsContent>
             
             <TabsContent value="cloud-functions" className="space-y-4">
-              <GlobalGoogleCloudConfig
-                config={globalCloudConfig}
-                onSave={handleGlobalCloudSave}
-                onTest={testGoogleCloudConnection}
-              />
+              <GlobalGoogleCloudConfig />
             </TabsContent>
             
             <TabsContent value="setup-guide" className="space-y-4">
