@@ -66,19 +66,9 @@ const DomainServerManager: React.FC<DomainServerManagerProps> = ({ isOpen, onClo
     if (!currentOrganization?.id) return;
 
     try {
-      // Using raw SQL query to avoid TypeScript issues with new tables
-      const { data, error } = await supabase.rpc('get_organization_domains', {
-        org_id: currentOrganization.id
-      }).catch(() => {
-        // Fallback if function doesn't exist yet
-        return { data: [], error: null };
-      });
-
-      if (error) {
-        console.error('Error fetching domains:', error);
-        return;
-      }
-      setDomains(data || []);
+      // Since domains table doesn't exist yet, we'll use mock data
+      console.log('Domains table not available yet, using mock data');
+      setDomains([]);
     } catch (error) {
       console.error('Error fetching domains:', error);
       setDomains([]);
@@ -89,19 +79,9 @@ const DomainServerManager: React.FC<DomainServerManagerProps> = ({ isOpen, onClo
     if (!currentOrganization?.id) return;
 
     try {
-      // Using raw SQL query to avoid TypeScript issues with new tables
-      const { data, error } = await supabase.rpc('get_organization_servers', {
-        org_id: currentOrganization.id
-      }).catch(() => {
-        // Fallback if function doesn't exist yet
-        return { data: [], error: null };
-      });
-
-      if (error) {
-        console.error('Error fetching servers:', error);
-        return;
-      }
-      setServers(data || []);
+      // Since servers table doesn't exist yet, we'll use mock data
+      console.log('Servers table not available yet, using mock data');
+      setServers([]);
     } catch (error) {
       console.error('Error fetching servers:', error);
       setServers([]);
@@ -114,20 +94,21 @@ const DomainServerManager: React.FC<DomainServerManagerProps> = ({ isOpen, onClo
     try {
       setLoading(true);
       
-      // Use RPC call to insert domain
-      const { data, error } = await supabase.rpc('add_domain', {
-        org_id: currentOrganization.id,
-        domain_name: newDomain.trim()
-      });
+      // Mock domain addition until database is set up
+      const mockDomain: Domain = {
+        id: crypto.randomUUID(),
+        domain_name: newDomain.trim(),
+        is_verified: false,
+        dns_records: {},
+        created_at: new Date().toISOString()
+      };
 
-      if (error) throw error;
-
+      setDomains(prev => [...prev, mockDomain]);
       setNewDomain('');
-      fetchDomains(); // Refresh the list
       
       toast({
         title: "Success",
-        description: "Domain added successfully"
+        description: "Domain added successfully (mock data)"
       });
     } catch (error) {
       console.error('Error adding domain:', error);
@@ -147,23 +128,25 @@ const DomainServerManager: React.FC<DomainServerManagerProps> = ({ isOpen, onClo
     try {
       setLoading(true);
       
-      // Use RPC call to insert server
-      const { data, error } = await supabase.rpc('add_server', {
-        org_id: currentOrganization.id,
+      // Mock server addition until database is set up
+      const mockServer: ServerConfig = {
+        id: crypto.randomUUID(),
         server_name: newServer.name.trim(),
         ip_address: newServer.ip.trim(),
-        port_number: newServer.port,
-        root_password: newServer.rootPassword
-      });
+        port: newServer.port,
+        status: 'pending',
+        server_config: {
+          root_password: newServer.rootPassword
+        },
+        created_at: new Date().toISOString()
+      };
 
-      if (error) throw error;
-
+      setServers(prev => [...prev, mockServer]);
       setNewServer({ name: '', ip: '', port: 22, rootPassword: '' });
-      fetchServers(); // Refresh the list
       
       toast({
         title: "Success",
-        description: "Server added successfully"
+        description: "Server added successfully (mock data)"
       });
     } catch (error) {
       console.error('Error adding server:', error);
@@ -179,12 +162,6 @@ const DomainServerManager: React.FC<DomainServerManagerProps> = ({ isOpen, onClo
 
   const deleteDomain = async (domainId: string) => {
     try {
-      const { error } = await supabase.rpc('delete_domain', {
-        domain_id: domainId
-      });
-
-      if (error) throw error;
-
       setDomains(prev => prev.filter(d => d.id !== domainId));
       
       toast({
@@ -203,12 +180,6 @@ const DomainServerManager: React.FC<DomainServerManagerProps> = ({ isOpen, onClo
 
   const deleteServer = async (serverId: string) => {
     try {
-      const { error } = await supabase.rpc('delete_server', {
-        server_id: serverId
-      });
-
-      if (error) throw error;
-
       setServers(prev => prev.filter(s => s.id !== serverId));
       
       toast({

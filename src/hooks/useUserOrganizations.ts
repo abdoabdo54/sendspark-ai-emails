@@ -43,16 +43,12 @@ export const useUserOrganizations = () => {
     try {
       console.log('Fetching organizations for user:', user.id);
       
-      // Use RPC function to get user organizations to avoid TypeScript issues
+      // Try to get user organizations using the existing RPC function
       const { data: orgsData, error: orgsError } = await supabase
-        .rpc('get_user_organizations', { _user_id: user.id })
-        .catch(() => {
-          // Fallback if function doesn't exist yet
-          return { data: null, error: { message: 'Function not found' } };
-        });
+        .rpc('get_user_organizations', { user_id: user.id });
 
       if (orgsError || !orgsData) {
-        console.log('No organizations found or function not available, creating default');
+        console.log('No organizations found or function failed, creating default');
         await createDefaultOrganization();
         return;
       }
@@ -63,37 +59,43 @@ export const useUserOrganizations = () => {
         return;
       }
 
-      // Extract organizations from the function result
-      const orgs = orgsData.map((item: any) => ({
-        id: item.org_id,
-        name: item.org_name,
-        subdomain: item.org_subdomain,
-        domain: item.org_domain,
-        subscription_plan: 'free',
-        is_active: true,
-        monthly_email_limit: 1000,
-        emails_sent_this_month: 0,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      }));
+      // For now, since we don't have proper organization data structure, 
+      // let's use the existing organizations table directly
+      const { data: directOrgs, error: directError } = await supabase
+        .from('organizations')
+        .select('*')
+        .eq('is_active', true);
 
-      const roles = orgsData.map((item: any) => ({
+      if (directError) {
+        console.error('Error fetching organizations directly:', directError);
+        await createDefaultOrganization();
+        return;
+      }
+
+      if (!directOrgs || directOrgs.length === 0) {
+        await createDefaultOrganization();
+        return;
+      }
+
+      console.log('Found organizations:', directOrgs.length);
+      setOrganizations(directOrgs);
+      
+      // Create mock user roles for now
+      const mockRoles = directOrgs.map((org: any) => ({
         id: crypto.randomUUID(),
         user_id: user.id,
-        organization_id: item.org_id,
-        role: item.org_role,
+        organization_id: org.id,
+        role: 'admin' as const,
         created_at: new Date().toISOString()
       }));
 
-      console.log('Found organizations:', orgs.length);
-      setOrganizations(orgs);
-      setUserRoles(roles);
+      setUserRoles(mockRoles);
       
       // Set current organization if not already set
-      if (orgs.length > 0 && !currentOrganization) {
+      if (directOrgs.length > 0 && !currentOrganization) {
         const savedOrgId = localStorage.getItem('currentOrganizationId');
-        const savedOrg = savedOrgId ? orgs.find((org: any) => org.id === savedOrgId) : null;
-        setCurrentOrganization(savedOrg || orgs[0]);
+        const savedOrg = savedOrgId ? directOrgs.find((org: any) => org.id === savedOrgId) : null;
+        setCurrentOrganization(savedOrg || directOrgs[0]);
       }
 
     } catch (error) {
@@ -120,9 +122,7 @@ export const useUserOrganizations = () => {
           subscription_plan: 'free',
           is_active: true,
           monthly_email_limit: 1000,
-          emails_sent_this_month: 0,
-          created_by: user.id,
-          billing_email: user.email
+          emails_sent_this_month: 0
         }])
         .select()
         .single();
@@ -133,18 +133,6 @@ export const useUserOrganizations = () => {
       }
 
       console.log('Created organization:', orgData);
-
-      // Try to create user role using RPC function
-      try {
-        await supabase.rpc('create_user_role', {
-          _user_id: user.id,
-          _organization_id: orgData.id,
-          _role: 'admin'
-        });
-      } catch (roleError) {
-        console.error('Error creating user role:', roleError);
-        // Continue anyway as the organization was created
-      }
 
       setOrganizations([orgData]);
       setCurrentOrganization(orgData);
@@ -188,26 +176,12 @@ export const useUserOrganizations = () => {
           subscription_plan: 'free',
           is_active: true,
           monthly_email_limit: 1000,
-          emails_sent_this_month: 0,
-          created_by: user.id,
-          billing_email: user.email
+          emails_sent_this_month: 0
         }])
         .select()
         .single();
 
       if (error) throw error;
-
-      // Try to create user role
-      try {
-        await supabase.rpc('create_user_role', {
-          _user_id: user.id,
-          _organization_id: data.id,
-          _role: 'admin'
-        });
-      } catch (roleError) {
-        console.error('Error creating user role:', roleError);
-        // Continue anyway as the organization was created
-      }
 
       setOrganizations(prev => [...prev, data]);
       setCurrentOrganization(data);
