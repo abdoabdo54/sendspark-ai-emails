@@ -1,0 +1,15 @@
+
+{
+  "name": "send-email-campaign",
+  "version": "1.0.0",
+  "description": "Google Cloud Function for sending email campaigns",
+  "main": "index.js",
+  "dependencies": {
+    "@google-cloud/functions-framework": "^3.0.0",
+    "@supabase/supabase-js": "^2.49.8",
+    "nodemailer": "^6.9.0"
+  },
+  "scripts": {
+    "start": "functions-framework --target=sendEmailCampaign"
+  }
+}
