@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -48,8 +48,21 @@ const SettingsPanel = () => {
     }
   });
 
+  // Load settings on component mount
+  useEffect(() => {
+    const savedSettings = localStorage.getItem('emailCampaignSettings');
+    if (savedSettings) {
+      try {
+        const parsed = JSON.parse(savedSettings);
+        setSettings(prev => ({ ...prev, ...parsed }));
+      } catch (error) {
+        console.error('Error loading settings:', error);
+      }
+    }
+  }, []);
+
   const handleSave = () => {
-    // Save to localStorage for now (in production, save to Supabase)
+    // Save to localStorage
     localStorage.setItem('emailCampaignSettings', JSON.stringify(settings));
     console.log('Saving settings:', settings);
     toast({
@@ -71,28 +84,24 @@ const SettingsPanel = () => {
 
   const handleGoogleCloudTest = async (gcfConfig: any): Promise<boolean> => {
     try {
+      if (!gcfConfig.functionUrl) {
+        throw new Error('Function URL is required');
+      }
+      
       const response = await fetch(gcfConfig.functionUrl, {
-        method: 'GET',
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ test: true })
       });
+      
       return response.ok;
     } catch (error) {
       console.error('Google Cloud test error:', error);
       return false;
     }
   };
-
-  // Load settings on component mount
-  useState(() => {
-    const savedSettings = localStorage.getItem('emailCampaignSettings');
-    if (savedSettings) {
-      try {
-        const parsed = JSON.parse(savedSettings);
-        setSettings(prev => ({ ...prev, ...parsed }));
-      } catch (error) {
-        console.error('Error loading settings:', error);
-      }
-    }
-  });
 
   return (
     <div className="space-y-6">
