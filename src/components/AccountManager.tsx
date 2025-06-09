@@ -72,16 +72,8 @@ const AccountManager = () => {
       if (editingId) {
         await updateAccount(editingId, accountData);
         setEditingId(null);
-        toast({
-          title: "Success",
-          description: "Account updated successfully"
-        });
       } else {
         await addAccount(accountData);
-        toast({
-          title: "Success",
-          description: "Account added successfully"
-        });
       }
       
       // Reset form
@@ -103,11 +95,6 @@ const AccountManager = () => {
 
     } catch (error) {
       console.error('Error saving account:', error);
-      toast({
-        title: "Error",
-        description: "Failed to save account. Please try again.",
-        variant: "destructive"
-      });
     } finally {
       setIsSubmitting(false);
     }
@@ -136,17 +123,8 @@ const AccountManager = () => {
     if (confirm('Are you sure you want to delete this account?')) {
       try {
         await deleteAccount(accountId);
-        toast({
-          title: "Success",
-          description: "Account deleted successfully"
-        });
       } catch (error) {
         console.error('Error deleting account:', error);
-        toast({
-          title: "Error",
-          description: "Failed to delete account",
-          variant: "destructive"
-        });
       }
     }
   };
@@ -173,6 +151,9 @@ const AccountManager = () => {
     );
   }
 
+  console.log('Current accounts:', accounts);
+  console.log('Accounts loading:', loading);
+
   return (
     <div className="space-y-6">
       <Card>
@@ -185,7 +166,10 @@ const AccountManager = () => {
             <Button 
               variant="outline" 
               size="sm" 
-              onClick={refetch}
+              onClick={() => {
+                console.log('Refreshing accounts...');
+                refetch();
+              }}
               disabled={loading}
             >
               <RefreshCw className={`w-4 h-4 mr-1 ${loading ? 'animate-spin' : ''}`} />
@@ -385,10 +369,14 @@ const AccountManager = () => {
         </CardHeader>
         <CardContent>
           {loading ? (
-            <div className="text-center py-4">Loading accounts...</div>
+            <div className="text-center py-4">
+              <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600 mx-auto mb-2"></div>
+              <p>Loading accounts...</p>
+            </div>
           ) : accounts.length === 0 ? (
             <div className="text-center py-8 text-slate-500">
-              No email accounts configured yet. Add your first account above.
+              <p className="mb-2">No email accounts configured yet.</p>
+              <p className="text-sm">Add your first account above to get started.</p>
             </div>
           ) : (
             <div className="space-y-4">

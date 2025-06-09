@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
@@ -65,11 +66,11 @@ export const useUserOrganizations = () => {
         subdomain: org.org_subdomain,
         domain: org.org_domain,
         subscription_plan: org.subscription_plan,
-        is_active: Boolean(org.is_active), // Ensure this is properly cast to boolean
+        is_active: Boolean(org.is_active),
         monthly_email_limit: org.monthly_email_limit || 1000,
         emails_sent_this_month: org.emails_sent_this_month || 0,
         created_at: org.created_at,
-        updated_at: org.created_at // Using created_at as fallback for updated_at
+        updated_at: org.created_at
       }));
 
       const transformedRoles = orgsData.map((org: any) => ({
@@ -179,7 +180,10 @@ export const useUserOrganizations = () => {
           org_domain: orgData.domain || null
         });
 
-      if (orgError) throw orgError;
+      if (orgError) {
+        console.error('Error creating organization:', orgError);
+        throw orgError;
+      }
 
       // Fetch the created organization
       const { data: newOrg, error: fetchError } = await supabase
@@ -188,8 +192,12 @@ export const useUserOrganizations = () => {
         .eq('id', orgId)
         .single();
 
-      if (fetchError) throw fetchError;
+      if (fetchError) {
+        console.error('Error fetching created organization:', fetchError);
+        throw fetchError;
+      }
 
+      console.log('Organization created successfully:', newOrg);
       setOrganizations(prev => [...prev, newOrg]);
       setCurrentOrganization(newOrg);
       
@@ -203,7 +211,7 @@ export const useUserOrganizations = () => {
       console.error('Error creating organization:', error);
       toast({
         title: "Error",
-        description: "Failed to create organization",
+        description: `Failed to create organization: ${error.message}`,
         variant: "destructive"
       });
       throw error;
@@ -220,12 +228,18 @@ export const useUserOrganizations = () => {
       
       const { data, error } = await supabase
         .from('organizations')
-        .update(updateData)
+        .update({
+          ...updateData,
+          updated_at: new Date().toISOString()
+        })
         .eq('id', orgId)
         .select()
         .single();
 
-      if (error) throw error;
+      if (error) {
+        console.error('Error updating organization:', error);
+        throw error;
+      }
 
       setOrganizations(prev => prev.map(org => org.id === orgId ? data : org));
       if (currentOrganization?.id === orgId) {
@@ -242,7 +256,7 @@ export const useUserOrganizations = () => {
       console.error('Error updating organization:', error);
       toast({
         title: "Error",
-        description: "Failed to update organization",
+        description: `Failed to update organization: ${error.message}`,
         variant: "destructive"
       });
       throw error;

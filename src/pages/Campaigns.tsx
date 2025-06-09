@@ -14,7 +14,8 @@ import {
   Eye,
   Edit,
   Trash2,
-  Send
+  Send,
+  Copy
 } from 'lucide-react';
 import { useSimpleOrganizations } from '@/contexts/SimpleOrganizationContext';
 import { useCampaigns } from '@/hooks/useCampaigns';
@@ -22,7 +23,7 @@ import Header from '@/components/Header';
 
 const Campaigns = () => {
   const { currentOrganization } = useSimpleOrganizations();
-  const { campaigns, loading } = useCampaigns(currentOrganization?.id);
+  const { campaigns, loading, deleteCampaign } = useCampaigns(currentOrganization?.id);
   const [searchTerm, setSearchTerm] = useState('');
 
   const filteredCampaigns = campaigns?.filter(campaign =>
@@ -53,6 +54,33 @@ const Campaigns = () => {
       hour: '2-digit',
       minute: '2-digit'
     });
+  };
+
+  const handleDelete = async (campaignId: string) => {
+    if (confirm('Are you sure you want to delete this campaign?')) {
+      try {
+        await deleteCampaign(campaignId);
+      } catch (error) {
+        console.error('Error deleting campaign:', error);
+      }
+    }
+  };
+
+  const handleDuplicate = (campaign: any) => {
+    // Store the campaign data to duplicate in localStorage and redirect to compose
+    localStorage.setItem('duplicateCampaign', JSON.stringify({
+      subject: `Copy of ${campaign.subject}`,
+      from_name: campaign.from_name,
+      html_content: campaign.html_content,
+      text_content: campaign.text_content,
+      recipients: campaign.recipients
+    }));
+    window.location.href = '/';
+  };
+
+  const handleViewAnalytics = (campaignId: string) => {
+    // This would typically open an analytics modal or navigate to an analytics page
+    console.log('View analytics for campaign:', campaignId);
   };
 
   return (
@@ -149,17 +177,44 @@ const Campaigns = () => {
                       </div>
                       
                       <div className="flex items-center gap-2">
-                        <Button variant="outline" size="sm">
-                          <Eye className="w-4 h-4" />
-                        </Button>
-                        <Button variant="outline" size="sm">
+                        <Button 
+                          variant="outline" 
+                          size="sm" 
+                          onClick={() => handleViewAnalytics(campaign.id)}
+                          title="View Analytics"
+                        >
                           <BarChart3 className="w-4 h-4" />
                         </Button>
+                        <Button 
+                          variant="outline" 
+                          size="sm"
+                          onClick={() => handleDuplicate(campaign)}
+                          title="Duplicate Campaign"
+                        >
+                          <Copy className="w-4 h-4" />
+                        </Button>
                         {campaign.status === 'draft' && (
-                          <Button variant="outline" size="sm">
+                          <Button 
+                            variant="outline" 
+                            size="sm"
+                            onClick={() => {
+                              // Store campaign for editing and redirect
+                              localStorage.setItem('editCampaign', JSON.stringify(campaign));
+                              window.location.href = '/';
+                            }}
+                            title="Edit Campaign"
+                          >
                             <Edit className="w-4 h-4" />
                           </Button>
                         )}
+                        <Button 
+                          variant="outline" 
+                          size="sm"
+                          onClick={() => handleDelete(campaign.id)}
+                          title="Delete Campaign"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
                       </div>
                     </div>
                   </div>

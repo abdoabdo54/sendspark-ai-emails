@@ -38,10 +38,15 @@ export const useEmailAccounts = (organizationId?: string) => {
 
       if (error) {
         console.error('Supabase error fetching accounts:', error);
-        throw error;
+        toast({
+          title: "Error",
+          description: `Failed to load email accounts: ${error.message}`,
+          variant: "destructive"
+        });
+        return;
       }
       
-      console.log('Fetched accounts:', data);
+      console.log('Raw fetched accounts data:', data);
       
       const typedData = (data || []).map(item => ({
         ...item,
@@ -49,6 +54,7 @@ export const useEmailAccounts = (organizationId?: string) => {
         config: item.config || {}
       })) as EmailAccount[];
       
+      console.log('Processed accounts data:', typedData);
       setAccounts(typedData);
     } catch (error) {
       console.error('Error fetching email accounts:', error);
@@ -95,8 +101,15 @@ export const useEmailAccounts = (organizationId?: string) => {
 
       if (error) {
         console.error('Supabase error creating account:', error);
+        toast({
+          title: "Error",
+          description: `Failed to add email account: ${error.message}`,
+          variant: "destructive"
+        });
         throw error;
       }
+
+      console.log('Account created successfully:', data);
 
       const typedData = {
         ...data,
@@ -114,11 +127,6 @@ export const useEmailAccounts = (organizationId?: string) => {
       return typedData;
     } catch (error) {
       console.error('Error adding account:', error);
-      toast({
-        title: "Error",
-        description: `Failed to add email account: ${error.message}`,
-        variant: "destructive"
-      });
       throw error;
     }
   };
