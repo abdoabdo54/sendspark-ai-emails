@@ -1,8 +1,8 @@
 
 {
-  "name": "send-email-campaign",
-  "version": "1.0.0",
-  "description": "Google Cloud Function for sending email campaigns",
+  "name": "send-email-campaign-optimized",
+  "version": "2.0.0",
+  "description": "Optimized Google Cloud Function for high-speed email campaigns",
   "main": "index.js",
   "dependencies": {
     "@google-cloud/functions-framework": "^3.0.0",
@@ -10,6 +10,10 @@
     "nodemailer": "^6.9.0"
   },
   "scripts": {
-    "start": "functions-framework --target=sendEmailCampaign"
+    "start": "functions-framework --target=sendEmailCampaign",
+    "deploy": "gcloud functions deploy sendEmailCampaign --runtime nodejs18 --trigger-http --allow-unauthenticated"
+  },
+  "engines": {
+    "node": ">=18.0.0"
   }
 }

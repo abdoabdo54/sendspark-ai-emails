@@ -29,8 +29,8 @@ functions.http('sendEmailCampaign', async (req, res) => {
       throw new Error('Campaign ID is required');
     }
 
-    console.log(`🚀 STARTING CAMPAIGN ${campaignId}`);
-    console.log(`📊 Accounts: ${Object.keys(emailsByAccount || {}).length}`);
+    console.log(`🚀 STARTING HIGH-SPEED CAMPAIGN ${campaignId}`);
+    console.log(`📊 Processing ${Object.keys(emailsByAccount || {}).length} accounts`);
 
     // Initialize Supabase client
     const supabase = createClient(supabaseUrl, supabaseKey);
@@ -48,7 +48,7 @@ functions.http('sendEmailCampaign', async (req, res) => {
     let totalFailed = 0;
     const results = [];
 
-    // Process all accounts in parallel for immediate sending
+    // Process all accounts in parallel for maximum speed
     const accountPromises = Object.entries(emailsByAccount).map(async ([accountId, accountData]) => {
       const { type, config: accountConfig, emails, accountInfo } = accountData;
       
@@ -56,7 +56,7 @@ functions.http('sendEmailCampaign', async (req, res) => {
       
       try {
         if (type === 'smtp') {
-          // Create SMTP transporter
+          // Create optimized SMTP transporter
           const transporter = nodemailer.createTransporter({
             host: accountConfig.host,
             port: accountConfig.port,
@@ -66,38 +66,43 @@ functions.http('sendEmailCampaign', async (req, res) => {
               pass: accountConfig.password
             },
             pool: true,
-            maxConnections: 5,
-            maxMessages: 100
+            maxConnections: 10, // Increased for speed
+            maxMessages: 1000,  // Increased for speed
+            rateLimit: accountConfig.emails_per_hour ? Math.floor(accountConfig.emails_per_hour / 3600) : 10 // Convert to per second
           });
 
-          // Send emails in batches
-          const batchSize = 10;
+          // Send emails in optimized batches
+          const batchSize = 20; // Increased batch size
+          const batches = [];
+          
           for (let i = 0; i < emails.length; i += batchSize) {
-            const batch = emails.slice(i, i + batchSize);
-            
-            const batchPromises = batch.map(async (emailData) => {
-              try {
-                const info = await transporter.sendMail({
-                  from: `${emailData.fromName} <${emailData.fromEmail}>`,
-                  to: emailData.recipient,
-                  subject: emailData.subject,
-                  html: emailData.htmlContent,
-                  text: emailData.textContent
-                });
+            batches.push(emails.slice(i, i + batchSize));
+          }
 
-                totalSent++;
-                console.log(`✅ SENT: ${emailData.recipient} via SMTP`);
-                
-                return { success: true, recipient: emailData.recipient, messageId: info.messageId };
-              } catch (error) {
-                totalFailed++;
-                console.error(`❌ FAILED: ${emailData.recipient} - ${error.message}`);
-                return { success: false, recipient: emailData.recipient, error: error.message };
-              }
-            });
+          // Process batches in parallel
+          const batchPromises = batches.map(async (batch, batchIndex) => {
+            const batchResults = await Promise.all(
+              batch.map(async (emailData) => {
+                try {
+                  const info = await transporter.sendMail({
+                    from: `${emailData.fromName} <${emailData.fromEmail}>`,
+                    to: emailData.recipient,
+                    subject: emailData.subject,
+                    html: emailData.htmlContent,
+                    text: emailData.textContent
+                  });
 
-            const batchResults = await Promise.all(batchPromises);
-            results.push(...batchResults);
+                  totalSent++;
+                  console.log(`✅ SENT: ${emailData.recipient} via SMTP`);
+                  
+                  return { success: true, recipient: emailData.recipient, messageId: info.messageId };
+                } catch (error) {
+                  totalFailed++;
+                  console.error(`❌ FAILED: ${emailData.recipient} - ${error.message}`);
+                  return { success: false, recipient: emailData.recipient, error: error.message };
+                }
+              })
+            );
 
             // Update progress after each batch
             await supabase
@@ -105,17 +110,28 @@ functions.http('sendEmailCampaign', async (req, res) => {
               .update({ sent_count: totalSent })
               .eq('id', campaignId);
               
-            console.log(`📈 Progress: ${totalSent} sent, ${totalFailed} failed`);
-          }
+            console.log(`📈 Batch ${batchIndex + 1}/${batches.length} completed: ${totalSent} sent, ${totalFailed} failed`);
+            
+            return batchResults;
+          });
+
+          const allBatchResults = await Promise.all(batchPromises);
+          results.push(...allBatchResults.flat());
 
           await transporter.close();
 
         } else if (type === 'apps-script') {
-          // Apps Script processing
-          const batchSize = 5;
+          // High-speed Apps Script processing
+          const batchSize = 10; // Optimized for Apps Script
+          const batches = [];
           
           for (let i = 0; i < emails.length; i += batchSize) {
-            const batch = emails.slice(i, i + batchSize);
+            batches.push(emails.slice(i, i + batchSize));
+          }
+
+          // Process batches sequentially for Apps Script (to avoid quota issues)
+          for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
+            const batch = batches[batchIndex];
             
             const batchPromises = batch.map(async (emailData) => {
               try {
@@ -159,6 +175,8 @@ functions.http('sendEmailCampaign', async (req, res) => {
               .from('email_campaigns')
               .update({ sent_count: totalSent })
               .eq('id', campaignId);
+
+            console.log(`📈 Apps Script batch ${batchIndex + 1}/${batches.length} completed`);
           }
         }
 
@@ -168,21 +186,19 @@ functions.http('sendEmailCampaign', async (req, res) => {
       }
     });
 
-    // Wait for all accounts to finish
+    // Wait for all accounts to finish processing
     await Promise.all(accountPromises);
 
     // Mark campaign as completed
     const finalStatus = totalSent > 0 ? 'sent' : 'failed';
     const updateData = { 
       status: finalStatus,
-      sent_count: totalSent
+      sent_count: totalSent,
+      completed_at: new Date().toISOString()
     };
 
-    // Only add completed_at if the column exists (optional)
-    try {
-      updateData.completed_at = new Date().toISOString();
-    } catch (e) {
-      // Column might not exist yet, ignore
+    if (totalFailed > 0) {
+      updateData.error_message = `${totalFailed} emails failed to send`;
     }
 
     await supabase
@@ -190,7 +206,7 @@ functions.http('sendEmailCampaign', async (req, res) => {
       .update(updateData)
       .eq('id', campaignId);
 
-    console.log(`🎉 CAMPAIGN COMPLETED: ${totalSent} sent, ${totalFailed} failed`);
+    console.log(`🎉 HIGH-SPEED CAMPAIGN COMPLETED: ${totalSent} sent, ${totalFailed} failed in optimized time`);
 
     res.set(corsHeaders);
     res.json({ 
@@ -202,7 +218,12 @@ functions.http('sendEmailCampaign', async (req, res) => {
       totalEmails: totalSent + totalFailed,
       successRate: totalSent > 0 ? Math.round((totalSent / (totalSent + totalFailed)) * 100) : 0,
       campaignId,
-      message: 'Campaign completed successfully',
+      message: 'High-speed campaign completed successfully',
+      performance: {
+        optimized: true,
+        parallel_processing: true,
+        batch_size: 'optimized'
+      },
       sampleResults: results.slice(0, 5)
     });
 
@@ -212,20 +233,13 @@ functions.http('sendEmailCampaign', async (req, res) => {
     // Revert campaign status on error
     try {
       const supabase = createClient(req.body.supabaseUrl, req.body.supabaseKey);
-      const updateData = { 
-        status: 'failed'
-      };
-      
-      // Only add error_message if the column exists (optional)
-      try {
-        updateData.error_message = error.message;
-      } catch (e) {
-        // Column might not exist yet, ignore
-      }
-      
       await supabase
         .from('email_campaigns')
-        .update(updateData)
+        .update({ 
+          status: 'failed',
+          error_message: error.message,
+          completed_at: new Date().toISOString()
+        })
         .eq('id', req.body.campaignId);
     } catch (revertError) {
       console.error('Failed to revert status:', revertError);

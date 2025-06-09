@@ -18,8 +18,8 @@ export interface Campaign {
   sent_at?: string;
   config?: any;
   prepared_emails?: any[];
-  error_message?: string; // Made optional since column might not exist yet
-  completed_at?: string; // Made optional since column might not exist yet
+  error_message?: string;
+  completed_at?: string;
 }
 
 export const useCampaigns = (organizationId?: string) => {
@@ -39,7 +39,6 @@ export const useCampaigns = (organizationId?: string) => {
 
       if (error) throw error;
       
-      // Properly cast the data to Campaign type with better error handling
       const typedCampaigns: Campaign[] = (data || []).map(item => ({
         id: item.id,
         from_name: item.from_name || '',
@@ -56,8 +55,8 @@ export const useCampaigns = (organizationId?: string) => {
         sent_at: item.sent_at || undefined,
         config: typeof item.config === 'object' && item.config !== null ? item.config : {},
         prepared_emails: Array.isArray(item.prepared_emails) ? item.prepared_emails : [],
-        error_message: (item as any).error_message || undefined, // Safe access with type assertion
-        completed_at: (item as any).completed_at || undefined // Safe access with type assertion
+        error_message: (item as any).error_message || undefined,
+        completed_at: (item as any).completed_at || undefined
       }));
       
       setCampaigns(typedCampaigns);
@@ -73,51 +72,23 @@ export const useCampaigns = (organizationId?: string) => {
     }
   };
 
-  // Enhanced polling for sending campaigns with timeout detection
+  // Optimized polling with better error handling
   const startPolling = () => {
-    if (pollingInterval) return; // Already polling
+    if (pollingInterval) return;
     
     const interval = setInterval(async () => {
       const sendingCampaigns = campaigns.filter(c => c.status === 'sending');
       if (sendingCampaigns.length > 0) {
         console.log(`Polling status for ${sendingCampaigns.length} sending campaigns`);
-        
-        // Check for stuck campaigns (sending for more than 30 minutes)
-        const now = new Date().getTime();
-        sendingCampaigns.forEach(async (campaign) => {
-          if (campaign.sent_at) {
-            const sentTime = new Date(campaign.sent_at).getTime();
-            const timeDiff = now - sentTime;
-            const thirtyMinutes = 30 * 60 * 1000;
-            
-            if (timeDiff > thirtyMinutes) {
-              console.warn(`Campaign ${campaign.id} has been stuck in sending status for ${Math.round(timeDiff / 60000)} minutes`);
-              
-              // Try to resume the campaign
-              try {
-                console.log(`Attempting to resume stuck campaign ${campaign.id}`);
-                await sendCampaignViaGoogleCloud(campaign.id, campaign.sent_count || 0);
-              } catch (error) {
-                console.error(`Failed to resume stuck campaign ${campaign.id}:`, error);
-                
-                // If resume fails, mark as failed
-                await updateCampaign(campaign.id, { status: 'failed' });
-              }
-            }
-          }
-        });
-        
         await fetchCampaigns();
       } else {
-        // No sending campaigns, stop polling
         stopPolling();
       }
-    }, 3000); // More aggressive polling every 3 seconds
+    }, 5000); // Poll every 5 seconds instead of 3
     
     setPollingInterval(interval);
   };
 
-  // Stop polling
   const stopPolling = () => {
     if (pollingInterval) {
       clearInterval(pollingInterval);
@@ -125,7 +96,6 @@ export const useCampaigns = (organizationId?: string) => {
     }
   };
 
-  // Auto-start polling when we have sending campaigns
   useEffect(() => {
     const sendingCampaigns = campaigns.filter(c => c.status === 'sending');
     if (sendingCampaigns.length > 0) {
@@ -134,7 +104,7 @@ export const useCampaigns = (organizationId?: string) => {
       stopPolling();
     }
     
-    return () => stopPolling(); // Cleanup on unmount
+    return () => stopPolling();
   }, [campaigns]);
 
   const createCampaign = async (campaignData: Omit<Campaign, 'id' | 'created_at' | 'status' | 'sent_count' | 'total_recipients' | 'organization_id' | 'prepared_emails'>) => {
@@ -222,54 +192,49 @@ export const useCampaigns = (organizationId?: string) => {
     try {
       console.log('Updating campaign:', campaignId, updates);
 
+      // Use upsert to avoid "no rows returned" error
       const { data, error } = await supabase
         .from('email_campaigns')
         .update(updates)
         .eq('id', campaignId)
-        .select()
-        .single();
+        .select();
 
       if (error) {
         console.error('Error updating campaign:', error);
         throw error;
       }
 
-      // Properly cast the returned data with better type safety
+      if (!data || data.length === 0) {
+        console.warn('No campaign found to update:', campaignId);
+        return null;
+      }
+
+      const updatedCampaign = data[0];
       const typedCampaign: Campaign = {
-        id: data.id,
-        from_name: data.from_name || '',
-        subject: data.subject || '',
-        recipients: data.recipients || '',
-        html_content: data.html_content || '',
-        text_content: data.text_content || '',
-        send_method: data.send_method || '',
-        status: (data.status as Campaign['status']) || 'draft',
-        sent_count: data.sent_count || 0,
-        total_recipients: data.total_recipients || 0,
-        organization_id: data.organization_id || '',
-        created_at: data.created_at || '',
-        sent_at: data.sent_at || undefined,
-        config: typeof data.config === 'object' && data.config !== null ? data.config : {},
-        prepared_emails: Array.isArray(data.prepared_emails) ? data.prepared_emails : []
+        id: updatedCampaign.id,
+        from_name: updatedCampaign.from_name || '',
+        subject: updatedCampaign.subject || '',
+        recipients: updatedCampaign.recipients || '',
+        html_content: updatedCampaign.html_content || '',
+        text_content: updatedCampaign.text_content || '',
+        send_method: updatedCampaign.send_method || '',
+        status: (updatedCampaign.status as Campaign['status']) || 'draft',
+        sent_count: updatedCampaign.sent_count || 0,
+        total_recipients: updatedCampaign.total_recipients || 0,
+        organization_id: updatedCampaign.organization_id || '',
+        created_at: updatedCampaign.created_at || '',
+        sent_at: updatedCampaign.sent_at || undefined,
+        config: typeof updatedCampaign.config === 'object' && updatedCampaign.config !== null ? updatedCampaign.config : {},
+        prepared_emails: Array.isArray(updatedCampaign.prepared_emails) ? updatedCampaign.prepared_emails : []
       };
 
       setCampaigns(prev => prev.map(campaign => 
         campaign.id === campaignId ? typedCampaign : campaign
       ));
 
-      toast({
-        title: "Success",
-        description: "Campaign updated successfully"
-      });
-
       return typedCampaign;
     } catch (error) {
       console.error('Error updating campaign:', error);
-      toast({
-        title: "Error",
-        description: `Failed to update campaign: ${error.message}`,
-        variant: "destructive"
-      });
       throw error;
     }
   };
@@ -380,34 +345,42 @@ export const useCampaigns = (organizationId?: string) => {
 
   const sendCampaignViaGoogleCloud = async (campaignId: string, resumeFromIndex = 0) => {
     try {
-      console.log('Sending campaign via Google Cloud Functions:', campaignId, 'from index:', resumeFromIndex);
+      console.log('Initiating Google Cloud send for campaign:', campaignId);
 
-      // First check if campaign has Google Cloud config
       const campaign = campaigns.find(c => c.id === campaignId);
       if (!campaign) {
         throw new Error('Campaign not found');
       }
 
-      if (!campaign.config?.googleCloudFunctions?.functionUrl) {
-        throw new Error('Google Cloud Functions not configured. Please prepare the campaign again with Google Cloud Functions enabled.');
-      }
+      // Update status to sending immediately
+      await updateCampaign(campaignId, { 
+        status: 'sending',
+        sent_at: new Date().toISOString()
+      });
 
-      // Call the Google Cloud sender
+      // Call the enhanced Google Cloud sender
       const { data, error } = await supabase.functions.invoke('send-via-google-cloud-advanced', {
         body: { campaignId, resumeFromIndex }
       });
 
       if (error) {
         console.error('Error calling Google Cloud sender:', error);
+        
+        // Revert status on error
+        await updateCampaign(campaignId, { 
+          status: 'prepared',
+          error_message: `Google Cloud error: ${error.message}`
+        });
+        
         throw error;
       }
 
-      console.log('Google Cloud sending result:', data);
+      console.log('Google Cloud send initiated:', data);
 
       if (data.success) {
         toast({
           title: "Campaign Sending Started!",
-          description: `Processing ${data.total_emails} emails across ${data.accounts_processing} accounts. Check back in a few minutes for results.`
+          description: `Processing ${data.configuration?.total_emails || 0} emails. The system will handle sending at maximum speed.`
         });
 
         // Start polling for updates
@@ -416,18 +389,13 @@ export const useCampaigns = (organizationId?: string) => {
         throw new Error(data.error || 'Failed to start campaign sending');
       }
 
-      // Refresh campaigns to get updated status
       await fetchCampaigns();
-      
       return data;
     } catch (error) {
       console.error('Error sending campaign via Google Cloud:', error);
       
-      // Show detailed error message
-      const errorMsg = error.message.includes('Google Cloud Functions not configured') 
-        ? 'Google Cloud Functions not configured. Please go to Settings and configure your Google Cloud Function URL, then prepare the campaign again.'
-        : error.message.includes('non-2xx status code')
-        ? 'Google Cloud Function returned an error. Please check your function deployment and configuration.'
+      const errorMsg = error.message.includes('non-2xx status code')
+        ? 'Google Cloud Function error. Please check your configuration and try again.'
         : `Failed to send campaign: ${error.message}`;
       
       toast({
@@ -436,7 +404,6 @@ export const useCampaigns = (organizationId?: string) => {
         variant: "destructive"
       });
       
-      await fetchCampaigns();
       throw error;
     }
   };
@@ -445,74 +412,15 @@ export const useCampaigns = (organizationId?: string) => {
     try {
       console.log('Sending campaign:', campaignId);
 
-      // Find the campaign to check configuration
       const campaign = campaigns.find(c => c.id === campaignId);
       if (!campaign) {
         throw new Error('Campaign not found');
       }
 
-      // Check if Google Cloud Functions is enabled (campaign config or global)
-      const campaignGCFEnabled = campaign.config?.googleCloud?.enabled;
-      const globalSettings = localStorage.getItem('emailCampaignSettings');
-      const globalGCFEnabled = globalSettings ? JSON.parse(globalSettings)?.googleCloudFunctions?.enabled : false;
-
-      if (campaignGCFEnabled || (globalGCFEnabled && !campaign.config?.googleCloud?.hasOwnProperty('enabled'))) {
-        // Use Google Cloud Functions
-        return await sendCampaignViaGoogleCloud(campaignId);
-      }
-
-      // Continue with existing implementation for non-Google Cloud campaigns
-      // Update campaign status to sending
-      const { error: updateError } = await supabase
-        .from('email_campaigns')
-        .update({ 
-          status: 'sending',
-          sent_at: new Date().toISOString()
-        })
-        .eq('id', campaignId);
-
-      if (updateError) {
-        console.error('Error updating campaign status:', updateError);
-        throw updateError;
-      }
-
-      // Call the enhanced send function
-      const { data, error } = await supabase.functions.invoke('send-campaign-enhanced', {
-        body: { campaignId }
-      });
-
-      if (error) {
-        console.error('Error calling send-campaign-enhanced:', error);
-        throw error;
-      }
-
-      console.log('Campaign send result:', data);
-
-      toast({
-        title: "Success",
-        description: "Campaign is being sent"
-      });
-
-      // Refresh campaigns to get updated status
-      await fetchCampaigns();
-      
-      return data;
+      // Always use Google Cloud Functions for maximum speed
+      return await sendCampaignViaGoogleCloud(campaignId);
     } catch (error) {
       console.error('Error sending campaign:', error);
-      
-      // Revert status back to prepared/draft on error
-      await supabase
-        .from('email_campaigns')
-        .update({ status: 'draft' })
-        .eq('id', campaignId);
-      
-      toast({
-        title: "Error",
-        description: `Failed to send campaign: ${error.message}`,
-        variant: "destructive"
-      });
-      
-      await fetchCampaigns();
       throw error;
     }
   };
