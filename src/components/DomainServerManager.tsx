@@ -13,7 +13,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Globe, Server, Plus, Trash2, CheckCircle, AlertCircle } from 'lucide-react';
+import { Globe, Server, Plus, Trash2, CheckCircle, AlertCircle, Settings } from 'lucide-react';
 import { useSimpleOrganizations } from '@/contexts/SimpleOrganizationContext';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
@@ -28,6 +28,7 @@ interface Domain {
   domain_name: string;
   is_verified: boolean;
   dns_records: any;
+  namecheap_config: any;
   created_at: string;
 }
 
@@ -48,6 +49,8 @@ const DomainServerManager: React.FC<DomainServerManagerProps> = ({ isOpen, onClo
   const [loading, setLoading] = useState(false);
   
   const [newDomain, setNewDomain] = useState('');
+  const [namecheapApiKey, setNamecheapApiKey] = useState('');
+  const [namecheapUsername, setNamecheapUsername] = useState('');
   const [newServer, setNewServer] = useState({
     name: '',
     ip: '',
@@ -66,12 +69,24 @@ const DomainServerManager: React.FC<DomainServerManagerProps> = ({ isOpen, onClo
     if (!currentOrganization?.id) return;
 
     try {
-      // Since domains table doesn't exist yet, we'll use mock data
-      console.log('Domains table not available yet, using mock data');
-      setDomains([]);
+      setLoading(true);
+      const { data, error } = await supabase
+        .from('domains')
+        .select('*')
+        .eq('organization_id', currentOrganization.id)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setDomains(data || []);
     } catch (error) {
       console.error('Error fetching domains:', error);
-      setDomains([]);
+      toast({
+        title: "Error",
+        description: "Failed to fetch domains",
+        variant: "destructive"
+      });
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -79,37 +94,76 @@ const DomainServerManager: React.FC<DomainServerManagerProps> = ({ isOpen, onClo
     if (!currentOrganization?.id) return;
 
     try {
-      // Since servers table doesn't exist yet, we'll use mock data
-      console.log('Servers table not available yet, using mock data');
-      setServers([]);
+      setLoading(true);
+      const { data, error } = await supabase
+        .from('servers')
+        .select('*')
+        .eq('organization_id', currentOrganization.id)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setServers(data || []);
     } catch (error) {
       console.error('Error fetching servers:', error);
-      setServers([]);
+      toast({
+        title: "Error",
+        description: "Failed to fetch servers",
+        variant: "destructive"
+      });
+    } finally {
+      setLoading(false);
     }
   };
 
-  const addDomain = async () => {
-    if (!currentOrganization?.id || !newDomain.trim()) return;
+  const addDomainFromNamecheap = async () => {
+    if (!currentOrganization?.id || !newDomain.trim() || !namecheapApiKey.trim() || !namecheapUsername.trim()) {
+      toast({
+        title: "Error",
+        description: "Please fill in all Namecheap credentials and domain name",
+        variant: "destructive"
+      });
+      return;
+    }
 
     try {
       setLoading(true);
       
-      // Mock domain addition until database is set up
-      const mockDomain: Domain = {
-        id: crypto.randomUUID(),
-        domain_name: newDomain.trim(),
-        is_verified: false,
-        dns_records: {},
-        created_at: new Date().toISOString()
-      };
+      // Insert domain with Namecheap config
+      const { data, error } = await supabase
+        .from('domains')
+        .insert([{
+          organization_id: currentOrganization.id,
+          domain_name: newDomain.trim(),
+          is_verified: false,
+          dns_records: {},
+          namecheap_config: {
+            api_key: namecheapApiKey,
+            username: namecheapUsername,
+            sandbox: false // Set to true for testing
+          }
+        }])
+        .select()
+        .single();
 
-      setDomains(prev => [...prev, mockDomain]);
+      if (error) throw error;
+
+      setDomains(prev => [data, ...prev]);
       setNewDomain('');
+      setNamecheapApiKey('');
+      setNamecheapUsername('');
       
       toast({
         title: "Success",
-        description: "Domain added successfully (mock data)"
+        description: "Domain added successfully. DNS configuration will be set up automatically."
       });
+
+      // Trigger DNS setup in background
+      setupDomainDNS(data.id, data.domain_name, {
+        api_key: namecheapApiKey,
+        username: namecheapUsername,
+        sandbox: false
+      });
+
     } catch (error) {
       console.error('Error adding domain:', error);
       toast({
@@ -122,32 +176,88 @@ const DomainServerManager: React.FC<DomainServerManagerProps> = ({ isOpen, onClo
     }
   };
 
+  const setupDomainDNS = async (domainId: string, domainName: string, namecheapConfig: any) => {
+    try {
+      // This would typically call a Supabase Edge Function to configure DNS
+      // For now, we'll simulate the process
+      const { error } = await supabase.functions.invoke('setup-domain-dns', {
+        body: {
+          domain_id: domainId,
+          domain_name: domainName,
+          namecheap_config: namecheapConfig,
+          organization_id: currentOrganization?.id
+        }
+      });
+
+      if (error) {
+        console.error('DNS setup error:', error);
+        return;
+      }
+
+      // Update domain status
+      await supabase
+        .from('domains')
+        .update({ 
+          is_verified: true,
+          dns_records: {
+            tracking_subdomain: `track.${domainName}`,
+            unsubscribe_subdomain: `unsubscribe.${domainName}`,
+            configured_at: new Date().toISOString()
+          }
+        })
+        .eq('id', domainId);
+
+      // Refresh domains list
+      fetchDomains();
+
+    } catch (error) {
+      console.error('Error setting up DNS:', error);
+    }
+  };
+
   const addServer = async () => {
-    if (!currentOrganization?.id || !newServer.name.trim() || !newServer.ip.trim()) return;
+    if (!currentOrganization?.id || !newServer.name.trim() || !newServer.ip.trim()) {
+      toast({
+        title: "Error",
+        description: "Please fill in server name and IP address",
+        variant: "destructive"
+      });
+      return;
+    }
 
     try {
       setLoading(true);
       
-      // Mock server addition until database is set up
-      const mockServer: ServerConfig = {
-        id: crypto.randomUUID(),
-        server_name: newServer.name.trim(),
-        ip_address: newServer.ip.trim(),
-        port: newServer.port,
-        status: 'pending',
-        server_config: {
-          root_password: newServer.rootPassword
-        },
-        created_at: new Date().toISOString()
-      };
+      const { data, error } = await supabase
+        .from('servers')
+        .insert([{
+          organization_id: currentOrganization.id,
+          server_name: newServer.name.trim(),
+          ip_address: newServer.ip.trim(),
+          port: newServer.port,
+          status: 'pending',
+          server_config: {
+            root_password: newServer.rootPassword,
+            setup_status: 'pending',
+            services: ['nginx', 'tracking', 'unsubscribe']
+          }
+        }])
+        .select()
+        .single();
 
-      setServers(prev => [...prev, mockServer]);
+      if (error) throw error;
+
+      setServers(prev => [data, ...prev]);
       setNewServer({ name: '', ip: '', port: 22, rootPassword: '' });
       
       toast({
         title: "Success",
-        description: "Server added successfully (mock data)"
+        description: "Server added successfully. Setup will begin automatically."
       });
+
+      // Trigger server setup in background
+      setupTrackingServer(data.id);
+
     } catch (error) {
       console.error('Error adding server:', error);
       toast({
@@ -160,8 +270,52 @@ const DomainServerManager: React.FC<DomainServerManagerProps> = ({ isOpen, onClo
     }
   };
 
+  const setupTrackingServer = async (serverId: string) => {
+    try {
+      // This would call a Supabase Edge Function to set up the tracking server
+      const { error } = await supabase.functions.invoke('setup-tracking-server', {
+        body: {
+          server_id: serverId,
+          organization_id: currentOrganization?.id
+        }
+      });
+
+      if (error) {
+        console.error('Server setup error:', error);
+        return;
+      }
+
+      // Update server status
+      await supabase
+        .from('servers')
+        .update({ 
+          status: 'active',
+          server_config: {
+            setup_status: 'completed',
+            services: ['nginx', 'tracking', 'unsubscribe'],
+            setup_completed_at: new Date().toISOString()
+          }
+        })
+        .eq('id', serverId);
+
+      // Refresh servers list
+      fetchServers();
+
+    } catch (error) {
+      console.error('Error setting up server:', error);
+    }
+  };
+
   const deleteDomain = async (domainId: string) => {
     try {
+      setLoading(true);
+      const { error } = await supabase
+        .from('domains')
+        .delete()
+        .eq('id', domainId);
+
+      if (error) throw error;
+
       setDomains(prev => prev.filter(d => d.id !== domainId));
       
       toast({
@@ -175,11 +329,21 @@ const DomainServerManager: React.FC<DomainServerManagerProps> = ({ isOpen, onClo
         description: "Failed to delete domain",
         variant: "destructive"
       });
+    } finally {
+      setLoading(false);
     }
   };
 
   const deleteServer = async (serverId: string) => {
     try {
+      setLoading(true);
+      const { error } = await supabase
+        .from('servers')
+        .delete()
+        .eq('id', serverId);
+
+      if (error) throw error;
+
       setServers(prev => prev.filter(s => s.id !== serverId));
       
       toast({
@@ -193,6 +357,8 @@ const DomainServerManager: React.FC<DomainServerManagerProps> = ({ isOpen, onClo
         description: "Failed to delete server",
         variant: "destructive"
       });
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -202,8 +368,8 @@ const DomainServerManager: React.FC<DomainServerManagerProps> = ({ isOpen, onClo
         <DialogHeader>
           <DialogTitle>Domain & Server Management</DialogTitle>
           <DialogDescription>
-            Manage your custom domains and tracking servers for enhanced email delivery.
-            Server Requirements: Ubuntu 20.04+, CentOS 8+, or Debian 11+
+            Manage your custom domains via Namecheap API and set up tracking servers for enhanced email delivery.
+            Supports automated DNS configuration and server provisioning.
           </DialogDescription>
         </DialogHeader>
 
@@ -211,11 +377,11 @@ const DomainServerManager: React.FC<DomainServerManagerProps> = ({ isOpen, onClo
           <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="domains" className="flex items-center gap-2">
               <Globe className="w-4 h-4" />
-              Domains
+              Domains ({domains.length})
             </TabsTrigger>
             <TabsTrigger value="servers" className="flex items-center gap-2">
               <Server className="w-4 h-4" />
-              Servers
+              Servers ({servers.length})
             </TabsTrigger>
           </TabsList>
 
@@ -224,26 +390,62 @@ const DomainServerManager: React.FC<DomainServerManagerProps> = ({ isOpen, onClo
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Plus className="w-5 h-5" />
-                  Add New Domain
+                  Add Domain from Namecheap
                 </CardTitle>
               </CardHeader>
-              <CardContent>
-                <div className="flex gap-2">
-                  <Input
-                    value={newDomain}
-                    onChange={(e) => setNewDomain(e.target.value)}
-                    placeholder="yourdomain.com"
-                    className="flex-1"
-                  />
-                  <Button onClick={addDomain} disabled={loading || !newDomain.trim()}>
-                    Add Domain
-                  </Button>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <Label htmlFor="domain-name">Domain Name</Label>
+                    <Input
+                      id="domain-name"
+                      value={newDomain}
+                      onChange={(e) => setNewDomain(e.target.value)}
+                      placeholder="yourdomain.com"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="namecheap-username">Namecheap Username</Label>
+                    <Input
+                      id="namecheap-username"
+                      value={namecheapUsername}
+                      onChange={(e) => setNamecheapUsername(e.target.value)}
+                      placeholder="your_namecheap_username"
+                    />
+                  </div>
                 </div>
+                <div>
+                  <Label htmlFor="namecheap-api-key">Namecheap API Key</Label>
+                  <Input
+                    id="namecheap-api-key"
+                    type="password"
+                    value={namecheapApiKey}
+                    onChange={(e) => setNamecheapApiKey(e.target.value)}
+                    placeholder="your_namecheap_api_key"
+                  />
+                </div>
+                <Button 
+                  onClick={addDomainFromNamecheap} 
+                  disabled={loading || !newDomain.trim() || !namecheapApiKey.trim() || !namecheapUsername.trim()}
+                  className="w-full"
+                >
+                  {loading ? 'Adding Domain...' : 'Add Domain & Configure DNS'}
+                </Button>
+                <p className="text-sm text-gray-500">
+                  This will automatically configure DNS records for email tracking, opens, clicks, and unsubscribes.
+                </p>
               </CardContent>
             </Card>
 
             <div className="space-y-4">
-              {domains.length === 0 ? (
+              {loading && domains.length === 0 ? (
+                <Card>
+                  <CardContent className="p-8 text-center">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
+                    <p className="text-gray-500">Loading domains...</p>
+                  </CardContent>
+                </Card>
+              ) : domains.length === 0 ? (
                 <Card>
                   <CardContent className="p-8 text-center">
                     <Globe className="w-12 h-12 text-gray-400 mx-auto mb-4" />
@@ -262,6 +464,11 @@ const DomainServerManager: React.FC<DomainServerManagerProps> = ({ isOpen, onClo
                             <p className="text-sm text-gray-500">
                               Added on {new Date(domain.created_at).toLocaleDateString()}
                             </p>
+                            {domain.dns_records?.tracking_subdomain && (
+                              <p className="text-xs text-blue-600">
+                                Tracking: {domain.dns_records.tracking_subdomain}
+                              </p>
+                            )}
                           </div>
                         </div>
                         <div className="flex items-center gap-2">
@@ -297,7 +504,7 @@ const DomainServerManager: React.FC<DomainServerManagerProps> = ({ isOpen, onClo
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Plus className="w-5 h-5" />
-                  Add New Server
+                  Add Tracking Server
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -308,7 +515,7 @@ const DomainServerManager: React.FC<DomainServerManagerProps> = ({ isOpen, onClo
                       id="server-name"
                       value={newServer.name}
                       onChange={(e) => setNewServer(prev => ({ ...prev, name: e.target.value }))}
-                      placeholder="Email Server 1"
+                      placeholder="Tracking Server 1"
                     />
                   </div>
                   <div>
@@ -321,7 +528,7 @@ const DomainServerManager: React.FC<DomainServerManagerProps> = ({ isOpen, onClo
                     />
                   </div>
                   <div>
-                    <Label htmlFor="server-port">Port</Label>
+                    <Label htmlFor="server-port">SSH Port</Label>
                     <Input
                       id="server-port"
                       type="number"
@@ -337,7 +544,7 @@ const DomainServerManager: React.FC<DomainServerManagerProps> = ({ isOpen, onClo
                       type="password"
                       value={newServer.rootPassword}
                       onChange={(e) => setNewServer(prev => ({ ...prev, rootPassword: e.target.value }))}
-                      placeholder="Enter root password"
+                      placeholder="Server root password"
                     />
                   </div>
                 </div>
@@ -346,13 +553,23 @@ const DomainServerManager: React.FC<DomainServerManagerProps> = ({ isOpen, onClo
                   disabled={loading || !newServer.name.trim() || !newServer.ip.trim()}
                   className="w-full"
                 >
-                  Add Server
+                  {loading ? 'Adding Server...' : 'Add Server & Setup Tracking'}
                 </Button>
+                <p className="text-sm text-gray-500">
+                  This will automatically install and configure Nginx, tracking endpoints, and unsubscribe handlers.
+                </p>
               </CardContent>
             </Card>
 
             <div className="space-y-4">
-              {servers.length === 0 ? (
+              {loading && servers.length === 0 ? (
+                <Card>
+                  <CardContent className="p-8 text-center">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
+                    <p className="text-gray-500">Loading servers...</p>
+                  </CardContent>
+                </Card>
+              ) : servers.length === 0 ? (
                 <Card>
                   <CardContent className="p-8 text-center">
                     <Server className="w-12 h-12 text-gray-400 mx-auto mb-4" />
@@ -371,10 +588,21 @@ const DomainServerManager: React.FC<DomainServerManagerProps> = ({ isOpen, onClo
                             <p className="text-sm text-gray-500">
                               {server.ip_address}:{server.port}
                             </p>
+                            <p className="text-xs text-gray-400">
+                              Added on {new Date(server.created_at).toLocaleDateString()}
+                            </p>
                           </div>
                         </div>
                         <div className="flex items-center gap-2">
-                          <Badge variant="outline">
+                          <Badge 
+                            variant={server.status === 'active' ? 'default' : 'secondary'}
+                            className="flex items-center gap-1"
+                          >
+                            {server.status === 'active' ? (
+                              <CheckCircle className="w-3 h-3" />
+                            ) : (
+                              <Settings className="w-3 h-3 animate-spin" />
+                            )}
                             {server.status}
                           </Badge>
                           <Button

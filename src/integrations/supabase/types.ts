@@ -202,6 +202,47 @@ export type Database = {
           },
         ]
       }
+      domains: {
+        Row: {
+          created_at: string
+          dns_records: Json | null
+          domain_name: string
+          id: string
+          is_verified: boolean | null
+          namecheap_config: Json | null
+          organization_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          dns_records?: Json | null
+          domain_name: string
+          id?: string
+          is_verified?: boolean | null
+          namecheap_config?: Json | null
+          organization_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          dns_records?: Json | null
+          domain_name?: string
+          id?: string
+          is_verified?: boolean | null
+          namecheap_config?: Json | null
+          organization_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "domains_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       email_accounts: {
         Row: {
           config: Json | null
@@ -530,6 +571,50 @@ export type Database = {
         }
         Relationships: []
       }
+      servers: {
+        Row: {
+          created_at: string
+          id: string
+          ip_address: unknown
+          organization_id: string
+          port: number | null
+          server_config: Json | null
+          server_name: string
+          status: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          ip_address: unknown
+          organization_id: string
+          port?: number | null
+          server_config?: Json | null
+          server_name: string
+          status?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          ip_address?: unknown
+          organization_id?: string
+          port?: number | null
+          server_config?: Json | null
+          server_name?: string
+          status?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "servers_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       subscribers: {
         Row: {
           created_at: string
@@ -657,16 +742,72 @@ export type Database = {
         }
         Relationships: []
       }
+      user_roles: {
+        Row: {
+          created_at: string
+          id: string
+          organization_id: string
+          role: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          organization_id: string
+          role?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          organization_id?: string
+          role?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_roles_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
+      create_organization_with_user: {
+        Args: {
+          user_id_param: string
+          org_name: string
+          org_subdomain: string
+          org_domain?: string
+        }
+        Returns: string
+      }
       get_user_organizations: {
         Args: { user_id: string }
         Returns: {
           org_id: string
           org_role: Database["public"]["Enums"]["user_role"]
+        }[]
+      }
+      get_user_organizations_with_roles: {
+        Args: { user_id_param: string }
+        Returns: {
+          org_id: string
+          org_name: string
+          org_subdomain: string
+          org_domain: string
+          subscription_plan: string
+          is_active: boolean
+          monthly_email_limit: number
+          emails_sent_this_month: number
+          user_role: string
+          created_at: string
         }[]
       }
     }

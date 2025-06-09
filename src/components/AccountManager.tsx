@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -31,12 +32,15 @@ const AccountManager = () => {
   });
   const [editingId, setEditingId] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [hasInitialized, setHasInitialized] = useState(false);
 
+  // Prevent infinite refresh by only initializing once when organization is ready
   useEffect(() => {
-    if (currentOrganization?.id) {
-      console.log('Current organization changed:', currentOrganization);
+    if (currentOrganization?.id && !hasInitialized && !orgLoading) {
+      console.log('AccountManager initializing for organization:', currentOrganization.id);
+      setHasInitialized(true);
     }
-  }, [currentOrganization?.id]);
+  }, [currentOrganization?.id, orgLoading, hasInitialized]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -60,7 +64,6 @@ const AccountManager = () => {
     }
 
     setIsSubmitting(true);
-    console.log('Submitting form with organization:', currentOrganization.id);
 
     try {
       const accountData = {
@@ -74,8 +77,6 @@ const AccountManager = () => {
           emails_per_hour: Number(formData.config.emails_per_hour) || 3600
         }
       };
-
-      console.log('Account data to submit:', accountData);
 
       if (editingId) {
         await updateAccount(editingId, accountData);
@@ -144,8 +145,17 @@ const AccountManager = () => {
     if (confirm('Are you sure you want to delete this account?')) {
       try {
         await deleteAccount(accountId);
+        toast({
+          title: "Success",
+          description: "Account deleted successfully"
+        });
       } catch (error) {
         console.error('Error deleting account:', error);
+        toast({
+          title: "Error",
+          description: "Failed to delete account",
+          variant: "destructive"
+        });
       }
     }
   };
@@ -184,10 +194,7 @@ const AccountManager = () => {
             <Button 
               variant="outline" 
               size="sm" 
-              onClick={() => {
-                console.log('Manual refresh triggered');
-                refetch();
-              }}
+              onClick={refetch}
               disabled={loading}
             >
               <RefreshCw className={`w-4 h-4 mr-1 ${loading ? 'animate-spin' : ''}`} />

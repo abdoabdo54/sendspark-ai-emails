@@ -43,64 +43,57 @@ export const useUserOrganizations = () => {
     try {
       console.log('Fetching organizations for user:', user.id);
       
-      // Try to get user organizations using the existing RPC function
+      // Use the new function to get organizations with roles
       const { data: orgsData, error: orgsError } = await supabase
-        .rpc('get_user_organizations', { user_id: user.id });
+        .rpc('get_user_organizations_with_roles', { user_id_param: user.id });
 
-      if (orgsError || !orgsData) {
-        console.log('No organizations found or function failed, creating default');
+      if (orgsError) {
+        console.error('Error fetching organizations:', orgsError);
         await createDefaultOrganization();
         return;
       }
 
-      if (orgsData.length === 0) {
+      if (!orgsData || orgsData.length === 0) {
         console.log('No organizations found, creating default');
         await createDefaultOrganization();
         return;
       }
 
-      // For now, since we don't have proper organization data structure, 
-      // let's use the existing organizations table directly
-      const { data: directOrgs, error: directError } = await supabase
-        .from('organizations')
-        .select('*')
-        .eq('is_active', true);
-
-      if (directError) {
-        console.error('Error fetching organizations directly:', directError);
-        await createDefaultOrganization();
-        return;
-      }
-
-      if (!directOrgs || directOrgs.length === 0) {
-        await createDefaultOrganization();
-        return;
-      }
-
-      console.log('Found organizations:', directOrgs.length);
-      setOrganizations(directOrgs);
-      
-      // Create mock user roles for now
-      const mockRoles = directOrgs.map((org: any) => ({
-        id: crypto.randomUUID(),
-        user_id: user.id,
-        organization_id: org.id,
-        role: 'admin' as const,
-        created_at: new Date().toISOString()
+      // Transform the data to match our interface
+      const transformedOrgs = orgsData.map((org: any) => ({
+        id: org.org_id,
+        name: org.org_name,
+        subdomain: org.org_subdomain,
+        domain: org.org_domain,
+        subscription_plan: org.subscription_plan,
+        is_active: org.is_active,
+        monthly_email_limit: org.monthly_email_limit,
+        emails_sent_this_month: org.emails_sent_this_month,
+        created_at: org.created_at,
+        updated_at: org.created_at
       }));
 
-      setUserRoles(mockRoles);
+      const transformedRoles = orgsData.map((org: any) => ({
+        id: crypto.randomUUID(),
+        user_id: user.id,
+        organization_id: org.org_id,
+        role: org.user_role,
+        created_at: org.created_at
+      }));
+
+      console.log('Found organizations:', transformedOrgs.length);
+      setOrganizations(transformedOrgs);
+      setUserRoles(transformedRoles);
       
       // Set current organization if not already set
-      if (directOrgs.length > 0 && !currentOrganization) {
+      if (transformedOrgs.length > 0 && !currentOrganization) {
         const savedOrgId = localStorage.getItem('currentOrganizationId');
-        const savedOrg = savedOrgId ? directOrgs.find((org: any) => org.id === savedOrgId) : null;
-        setCurrentOrganization(savedOrg || directOrgs[0]);
+        const savedOrg = savedOrgId ? transformedOrgs.find((org: any) => org.id === savedOrgId) : null;
+        setCurrentOrganization(savedOrg || transformedOrgs[0]);
       }
 
     } catch (error) {
       console.error('Error fetching organizations:', error);
-      // Try to create default organization if there's an error
       await createDefaultOrganization();
     } finally {
       setLoading(false);
@@ -113,33 +106,42 @@ export const useUserOrganizations = () => {
     try {
       console.log('Creating default organization for user:', user.email);
       
-      // Create organization
-      const { data: orgData, error: orgError } = await supabase
-        .from('organizations')
-        .insert([{
-          name: `${user.email?.split('@')[0] || 'Default'}'s Organization`,
-          subdomain: (user.email?.split('@')[0] || 'default-org').toLowerCase().replace(/[^a-z0-9-]/g, ''),
-          subscription_plan: 'free',
-          is_active: true,
-          monthly_email_limit: 1000,
-          emails_sent_this_month: 0
-        }])
-        .select()
-        .single();
+      const orgName = `${user.email?.split('@')[0] || 'Default'}'s Organization`;
+      const orgSubdomain = (user.email?.split('@')[0] || 'default-org').toLowerCase().replace(/[^a-z0-9-]/g, '');
+      
+      // Use the new function to create organization with user role
+      const { data: orgId, error: orgError } = await supabase
+        .rpc('create_organization_with_user', {
+          user_id_param: user.id,
+          org_name: orgName,
+          org_subdomain: orgSubdomain
+        });
 
       if (orgError) {
         console.error('Error creating organization:', orgError);
         throw orgError;
       }
 
-      console.log('Created organization:', orgData);
+      console.log('Created organization with ID:', orgId);
 
-      setOrganizations([orgData]);
-      setCurrentOrganization(orgData);
+      // Fetch the created organization
+      const { data: newOrg, error: fetchError } = await supabase
+        .from('organizations')
+        .select('*')
+        .eq('id', orgId)
+        .single();
+
+      if (fetchError) {
+        console.error('Error fetching created organization:', fetchError);
+        throw fetchError;
+      }
+
+      setOrganizations([newOrg]);
+      setCurrentOrganization(newOrg);
       setUserRoles([{
         id: crypto.randomUUID(),
         user_id: user.id,
-        organization_id: orgData.id,
+        organization_id: orgId,
         role: 'admin',
         created_at: new Date().toISOString()
       }]);
@@ -169,34 +171,79 @@ export const useUserOrganizations = () => {
     try {
       setLoading(true);
       
-      const { data, error } = await supabase
+      // Use the new function to create organization with user role
+      const { data: orgId, error: orgError } = await supabase
+        .rpc('create_organization_with_user', {
+          user_id_param: user.id,
+          org_name: orgData.name,
+          org_subdomain: orgData.subdomain,
+          org_domain: orgData.domain || null
+        });
+
+      if (orgError) throw orgError;
+
+      // Fetch the created organization
+      const { data: newOrg, error: fetchError } = await supabase
         .from('organizations')
-        .insert([{
-          ...orgData,
-          subscription_plan: 'free',
-          is_active: true,
-          monthly_email_limit: 1000,
-          emails_sent_this_month: 0
-        }])
-        .select()
+        .select('*')
+        .eq('id', orgId)
         .single();
 
-      if (error) throw error;
+      if (fetchError) throw fetchError;
 
-      setOrganizations(prev => [...prev, data]);
-      setCurrentOrganization(data);
+      setOrganizations(prev => [...prev, newOrg]);
+      setCurrentOrganization(newOrg);
       
       toast({
         title: "Success",
         description: "Organization created successfully"
       });
       
-      return data;
+      return newOrg;
     } catch (error) {
       console.error('Error creating organization:', error);
       toast({
         title: "Error",
         description: "Failed to create organization",
+        variant: "destructive"
+      });
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const updateOrganization = async (orgId: string, updateData: Partial<Organization>) => {
+    if (!user) return;
+
+    try {
+      setLoading(true);
+      
+      const { data, error } = await supabase
+        .from('organizations')
+        .update(updateData)
+        .eq('id', orgId)
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      setOrganizations(prev => prev.map(org => org.id === orgId ? data : org));
+      if (currentOrganization?.id === orgId) {
+        setCurrentOrganization(data);
+      }
+      
+      toast({
+        title: "Success",
+        description: "Organization updated successfully"
+      });
+      
+      return data;
+    } catch (error) {
+      console.error('Error updating organization:', error);
+      toast({
+        title: "Error",
+        description: "Failed to update organization",
         variant: "destructive"
       });
       throw error;
@@ -228,6 +275,7 @@ export const useUserOrganizations = () => {
     userRoles,
     loading,
     createOrganization,
+    updateOrganization,
     switchOrganization,
     refetch: fetchUserOrganizations
   };
