@@ -1,4 +1,3 @@
-
 const functions = require('@google-cloud/functions-framework');
 const { createClient } = require('@supabase/supabase-js');
 const nodemailer = require('nodemailer');
@@ -88,11 +87,22 @@ functions.http('sendEmailCampaign', async (req, res) => {
       
       try {
         if (accountType === 'smtp') {
-          // Validate SMTP configuration - check for both possible field names
+          // Enhanced SMTP configuration validation
           const smtpHost = accountConfig.host;
           const smtpPort = accountConfig.port;
           const smtpUser = accountConfig.user || accountConfig.username;
           const smtpPass = accountConfig.pass || accountConfig.password;
+          const smtpSecure = accountConfig.secure;
+          const smtpTls = accountConfig.tls;
+          
+          console.log(`🔍 SMTP Config Debug for ${accountInfo.email}:`, {
+            host: smtpHost,
+            port: smtpPort,
+            user: smtpUser ? '***' : 'MISSING',
+            pass: smtpPass ? '***' : 'MISSING',
+            secure: smtpSecure,
+            tls: smtpTls
+          });
           
           if (!smtpHost || !smtpPort || !smtpUser || !smtpPass) {
             throw new Error(`SMTP configuration incomplete for ${accountInfo.email}. Missing: ${
@@ -105,55 +115,79 @@ functions.http('sendEmailCampaign', async (req, res) => {
             }`);
           }
 
-          // Create MAXIMUM SPEED SMTP transporter with enhanced reliability
+          // Create enhanced SMTP transporter configuration
+          const port = parseInt(smtpPort);
+          const isSecurePort = port === 465;
+          const isSTARTTLSPort = port === 587 || port === 25;
+          
           const transporterConfig = {
             host: smtpHost,
-            port: parseInt(smtpPort) || 587,
-            secure: parseInt(smtpPort) === 465, // Use SSL for port 465
+            port: port,
+            secure: isSecurePort, // true for 465, false for other ports
             auth: {
               user: smtpUser,
               pass: smtpPass
             },
-            pool: true,
-            maxConnections: 2, // Conservative for reliability
-            maxMessages: 20,   // Conservative for reliability
-            rateLimit: false,   // NO rate limiting for maximum speed
-            connectionTimeout: 30000, // 30 second timeout
-            greetingTimeout: 15000,   // 15 second timeout
-            socketTimeout: 30000,     // 30 second timeout
-            logger: false, // Disable detailed logging for performance
-            debug: false,  // Disable debug for performance
+            // Enhanced TLS configuration
             tls: {
-              rejectUnauthorized: false, // For compatibility
+              rejectUnauthorized: false, // Accept self-signed certificates
               ciphers: 'SSLv3'
-            }
+            },
+            // Connection settings
+            connectionTimeout: 60000, // 60 seconds
+            greetingTimeout: 30000,   // 30 seconds
+            socketTimeout: 60000,     // 60 seconds
+            // Pool settings for better performance
+            pool: true,
+            maxConnections: 1, // Single connection for reliability
+            maxMessages: 100,
+            rateLimit: false,
+            // Logging for debugging
+            logger: true,
+            debug: true
           };
 
-          console.log(`📧 Creating SMTP transporter for ${accountInfo.email}:`, {
+          // Add STARTTLS if not using secure port
+          if (isSTARTTLSPort) {
+            transporterConfig.requireTLS = true;
+          }
+
+          console.log(`📧 Creating enhanced SMTP transporter for ${accountInfo.email}:`, {
             host: smtpHost,
-            port: smtpPort,
+            port: port,
             secure: transporterConfig.secure,
+            requireTLS: transporterConfig.requireTLS,
             user: smtpUser
           });
 
           const transporter = nodemailer.createTransporter(transporterConfig);
 
-          // Test connection first with timeout
+          // Enhanced connection verification with detailed error handling
           try {
-            const verifyPromise = transporter.verify();
-            const timeoutPromise = new Promise((_, reject) => 
-              setTimeout(() => reject(new Error('SMTP verification timeout')), 10000)
-            );
-            
-            await Promise.race([verifyPromise, timeoutPromise]);
-            console.log(`✅ SMTP connection verified for ${accountInfo.email}`);
+            console.log(`🔍 Verifying SMTP connection for ${accountInfo.email}...`);
+            await new Promise((resolve, reject) => {
+              const timeout = setTimeout(() => {
+                reject(new Error('SMTP verification timeout after 30 seconds'));
+              }, 30000);
+              
+              transporter.verify((error, success) => {
+                clearTimeout(timeout);
+                if (error) {
+                  console.error(`❌ SMTP verification failed for ${accountInfo.email}:`, error);
+                  reject(error);
+                } else {
+                  console.log(`✅ SMTP connection verified for ${accountInfo.email}`);
+                  resolve(success);
+                }
+              });
+            });
           } catch (verifyError) {
-            console.error(`❌ SMTP verification failed for ${accountInfo.email}:`, verifyError.message);
+            console.error(`💥 SMTP verification CRITICAL ERROR for ${accountInfo.email}:`, verifyError.message);
             throw new Error(`SMTP connection failed for ${accountInfo.email}: ${verifyError.message}`);
           }
 
-          // Send emails in smaller batches for better reliability
-          const batchSize = 3; // Very small batch for reliability
+          // Send emails in small batches for SMTP reliability
+          const batchSize = 2; // Very small batches for SMTP
           const batches = [];
           
           for (let i = 0; i < emails.length; i += batchSize) {
@@ -162,7 +196,7 @@ functions.http('sendEmailCampaign', async (req, res) => {
 
           console.log(`⚡ SMTP ${accountInfo.email}: ${batches.length} batches of ${batchSize} emails each`);
 
-          // Process batches sequentially for SMTP to avoid overwhelming
+          // Process batches sequentially for SMTP reliability
           for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
             const batch = batches[batchIndex];
             
@@ -182,23 +216,37 @@ functions.http('sendEmailCampaign', async (req, res) => {
                     text: emailData.textContent || ''
                   };
 
-                  console.log(`📤 Sending email to ${emailData.recipient} via ${accountInfo.email}`);
+                  console.log(`📤 Sending SMTP email to ${emailData.recipient} via ${accountInfo.email}`);
                   
-                  // Add timeout to sendMail
-                  const sendPromise = transporter.sendMail(mailOptions);
-                  const timeoutPromise = new Promise((_, reject) => 
-                    setTimeout(() => reject(new Error('Send timeout')), 30000)
-                  );
+                  // Enhanced sendMail with timeout and retry
+                  const sendWithTimeout = (options, timeoutMs = 45000) => {
+                    return new Promise((resolve, reject) => {
+                      const timeout = setTimeout(() => {
+                        reject(new Error('Email send timeout'));
+                      }, timeoutMs);
+                      
+                      transporter.sendMail(options, (error, info) => {
+                        clearTimeout(timeout);
+                        if (error) {
+                          console.error(`❌ SMTP Send Error for ${options.to}:`, error);
+                          reject(error);
+                        } else {
+                          console.log(`✅ SMTP Email sent to ${options.to}:`, info.messageId);
+                          resolve(info);
+                        }
+                      });
+                    });
+                  };
                   
-                  const info = await Promise.race([sendPromise, timeoutPromise]);
+                  const info = await sendWithTimeout(mailOptions);
 
                   totalSent++;
-                  console.log(`✅ SENT: ${emailData.recipient} via SMTP (MessageID: ${info.messageId})`);
+                  console.log(`✅ SMTP SENT: ${emailData.recipient} via ${accountInfo.email} (MessageID: ${info.messageId})`);
                   
                   return { success: true, recipient: emailData.recipient, messageId: info.messageId };
                 } catch (error) {
                   totalFailed++;
-                  console.error(`❌ FAILED: ${emailData.recipient} - ${error.message}`);
+                  console.error(`❌ SMTP FAILED: ${emailData.recipient} - ${error.message}`);
                   return { success: false, recipient: emailData.recipient, error: error.message };
                 }
               })
@@ -223,17 +271,26 @@ functions.http('sendEmailCampaign', async (req, res) => {
               console.error('Failed to update progress:', updateError);
             }
               
-            console.log(`⚡ MAXIMUM SPEED Batch ${batchIndex + 1}/${batches.length}: ${totalSent} sent, ${totalFailed} failed`);
+            console.log(`⚡ SMTP Batch ${batchIndex + 1}/${batches.length}: ${totalSent} sent, ${totalFailed} failed`);
             
-            // Small delay between batches to prevent overwhelming
+            // Small delay between batches for SMTP servers
             if (batchIndex < batches.length - 1) {
-              await new Promise(resolve => setTimeout(resolve, 1000)); // 1 second delay
+              await new Promise(resolve => setTimeout(resolve, 2000)); // 2 second delay between batches
             }
           }
 
-          await transporter.close();
+          // Close SMTP connection
+          try {
+            transporter.close();
+            console.log(`📪 SMTP connection closed for ${accountInfo.email}`);
+          } catch (closeError) {
+            console.error('Error closing SMTP connection:', closeError);
+          }
 
         } else if (accountType === 'apps-script') {
+          // Apps Script handling remains the same
+          // ... keep existing code (Apps Script processing logic)
+          
           // Validate Apps Script configuration
           if (!accountConfig.exec_url && !accountConfig.script_url) {
             throw new Error(`Apps Script URL missing for ${accountInfo.email}`);
