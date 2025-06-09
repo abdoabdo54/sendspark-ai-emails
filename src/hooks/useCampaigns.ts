@@ -69,7 +69,7 @@ export const useCampaigns = (organizationId?: string) => {
     }
   };
 
-  // Start polling for sending campaigns
+  // Enhanced polling for sending campaigns with timeout detection
   const startPolling = () => {
     if (pollingInterval) return; // Already polling
     
@@ -77,12 +77,38 @@ export const useCampaigns = (organizationId?: string) => {
       const sendingCampaigns = campaigns.filter(c => c.status === 'sending');
       if (sendingCampaigns.length > 0) {
         console.log(`Polling status for ${sendingCampaigns.length} sending campaigns`);
+        
+        // Check for stuck campaigns (sending for more than 30 minutes)
+        const now = new Date().getTime();
+        sendingCampaigns.forEach(async (campaign) => {
+          if (campaign.sent_at) {
+            const sentTime = new Date(campaign.sent_at).getTime();
+            const timeDiff = now - sentTime;
+            const thirtyMinutes = 30 * 60 * 1000;
+            
+            if (timeDiff > thirtyMinutes) {
+              console.warn(`Campaign ${campaign.id} has been stuck in sending status for ${Math.round(timeDiff / 60000)} minutes`);
+              
+              // Try to resume the campaign
+              try {
+                console.log(`Attempting to resume stuck campaign ${campaign.id}`);
+                await sendCampaignViaGoogleCloud(campaign.id, campaign.sent_count || 0);
+              } catch (error) {
+                console.error(`Failed to resume stuck campaign ${campaign.id}:`, error);
+                
+                // If resume fails, mark as failed
+                await updateCampaign(campaign.id, { status: 'failed' });
+              }
+            }
+          }
+        });
+        
         await fetchCampaigns();
       } else {
         // No sending campaigns, stop polling
         stopPolling();
       }
-    }, 5000); // Poll every 5 seconds
+    }, 3000); // More aggressive polling every 3 seconds
     
     setPollingInterval(interval);
   };
@@ -350,9 +376,9 @@ export const useCampaigns = (organizationId?: string) => {
 
   const sendCampaignViaGoogleCloud = async (campaignId: string, resumeFromIndex = 0) => {
     try {
-      console.log('Sending campaign via advanced Google Cloud Functions:', campaignId);
+      console.log('Sending campaign via advanced Google Cloud Functions:', campaignId, 'from index:', resumeFromIndex);
 
-      // Call the advanced Google Cloud sender
+      // Call the advanced Google Cloud sender with enhanced logging
       const { data, error } = await supabase.functions.invoke('send-via-google-cloud-advanced', {
         body: { campaignId, resumeFromIndex }
       });
@@ -364,12 +390,17 @@ export const useCampaigns = (organizationId?: string) => {
 
       console.log('Advanced Google Cloud sending result:', data);
 
+      // Enhanced success message with more details
+      const accountsText = data.accounts_processing === 1 ? 'account' : 'accounts';
+      const enhancedText = data.enhanced_config ? ' with enhanced configuration' : '';
+      const retryText = data.retry_attempts > 1 ? ` (succeeded after ${data.retry_attempts} attempts)` : '';
+      
       toast({
-        title: "Success",
-        description: `Campaign sending initiated! Processing ${data.total_emails} emails across ${data.accounts_processing} accounts in parallel.`
+        title: "Campaign Sending Initiated!",
+        description: `Processing ${data.total_emails} emails across ${data.accounts_processing} ${accountsText} in parallel${enhancedText}${retryText}.`
       });
 
-      // Start polling for status updates
+      // Start more aggressive polling for this campaign
       startPolling();
 
       // Refresh campaigns to get updated status
@@ -381,7 +412,7 @@ export const useCampaigns = (organizationId?: string) => {
       
       toast({
         title: "Error",
-        description: `Failed to send campaign via Google Cloud: ${error.message}`,
+        description: `Failed to send campaign via Google Cloud: ${error.message}. Please check your Google Cloud Function configuration and try again.`,
         variant: "destructive"
       });
       
