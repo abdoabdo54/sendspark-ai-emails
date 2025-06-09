@@ -1,331 +1,240 @@
 
-import React, { useState } from 'react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import React, { useState, useEffect } from 'react';
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
-import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Cloud, TestTube, CheckCircle, AlertCircle, Download } from 'lucide-react';
+import { Badge } from "@/components/ui/badge";
 import { toast } from '@/hooks/use-toast';
+import { AlertCircle, CheckCircle, Loader2 } from 'lucide-react';
 
-interface GlobalGoogleCloudConfig {
+interface GoogleCloudConfig {
   enabled: boolean;
   functionUrl: string;
-  projectId: string;
-  region: string;
-  functionName: string;
   defaultRateLimit: number;
   defaultBatchSize: number;
 }
 
-interface GlobalGoogleCloudConfigProps {
-  config: GlobalGoogleCloudConfig;
-  onSave: (config: GlobalGoogleCloudConfig) => void;
-  onTest?: (config: GlobalGoogleCloudConfig) => Promise<boolean>;
-}
+const GlobalGoogleCloudConfig = () => {
+  const [config, setConfig] = useState<GoogleCloudConfig>({
+    enabled: false,
+    functionUrl: 'https://email-campaign-function-357731264915.us-central1.run.app',
+    defaultRateLimit: 3600,
+    defaultBatchSize: 10
+  });
+  const [isLoading, setIsLoading] = useState(false);
+  const [connectionStatus, setConnectionStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
 
-const GlobalGoogleCloudConfig: React.FC<GlobalGoogleCloudConfigProps> = ({ 
-  config, 
-  onSave, 
-  onTest 
-}) => {
-  const [formData, setFormData] = useState<GlobalGoogleCloudConfig>(config);
-  const [isTesting, setIsTesting] = useState(false);
-  const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
-
-  const handleInputChange = (field: keyof GlobalGoogleCloudConfig, value: string | number | boolean) => {
-    setFormData(prev => ({
-      ...prev,
-      [field]: value
-    }));
-    
-    // Auto-generate function URL when project ID or region changes
-    if (field === 'projectId' || field === 'region') {
-      const projectId = field === 'projectId' ? value : formData.projectId;
-      const region = field === 'region' ? value : formData.region;
-      const functionName = formData.functionName;
-      
-      if (projectId && region && functionName) {
-        const generatedUrl = `https://${region}-${projectId}.cloudfunctions.net/${functionName}`;
-        setFormData(prev => ({
-          ...prev,
-          functionUrl: generatedUrl
-        }));
+  // Load saved configuration
+  useEffect(() => {
+    const savedConfig = localStorage.getItem('emailCampaignSettings');
+    if (savedConfig) {
+      try {
+        const parsed = JSON.parse(savedConfig);
+        if (parsed.googleCloudFunctions) {
+          setConfig(parsed.googleCloudFunctions);
+        }
+      } catch (error) {
+        console.error('Error parsing saved config:', error);
       }
+    }
+  }, []);
+
+  const handleSave = () => {
+    try {
+      const existingSettings = localStorage.getItem('emailCampaignSettings');
+      const settings = existingSettings ? JSON.parse(existingSettings) : {};
+      
+      settings.googleCloudFunctions = config;
+      localStorage.setItem('emailCampaignSettings', JSON.stringify(settings));
+      
+      toast({
+        title: "Configuration Saved",
+        description: "Google Cloud Functions settings have been saved successfully."
+      });
+    } catch (error) {
+      console.error('Error saving config:', error);
+      toast({
+        title: "Error",
+        description: "Failed to save configuration",
+        variant: "destructive"
+      });
     }
   };
 
   const handleTest = async () => {
-    if (!onTest) return;
-    
-    setIsTesting(true);
-    setTestResult(null);
-    
-    try {
-      const success = await onTest(formData);
-      setTestResult({
-        success,
-        message: success 
-          ? 'Google Cloud Function connection successful!' 
-          : 'Failed to connect to Google Cloud Function'
+    if (!config.functionUrl) {
+      toast({
+        title: "Error",
+        description: "Please enter a function URL first",
+        variant: "destructive"
       });
-    } catch (error) {
-      setTestResult({
-        success: false,
-        message: error instanceof Error ? error.message : 'Test failed'
-      });
-    } finally {
-      setIsTesting(false);
+      return;
     }
-  };
 
-  const handleSave = () => {
-    if (formData.enabled) {
-      if (!formData.functionUrl || !formData.projectId) {
+    setConnectionStatus('testing');
+    setIsLoading(true);
+
+    try {
+      // Test with a simple ping request
+      const response = await fetch(config.functionUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          test: true,
+          message: 'Connection test from email campaign system'
+        })
+      });
+
+      if (response.ok) {
+        setConnectionStatus('success');
         toast({
-          title: "Validation Error",
-          description: "Function URL and Project ID are required when enabling Google Cloud Functions",
+          title: "Connection Successful",
+          description: "Successfully connected to Google Cloud Functions"
+        });
+      } else {
+        setConnectionStatus('error');
+        toast({
+          title: "Connection Failed",
+          description: `HTTP ${response.status}: ${response.statusText}`,
           variant: "destructive"
         });
-        return;
       }
+    } catch (error) {
+      console.error('Google Cloud test error:', error);
+      setConnectionStatus('error');
+      toast({
+        title: "Connection Error",
+        description: "Failed to connect to Google Cloud Functions. Please check the URL and try again.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsLoading(false);
     }
-
-    onSave(formData);
-    toast({
-      title: "Success",
-      description: "Google Cloud Functions configuration saved successfully"
-    });
   };
 
-  const downloadSetupGuide = () => {
-    // Create and download the setup guide
-    const guideContent = `
-# Google Cloud Functions Setup Guide for Email Campaigns
+  const getStatusIcon = () => {
+    switch (connectionStatus) {
+      case 'testing':
+        return <Loader2 className="h-4 w-4 animate-spin text-blue-500" />;
+      case 'success':
+        return <CheckCircle className="h-4 w-4 text-green-500" />;
+      case 'error':
+        return <AlertCircle className="h-4 w-4 text-red-500" />;
+      default:
+        return null;
+    }
+  };
 
-## Prerequisites
-1. Google Cloud Platform account with billing enabled
-2. Google Cloud CLI installed
-3. Node.js 18+ installed
-
-## Step 1: Create Google Cloud Project
-1. Go to https://console.cloud.google.com/
-2. Create new project or select existing one
-3. Note your Project ID: ${formData.projectId || 'your-project-id'}
-
-## Step 2: Enable APIs
-Run these commands in Cloud Shell or local terminal:
-\`\`\`bash
-gcloud config set project ${formData.projectId || 'your-project-id'}
-gcloud services enable cloudfunctions.googleapis.com
-gcloud services enable cloudbuild.googleapis.com
-gcloud services enable run.googleapis.com
-\`\`\`
-
-## Step 3: Prepare Function Code
-1. Create directory: mkdir email-campaign-function && cd email-campaign-function
-2. Create package.json:
-\`\`\`json
-{
-  "name": "email-campaign-function",
-  "version": "1.0.0",
-  "main": "index.js",
-  "dependencies": {
-    "@google-cloud/functions-framework": "^3.0.0"
-  }
-}
-\`\`\`
-
-3. Copy the function code from google-cloud-function-example.js in your project
-
-## Step 4: Deploy Function
-\`\`\`bash
-gcloud functions deploy ${formData.functionName} \\
-  --runtime nodejs20 \\
-  --trigger-http \\
-  --allow-unauthenticated \\
-  --memory 1GB \\
-  --timeout 540s \\
-  --region ${formData.region} \\
-  --set-env-vars SUPABASE_URL=YOUR_SUPABASE_URL,SUPABASE_SERVICE_ROLE_KEY=YOUR_SERVICE_ROLE_KEY
-\`\`\`
-
-## Step 5: Get Function URL
-After deployment, your function URL will be:
-${formData.functionUrl || `https://${formData.region}-${formData.projectId || 'your-project-id'}.cloudfunctions.net/${formData.functionName}`}
-
-## Step 6: Configure in App
-1. Go to Settings > Cloud Functions
-2. Enable Google Cloud Functions
-3. Enter your Project ID: ${formData.projectId || 'your-project-id'}
-4. Set Region: ${formData.region}
-5. Function URL should auto-populate
-6. Test connection
-7. Save configuration
-
-## Rate Limiting Configuration
-- Default Rate Limit: ${formData.defaultRateLimit} emails/hour
-- Default Batch Size: ${formData.defaultBatchSize} concurrent emails
-- These can be adjusted per campaign or globally
-
-## Benefits
-✅ Handles 1000+ emails efficiently
-✅ Respects rate limits across all accounts
-✅ Supports both SMTP and Apps Script
-✅ Real-time progress tracking
-✅ Automatic error handling and retries
-
-## Troubleshooting
-1. Ensure billing is enabled on your GCP project
-2. Check that all required APIs are enabled
-3. Verify environment variables are set correctly
-4. Check function logs in GCP Console for errors
-
-## Cost Estimation
-- Cloud Functions: ~$0.40 per 1M invocations
-- For 1000 emails: approximately $0.001
-- Very cost-effective for email campaigns
-    `;
-
-    const blob = new Blob([guideContent], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'google-cloud-functions-setup-guide.txt';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+  const getStatusText = () => {
+    switch (connectionStatus) {
+      case 'testing':
+        return 'Testing connection...';
+      case 'success':
+        return 'Connected';
+      case 'error':
+        return 'Connection failed';
+      default:
+        return config.enabled ? 'Ready' : 'Disabled';
+    }
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <Label className="text-base">Enable Google Cloud Functions</Label>
-          <p className="text-sm text-slate-600">Use Google Cloud Functions for high-speed email sending</p>
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center justify-between">
+          Google Cloud Functions Configuration
+          <div className="flex items-center gap-2">
+            {getStatusIcon()}
+            <Badge variant={connectionStatus === 'success' ? 'default' : connectionStatus === 'error' ? 'destructive' : 'secondary'}>
+              {getStatusText()}
+            </Badge>
+          </div>
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="flex items-center space-x-2">
+          <Switch
+            id="gcf-enabled"
+            checked={config.enabled}
+            onCheckedChange={(enabled) => setConfig(prev => ({ ...prev, enabled }))}
+          />
+          <Label htmlFor="gcf-enabled">Enable Google Cloud Functions for high-volume sending</Label>
         </div>
-        <Switch
-          checked={formData.enabled}
-          onCheckedChange={(checked) => handleInputChange('enabled', checked)}
-        />
-      </div>
 
-      {formData.enabled && (
-        <>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {config.enabled && (
+          <>
             <div className="space-y-2">
-              <Label htmlFor="projectId">Project ID *</Label>
-              <Input
-                id="projectId"
-                value={formData.projectId}
-                onChange={(e) => handleInputChange('projectId', e.target.value)}
-                placeholder="your-gcp-project-id"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="region">Region</Label>
-              <Input
-                id="region"
-                value={formData.region}
-                onChange={(e) => handleInputChange('region', e.target.value)}
-                placeholder="us-central1"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="functionName">Function Name</Label>
-              <Input
-                id="functionName"
-                value={formData.functionName}
-                onChange={(e) => handleInputChange('functionName', e.target.value)}
-                placeholder="sendEmailCampaign"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="defaultRateLimit">Default Rate Limit (emails/hour)</Label>
-              <Input
-                id="defaultRateLimit"
-                type="number"
-                min="1"
-                max="3600"
-                value={formData.defaultRateLimit}
-                onChange={(e) => handleInputChange('defaultRateLimit', parseInt(e.target.value) || 3600)}
-              />
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="functionUrl">Function URL</Label>
-            <Textarea
-              id="functionUrl"
-              value={formData.functionUrl}
-              onChange={(e) => handleInputChange('functionUrl', e.target.value)}
-              placeholder="https://us-central1-your-project.cloudfunctions.net/sendEmailCampaign"
-              rows={2}
-            />
-            <p className="text-sm text-slate-600">
-              URL is auto-generated when you enter Project ID and Region
-            </p>
-          </div>
-
-          <Alert>
-            <AlertCircle className="h-4 w-4" />
-            <AlertDescription>
-              <div className="flex items-center justify-between">
-                <span>Need help setting up Google Cloud Functions?</span>
-                <Button variant="outline" size="sm" onClick={downloadSetupGuide} className="ml-2">
-                  <Download className="w-4 h-4 mr-2" />
-                  Download Setup Guide
+              <Label htmlFor="function-url">Cloud Function URL</Label>
+              <div className="flex gap-2">
+                <Input
+                  id="function-url"
+                  type="url"
+                  value={config.functionUrl}
+                  onChange={(e) => setConfig(prev => ({ ...prev, functionUrl: e.target.value }))}
+                  placeholder="https://your-function-url.run.app"
+                  className="flex-1"
+                />
+                <Button 
+                  type="button"
+                  variant="outline"
+                  onClick={handleTest}
+                  disabled={isLoading || !config.functionUrl}
+                >
+                  {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Test'}
                 </Button>
               </div>
-            </AlertDescription>
-          </Alert>
+              <p className="text-sm text-gray-600">
+                Enter your deployed Google Cloud Functions URL from the screenshot
+              </p>
+            </div>
 
-          {testResult && (
-            <Alert variant={testResult.success ? "default" : "destructive"}>
-              {testResult.success ? (
-                <CheckCircle className="h-4 w-4" />
-              ) : (
-                <AlertCircle className="h-4 w-4" />
-              )}
-              <AlertDescription>{testResult.message}</AlertDescription>
-            </Alert>
-          )}
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="rate-limit">Default Rate Limit (emails/hour)</Label>
+                <Input
+                  id="rate-limit"
+                  type="number"
+                  min="1"
+                  max="36000"
+                  value={config.defaultRateLimit}
+                  onChange={(e) => setConfig(prev => ({ ...prev, defaultRateLimit: parseInt(e.target.value) || 3600 }))}
+                />
+              </div>
+              
+              <div>
+                <Label htmlFor="batch-size">Default Batch Size</Label>
+                <Input
+                  id="batch-size"
+                  type="number"
+                  min="1"
+                  max="100"
+                  value={config.defaultBatchSize}
+                  onChange={(e) => setConfig(prev => ({ ...prev, defaultBatchSize: parseInt(e.target.value) || 10 }))}
+                />
+              </div>
+            </div>
 
-          <div className="flex gap-2">
-            {onTest && (
-              <Button 
-                variant="outline" 
-                onClick={handleTest}
-                disabled={isTesting || !formData.functionUrl}
-                className="flex items-center gap-2"
-              >
-                {isTesting ? (
-                  <>
-                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
-                    Testing...
-                  </>
-                ) : (
-                  <>
-                    <TestTube className="w-4 h-4" />
-                    Test Connection
-                  </>
-                )}
-              </Button>
-            )}
-            
-            <Button onClick={handleSave}>
-              Save Configuration
-            </Button>
-          </div>
-        </>
-      )}
-    </div>
+            <div className="bg-blue-50 p-4 rounded-lg">
+              <h4 className="font-medium text-blue-900 mb-2">Setup Instructions:</h4>
+              <ol className="list-decimal list-inside space-y-1 text-sm text-blue-800">
+                <li>Deploy the provided Google Cloud Function code to your project</li>
+                <li>Copy the function URL from the Google Cloud Console (as shown in your screenshot)</li>
+                <li>Paste the URL above and test the connection</li>
+                <li>Configure your Supabase URL and service key as environment variables in the function</li>
+              </ol>
+            </div>
+          </>
+        )}
+
+        <Button onClick={handleSave} className="w-full">
+          Save Configuration
+        </Button>
+      </CardContent>
+    </Card>
   );
 };
 

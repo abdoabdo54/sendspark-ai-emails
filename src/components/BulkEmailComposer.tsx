@@ -31,17 +31,24 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
     email_account_id: '',
     config: {
       delay_between_emails: 1,
-      max_emails_per_hour: 100
+      max_emails_per_hour: 100,
+      selectedAccounts: [] as string[]
     }
   });
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [recipientCount, setRecipientCount] = useState(0);
 
-  // Update recipient count when recipients change
+  // Update recipient count when recipients change - FIXED PARSING
   useEffect(() => {
     if (formData.recipients.trim()) {
-      const emails = formData.recipients.split('\n').filter(email => email.trim() && email.includes('@'));
+      // Split by newlines and commas, then filter valid emails
+      const emails = formData.recipients
+        .split(/[\n,]/)
+        .map(email => email.trim())
+        .filter(email => email && email.includes('@') && email.length > 3);
+      
+      console.log('Parsed emails:', emails);
       setRecipientCount(emails.length);
     } else {
       setRecipientCount(0);
@@ -68,15 +75,6 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
       return;
     }
 
-    if (!formData.email_account_id) {
-      toast({
-        title: "Error",
-        description: "Please select an email account",
-        variant: "destructive"
-      });
-      return;
-    }
-
     if (recipientCount === 0) {
       toast({
         title: "Error",
@@ -89,11 +87,27 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
     setIsSubmitting(true);
 
     try {
+      // Properly format recipients as comma-separated for database storage
+      const emailList = formData.recipients
+        .split(/[\n,]/)
+        .map(email => email.trim())
+        .filter(email => email && email.includes('@') && email.length > 3);
+
       const campaignData = {
         ...formData,
+        recipients: emailList.join(','), // Store as comma-separated string
         total_recipients: recipientCount,
-        organization_id: currentOrganization.id
+        organization_id: currentOrganization.id,
+        config: {
+          ...formData.config,
+          selectedAccounts: formData.config.selectedAccounts.length > 0 
+            ? formData.config.selectedAccounts 
+            : formData.email_account_id ? [formData.email_account_id] : []
+        }
       };
+
+      console.log('Creating campaign with:', recipientCount, 'recipients');
+      console.log('Email list:', emailList);
 
       await onSend(campaignData);
       
@@ -108,13 +122,14 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
         email_account_id: '',
         config: {
           delay_between_emails: 1,
-          max_emails_per_hour: 100
+          max_emails_per_hour: 100,
+          selectedAccounts: []
         }
       });
 
       toast({
         title: "Success",
-        description: "Campaign created successfully!"
+        description: `Campaign created successfully with ${recipientCount} recipients!`
       });
 
     } catch (error) {
@@ -136,6 +151,10 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
       reader.onload = (e) => {
         const content = e.target?.result as string;
         setFormData(prev => ({ ...prev, recipients: content }));
+        toast({
+          title: "Success",
+          description: "Email list uploaded successfully"
+        });
       };
       reader.readAsText(file);
     } else {
@@ -154,6 +173,19 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
       title: "Refreshing",
       description: "Checking for new email accounts..."
     });
+  };
+
+  // Handle account selection for multi-account campaigns
+  const handleAccountSelection = (accountId: string) => {
+    setFormData(prev => ({
+      ...prev,
+      config: {
+        ...prev.config,
+        selectedAccounts: prev.config.selectedAccounts.includes(accountId)
+          ? prev.config.selectedAccounts.filter(id => id !== accountId)
+          : [...prev.config.selectedAccounts, accountId]
+      }
+    }));
   };
 
   if (!currentOrganization?.id) {
@@ -175,7 +207,7 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
           <CardTitle className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Mail className="w-5 h-5" />
-              Email Account
+              Email Accounts
             </div>
             <Button 
               type="button"
@@ -189,7 +221,7 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
             </Button>
           </CardTitle>
           <CardDescription>
-            Select the email account to send from. Total accounts: {accounts.length}
+            Select email accounts for sending. Total accounts: {accounts.length}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -207,37 +239,46 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
             </Alert>
           ) : (
             <div className="space-y-4">
-              <Select 
-                value={formData.email_account_id} 
-                onValueChange={(value) => setFormData(prev => ({ ...prev, email_account_id: value }))}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select an email account" />
-                </SelectTrigger>
-                <SelectContent>
+              {/* Multi-account selection */}
+              <div>
+                <Label className="text-sm font-medium">Select Accounts for Campaign</Label>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-2">
                   {accounts.map((account) => (
-                    <SelectItem key={account.id} value={account.id}>
-                      <div className="flex items-center gap-2">
-                        <span>{account.name}</span>
-                        <Badge variant="outline" className="text-xs">
-                          {account.type}
-                        </Badge>
-                        {!account.is_active && (
-                          <Badge variant="secondary" className="text-xs">
-                            Inactive
-                          </Badge>
+                    <div 
+                      key={account.id}
+                      className={`p-3 border rounded-lg cursor-pointer transition-colors ${
+                        formData.config.selectedAccounts.includes(account.id)
+                          ? 'border-blue-500 bg-blue-50'
+                          : 'border-gray-200 hover:border-gray-300'
+                      }`}
+                      onClick={() => handleAccountSelection(account.id)}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium">{account.name}</span>
+                            <Badge variant="outline" className="text-xs">
+                              {account.type}
+                            </Badge>
+                          </div>
+                          <p className="text-sm text-gray-600">{account.email}</p>
+                        </div>
+                        {formData.config.selectedAccounts.includes(account.id) && (
+                          <div className="w-4 h-4 bg-blue-500 rounded-full flex items-center justify-center">
+                            <div className="w-2 h-2 bg-white rounded-full"></div>
+                          </div>
                         )}
                       </div>
-                    </SelectItem>
+                    </div>
                   ))}
-                </SelectContent>
-              </Select>
-              
-              {formData.email_account_id && (
-                <div className="text-sm text-slate-600">
-                  Selected: {accounts.find(acc => acc.id === formData.email_account_id)?.email}
                 </div>
-              )}
+                
+                {formData.config.selectedAccounts.length > 0 && (
+                  <div className="mt-2 text-sm text-green-600">
+                    ✓ {formData.config.selectedAccounts.length} account(s) selected for rotation
+                  </div>
+                )}
+              </div>
 
               {/* Debug info */}
               <div className="text-xs text-slate-400 bg-slate-50 p-2 rounded">
@@ -318,12 +359,12 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
         <CardHeader>
           <CardTitle className="flex items-center justify-between">
             Recipients
-            <Badge variant="outline">
+            <Badge variant={recipientCount > 0 ? "default" : "outline"}>
               {recipientCount} emails
             </Badge>
           </CardTitle>
           <CardDescription>
-            Add email addresses (one per line) or upload a text file
+            Add email addresses (one per line or comma-separated) or upload a text file
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -347,6 +388,12 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
             rows={6}
             required
           />
+          
+          {recipientCount > 0 && (
+            <div className="text-sm text-green-600 bg-green-50 p-2 rounded">
+              ✓ {recipientCount} valid email addresses detected
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -388,7 +435,7 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
       <div className="flex justify-end">
         <Button 
           type="submit" 
-          disabled={isSubmitting || recipientCount === 0 || !formData.email_account_id}
+          disabled={isSubmitting || recipientCount === 0 || formData.config.selectedAccounts.length === 0}
           className="min-w-32"
         >
           {isSubmitting ? (
@@ -399,7 +446,7 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
           ) : (
             <>
               <Send className="w-4 h-4 mr-2" />
-              Create Campaign
+              Create Campaign ({recipientCount} emails)
             </>
           )}
         </Button>
