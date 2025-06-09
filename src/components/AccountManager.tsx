@@ -31,6 +31,7 @@ const AccountManager = () => {
 
   useEffect(() => {
     if (currentOrganization?.id) {
+      console.log('Current organization changed:', currentOrganization);
       refetch();
     }
   }, [currentOrganization?.id, refetch]);
@@ -47,6 +48,8 @@ const AccountManager = () => {
       return;
     }
 
+    console.log('Submitting form with organization:', currentOrganization.id);
+
     try {
       const accountData = {
         name: formData.name,
@@ -55,6 +58,8 @@ const AccountManager = () => {
         is_active: true,
         config: formData.config
       };
+
+      console.log('Account data to submit:', accountData);
 
       if (editingId) {
         await updateAccount(editingId, accountData);

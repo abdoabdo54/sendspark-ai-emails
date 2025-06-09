@@ -1,7 +1,9 @@
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Settings as SettingsIcon } from 'lucide-react';
 import SettingsPanel from '../components/SettingsPanel';
+import GoogleCloudSetupGuide from '../components/GoogleCloudSetupGuide';
 
 const Settings = () => {
   return (
@@ -17,7 +19,24 @@ const Settings = () => {
           </p>
         </div>
         
-        <SettingsPanel />
+        <Card>
+          <CardContent className="p-6">
+            <Tabs defaultValue="configuration" className="w-full">
+              <TabsList className="grid w-full grid-cols-2">
+                <TabsTrigger value="configuration">Configuration</TabsTrigger>
+                <TabsTrigger value="setup-guide">Setup Guide</TabsTrigger>
+              </TabsList>
+              
+              <TabsContent value="configuration">
+                <SettingsPanel />
+              </TabsContent>
+              
+              <TabsContent value="setup-guide">
+                <GoogleCloudSetupGuide />
+              </TabsContent>
+            </Tabs>
+          </CardContent>
+        </Card>
       </div>
     </div>
   );

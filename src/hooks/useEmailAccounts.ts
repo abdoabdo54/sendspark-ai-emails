@@ -20,17 +20,27 @@ export const useEmailAccounts = (organizationId?: string) => {
   const [loading, setLoading] = useState(false);
 
   const fetchAccounts = async () => {
-    if (!organizationId) return;
+    if (!organizationId) {
+      console.log('No organization ID provided for fetching accounts');
+      return;
+    }
 
     try {
       setLoading(true);
+      console.log('Fetching accounts for organization:', organizationId);
+      
       const { data, error } = await supabase
         .from('email_accounts')
         .select('*')
         .eq('organization_id', organizationId)
         .order('created_at', { ascending: false });
 
-      if (error) throw error;
+      if (error) {
+        console.error('Supabase error fetching accounts:', error);
+        throw error;
+      }
+      
+      console.log('Fetched accounts:', data);
       
       const typedData = (data || []).map(item => ({
         ...item,
@@ -63,7 +73,25 @@ export const useEmailAccounts = (organizationId?: string) => {
 
     try {
       console.log('Creating account with data:', accountData);
+      console.log('Organization ID:', organizationId);
       
+      // First, verify the organization exists
+      const { data: orgCheck, error: orgError } = await supabase
+        .from('organizations')
+        .select('id')
+        .eq('id', organizationId)
+        .single();
+
+      if (orgError || !orgCheck) {
+        console.error('Organization not found:', orgError);
+        toast({
+          title: "Error",
+          description: "Organization not found. Please refresh the page.",
+          variant: "destructive"
+        });
+        return;
+      }
+
       const accountToCreate = {
         name: accountData.name,
         type: accountData.type,
@@ -73,6 +101,8 @@ export const useEmailAccounts = (organizationId?: string) => {
         organization_id: organizationId
       };
 
+      console.log('Account payload to create:', accountToCreate);
+
       const { data, error } = await supabase
         .from('email_accounts')
         .insert([accountToCreate])
@@ -80,7 +110,7 @@ export const useEmailAccounts = (organizationId?: string) => {
         .single();
 
       if (error) {
-        console.error('Supabase error:', error);
+        console.error('Supabase error creating account:', error);
         throw error;
       }
 
