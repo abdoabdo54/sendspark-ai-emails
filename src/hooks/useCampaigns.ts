@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
@@ -24,6 +23,7 @@ export interface Campaign {
 export const useCampaigns = (organizationId?: string) => {
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [loading, setLoading] = useState(true);
+  const [pollingInterval, setPollingInterval] = useState<NodeJS.Timeout | null>(null);
 
   const fetchCampaigns = async () => {
     if (!organizationId) return;
@@ -68,6 +68,44 @@ export const useCampaigns = (organizationId?: string) => {
       setLoading(false);
     }
   };
+
+  // Start polling for sending campaigns
+  const startPolling = () => {
+    if (pollingInterval) return; // Already polling
+    
+    const interval = setInterval(async () => {
+      const sendingCampaigns = campaigns.filter(c => c.status === 'sending');
+      if (sendingCampaigns.length > 0) {
+        console.log(`Polling status for ${sendingCampaigns.length} sending campaigns`);
+        await fetchCampaigns();
+      } else {
+        // No sending campaigns, stop polling
+        stopPolling();
+      }
+    }, 5000); // Poll every 5 seconds
+    
+    setPollingInterval(interval);
+  };
+
+  // Stop polling
+  const stopPolling = () => {
+    if (pollingInterval) {
+      clearInterval(pollingInterval);
+      setPollingInterval(null);
+    }
+  };
+
+  // Auto-start polling when we have sending campaigns
+  useEffect(() => {
+    const sendingCampaigns = campaigns.filter(c => c.status === 'sending');
+    if (sendingCampaigns.length > 0) {
+      startPolling();
+    } else {
+      stopPolling();
+    }
+    
+    return () => stopPolling(); // Cleanup on unmount
+  }, [campaigns]);
 
   const createCampaign = async (campaignData: Omit<Campaign, 'id' | 'created_at' | 'status' | 'sent_count' | 'total_recipients' | 'organization_id' | 'prepared_emails'>) => {
     if (!organizationId) {
@@ -330,6 +368,9 @@ export const useCampaigns = (organizationId?: string) => {
         title: "Success",
         description: `Campaign sending initiated! Processing ${data.total_emails} emails across ${data.accounts_processing} accounts in parallel.`
       });
+
+      // Start polling for status updates
+      startPolling();
 
       // Refresh campaigns to get updated status
       await fetchCampaigns();
