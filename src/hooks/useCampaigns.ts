@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
@@ -18,7 +19,8 @@ export interface Campaign {
   sent_at?: string;
   config?: any;
   prepared_emails?: any[];
-  error_message?: string;
+  error_message?: string; // Made optional since column might not exist yet
+  completed_at?: string; // Made optional since column might not exist yet
 }
 
 export const useCampaigns = (organizationId?: string) => {
@@ -55,7 +57,8 @@ export const useCampaigns = (organizationId?: string) => {
         sent_at: item.sent_at || undefined,
         config: typeof item.config === 'object' && item.config !== null ? item.config : {},
         prepared_emails: Array.isArray(item.prepared_emails) ? item.prepared_emails : [],
-        error_message: item.error_message || undefined
+        error_message: item.error_message || undefined, // Safely access optional field
+        completed_at: item.completed_at || undefined // Safely access optional field
       }));
       
       setCampaigns(typedCampaigns);

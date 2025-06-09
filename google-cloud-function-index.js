@@ -173,13 +173,21 @@ functions.http('sendEmailCampaign', async (req, res) => {
 
     // Mark campaign as completed
     const finalStatus = totalSent > 0 ? 'sent' : 'failed';
+    const updateData = { 
+      status: finalStatus,
+      sent_count: totalSent
+    };
+
+    // Only add completed_at if the column exists (optional)
+    try {
+      updateData.completed_at = new Date().toISOString();
+    } catch (e) {
+      // Column might not exist yet, ignore
+    }
+
     await supabase
       .from('email_campaigns')
-      .update({ 
-        status: finalStatus,
-        sent_count: totalSent,
-        completed_at: new Date().toISOString()
-      })
+      .update(updateData)
       .eq('id', campaignId);
 
     console.log(`🎉 CAMPAIGN COMPLETED: ${totalSent} sent, ${totalFailed} failed`);
@@ -204,12 +212,20 @@ functions.http('sendEmailCampaign', async (req, res) => {
     // Revert campaign status on error
     try {
       const supabase = createClient(req.body.supabaseUrl, req.body.supabaseKey);
+      const updateData = { 
+        status: 'failed'
+      };
+      
+      // Only add error_message if the column exists (optional)
+      try {
+        updateData.error_message = error.message;
+      } catch (e) {
+        // Column might not exist yet, ignore
+      }
+      
       await supabase
         .from('email_campaigns')
-        .update({ 
-          status: 'failed',
-          error_message: error.message
-        })
+        .update(updateData)
         .eq('id', req.body.campaignId);
     } catch (revertError) {
       console.error('Failed to revert status:', revertError);
