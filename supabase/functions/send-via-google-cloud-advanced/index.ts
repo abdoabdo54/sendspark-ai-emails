@@ -48,22 +48,25 @@ serve(async (req) => {
       )
     }
 
-    // Get global Google Cloud Functions settings
-    const globalSettings = {
-      functionUrl: '',
-      defaultRateLimit: 3600,
-      defaultBatchSize: 10
+    // Get Google Cloud Functions configuration from campaign config or use default
+    let gcfConfig = null;
+    
+    // First try to get from campaign config
+    if (campaign.config?.googleCloudFunctions) {
+      gcfConfig = campaign.config.googleCloudFunctions;
     }
-
-    // Try to get from campaign config or use defaults
-    const gcfConfig = campaign.config?.googleCloud || globalSettings
-
-    if (!gcfConfig.functionUrl) {
+    
+    // If not found in campaign, check if it's enabled globally (you'll need to pass this from frontend)
+    if (!gcfConfig?.functionUrl) {
       return new Response(
-        JSON.stringify({ error: 'Google Cloud Functions URL not configured' }),
+        JSON.stringify({ 
+          error: 'Google Cloud Functions not configured. Please configure Google Cloud Functions in Settings and prepare the campaign again.' 
+        }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
+
+    console.log(`Using Google Cloud Function: ${gcfConfig.functionUrl}`);
 
     // Update campaign status to sending
     await supabase
@@ -82,10 +85,19 @@ serve(async (req) => {
     emailsToSend.forEach((email, index) => {
       const accountId = email.account_id
       if (!emailsByAccount.has(accountId)) {
-        emailsByAccount.set(accountId, [])
+        emailsByAccount.set(accountId, {
+          type: email.accountType,
+          config: email.accountConfig,
+          emails: []
+        })
       }
-      emailsByAccount.get(accountId).push({
-        ...email,
+      emailsByAccount.get(accountId).emails.push({
+        recipient: email.recipient,
+        subject: email.subject,
+        fromEmail: email.fromEmail,
+        fromName: email.fromName,
+        htmlContent: email.htmlContent,
+        textContent: email.textContent,
         globalIndex: resumeFromIndex + index
       })
     })
@@ -110,7 +122,9 @@ serve(async (req) => {
       })
 
       if (!response.ok) {
-        throw new Error(`Google Cloud Functions responded with status: ${response.status}`)
+        const errorText = await response.text();
+        console.error(`Google Cloud Functions error: ${response.status} - ${errorText}`);
+        throw new Error(`Google Cloud Functions responded with status: ${response.status} - ${errorText}`)
       }
 
       const result = await response.json()
