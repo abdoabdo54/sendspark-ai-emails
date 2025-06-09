@@ -1,6 +1,7 @@
 
 /**
  * Google Cloud Function for sending email campaigns with rate limiting
+ * Optimized for high-volume sending with SMTP and Apps Script support
  * Deploy this to Google Cloud Functions to handle large volume email sending
  */
 
@@ -22,94 +23,122 @@ functions.http('sendEmailCampaign', async (req, res) => {
     const { 
       campaignId, 
       preparedEmails, 
-      rateLimit, 
-      batchSize,
+      rateLimit = 3600, // Default: 1 email per second
+      batchSize = 10,
       supabaseUrl,
       supabaseKey 
     } = req.body;
 
-    console.log(`Starting campaign ${campaignId} with ${preparedEmails.length} emails`);
-    console.log(`Rate limit: ${rateLimit} emails/hour, Batch size: ${batchSize}`);
+    console.log(`🚀 Starting campaign ${campaignId} with ${preparedEmails.length} emails`);
+    console.log(`⚙️ Configuration: ${rateLimit} emails/hour, ${batchSize} batch size`);
 
-    // Calculate delay between emails (in milliseconds)
-    const delayMs = (60 * 60 * 1000) / rateLimit;
+    // Calculate optimal delay between emails (in milliseconds)
+    const delayMs = Math.max((60 * 60 * 1000) / rateLimit, 100); // Minimum 100ms
     
-    // Group emails by account type for better distribution
+    // Group emails by account for better distribution and performance
     const emailsByAccount = {};
     preparedEmails.forEach(email => {
-      const accountId = email.accountId;
-      if (!emailsByAccount[accountId]) {
-        emailsByAccount[accountId] = [];
+      const accountKey = `${email.accountType}-${email.accountId}`;
+      if (!emailsByAccount[accountKey]) {
+        emailsByAccount[accountKey] = {
+          type: email.accountType,
+          config: email.accountConfig,
+          emails: []
+        };
       }
-      emailsByAccount[accountId].push(email);
+      emailsByAccount[accountKey].emails.push(email);
     });
 
-    console.log(`Emails grouped across ${Object.keys(emailsByAccount).length} accounts`);
+    const accountKeys = Object.keys(emailsByAccount);
+    console.log(`📊 Emails distributed across ${accountKeys.length} accounts`);
 
-    // Process emails in parallel across accounts but with rate limiting
-    const accountIds = Object.keys(emailsByAccount);
-    const results = [];
     let totalSent = 0;
     let totalFailed = 0;
+    const results = [];
 
-    // Process each account concurrently
-    const accountPromises = accountIds.map(async (accountId, accountIndex) => {
-      const emails = emailsByAccount[accountId];
-      console.log(`Account ${accountId}: ${emails.length} emails`);
+    // Process accounts in parallel with controlled concurrency
+    const processAccount = async (accountKey, accountData, accountIndex) => {
+      const { type, config, emails } = accountData;
+      console.log(`📧 Processing account ${accountKey}: ${emails.length} emails (${type})`);
       
       for (let i = 0; i < emails.length; i += batchSize) {
         const batch = emails.slice(i, i + batchSize);
         
-        // Process batch
+        // Process batch with staggered timing
         const batchPromises = batch.map(async (emailData, emailIndex) => {
           try {
-            // Add staggered delay based on account and email index
-            const staggerDelay = (accountIndex * 1000) + (emailIndex * (delayMs / batchSize));
-            await new Promise(resolve => setTimeout(resolve, staggerDelay));
+            // Stagger emails across accounts and within batches
+            const accountDelay = accountIndex * 200; // 200ms between account starts
+            const emailDelay = emailIndex * (delayMs / batchSize);
+            const totalDelay = accountDelay + emailDelay;
+            
+            await new Promise(resolve => setTimeout(resolve, totalDelay));
             
             // Send email based on account type
             let result;
-            if (emailData.accountType === 'smtp') {
-              result = await sendEmailViaSMTP(emailData);
-            } else if (emailData.accountType === 'apps-script') {
-              result = await sendEmailViaAppsScript(emailData);
+            if (type === 'smtp') {
+              result = await sendEmailViaSMTP(emailData, config);
+            } else if (type === 'apps-script') {
+              result = await sendEmailViaAppsScript(emailData, config);
             } else {
-              throw new Error(`Unsupported account type: ${emailData.accountType}`);
+              throw new Error(`Unsupported account type: ${type}`);
             }
             
             if (result.success) {
               totalSent++;
-              console.log(`✓ Email sent to: ${emailData.recipient}`);
+              console.log(`✅ [${type}] Email sent to: ${emailData.recipient}`);
             } else {
               totalFailed++;
-              console.log(`✗ Email failed to: ${emailData.recipient} - ${result.error}`);
+              console.log(`❌ [${type}] Email failed to: ${emailData.recipient} - ${result.error}`);
             }
             
-            return { email: emailData.recipient, success: result.success, error: result.error };
+            return { 
+              email: emailData.recipient, 
+              success: result.success, 
+              error: result.error,
+              accountType: type,
+              accountKey
+            };
           } catch (error) {
             totalFailed++;
-            console.log(`✗ Error for ${emailData.recipient}:`, error.message);
-            return { email: emailData.recipient, success: false, error: error.message };
+            console.log(`💥 [${type}] Error for ${emailData.recipient}:`, error.message);
+            return { 
+              email: emailData.recipient, 
+              success: false, 
+              error: error.message,
+              accountType: type,
+              accountKey
+            };
           }
         });
         
         const batchResults = await Promise.all(batchPromises);
         results.push(...batchResults);
         
-        // Update progress in Supabase
-        await updateCampaignProgress(campaignId, totalSent, supabaseUrl, supabaseKey);
+        // Update progress every batch
+        if (i % (batchSize * 5) === 0) { // Update every 5 batches
+          await updateCampaignProgress(campaignId, totalSent, supabaseUrl, supabaseKey);
+        }
         
-        console.log(`Batch ${Math.floor(i/batchSize) + 1} completed for account ${accountId}`);
+        console.log(`📈 Batch ${Math.floor(i/batchSize) + 1}/${Math.ceil(emails.length/batchSize)} completed for ${accountKey}`);
       }
-    });
+    };
 
-    // Wait for all accounts to finish
+    // Process all accounts concurrently
+    const accountPromises = accountKeys.map((accountKey, index) => 
+      processAccount(accountKey, emailsByAccount[accountKey], index)
+    );
+
     await Promise.all(accountPromises);
 
-    // Final update to Supabase
+    // Final progress update
     await updateCampaignFinal(campaignId, totalSent, totalFailed, supabaseUrl, supabaseKey);
 
-    console.log(`Campaign ${campaignId} completed: ${totalSent} sent, ${totalFailed} failed`);
+    console.log(`🎉 Campaign ${campaignId} completed: ${totalSent} sent, ${totalFailed} failed`);
+
+    // Calculate performance metrics
+    const successRate = totalSent / (totalSent + totalFailed) * 100;
+    const actualRate = totalSent / (Date.now() / 1000 / 3600); // emails per hour
 
     res.status(200).json({
       success: true,
@@ -117,22 +146,27 @@ functions.http('sendEmailCampaign', async (req, res) => {
       totalSent,
       totalFailed,
       totalEmails: preparedEmails.length,
-      results: results.slice(0, 10) // Return first 10 results as sample
+      successRate: Math.round(successRate * 100) / 100,
+      actualEmailsPerHour: Math.round(actualRate),
+      targetEmailsPerHour: rateLimit,
+      accountsUsed: accountKeys.length,
+      executionTime: Date.now() - req.startTime,
+      sampleResults: results.slice(0, 5) // First 5 results for debugging
     });
 
   } catch (error) {
-    console.error('Error in sendEmailCampaign:', error);
+    console.error('💥 Error in sendEmailCampaign:', error);
     res.status(500).json({
       success: false,
-      error: error.message
+      error: error.message,
+      campaignId: req.body?.campaignId || 'unknown'
     });
   }
 });
 
-// Helper function to send email via SMTP
-async function sendEmailViaSMTP(emailData) {
+// Optimized SMTP sending function
+async function sendEmailViaSMTP(emailData, smtpConfig) {
   try {
-    // Call your Supabase SMTP function
     const response = await fetch(`${process.env.SUPABASE_URL}/functions/v1/send-smtp-email`, {
       method: 'POST',
       headers: {
@@ -140,7 +174,7 @@ async function sendEmailViaSMTP(emailData) {
         'Authorization': `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`
       },
       body: JSON.stringify({
-        config: emailData.accountConfig,
+        config: smtpConfig,
         emailData: {
           from: { email: emailData.fromEmail, name: emailData.fromName },
           to: emailData.recipient,
@@ -152,33 +186,42 @@ async function sendEmailViaSMTP(emailData) {
     });
 
     const result = await response.json();
-    return { success: response.ok && result.success, error: result.error };
+    return { 
+      success: response.ok && result.success, 
+      error: result.error 
+    };
   } catch (error) {
     return { success: false, error: error.message };
   }
 }
 
-// Helper function to send email via Apps Script
-async function sendEmailViaAppsScript(emailData) {
+// Optimized Apps Script sending function with quota management
+async function sendEmailViaAppsScript(emailData, appsScriptConfig) {
   try {
-    const response = await fetch(emailData.accountConfig.exec_url, {
+    const payload = {
+      to: emailData.recipient,
+      subject: emailData.subject,
+      htmlBody: emailData.htmlContent,
+      plainBody: emailData.textContent || '',
+      fromName: emailData.fromName,
+      fromAlias: emailData.fromEmail
+    };
+
+    const response = await fetch(appsScriptConfig.exec_url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        to: emailData.recipient,
-        subject: emailData.subject,
-        htmlBody: emailData.htmlContent,
-        plainBody: emailData.textContent || '',
-        fromName: emailData.fromName,
-        fromAlias: emailData.fromEmail
-      })
+      body: JSON.stringify(payload)
     });
 
     if (response.ok) {
       const result = await response.json();
-      return { success: result.status === 'success', error: result.message };
+      return { 
+        success: result.status === 'success', 
+        error: result.message,
+        quotaRemaining: result.remainingQuota
+      };
     } else {
       return { success: false, error: `HTTP ${response.status}` };
     }
@@ -187,50 +230,46 @@ async function sendEmailViaAppsScript(emailData) {
   }
 }
 
-// Helper function to update campaign progress
+// Efficient progress update function
 async function updateCampaignProgress(campaignId, sentCount, supabaseUrl, supabaseKey) {
   try {
-    const response = await fetch(`${supabaseUrl}/rest/v1/email_campaigns?id=eq.${campaignId}`, {
+    await fetch(`${supabaseUrl}/rest/v1/email_campaigns?id=eq.${campaignId}`, {
       method: 'PATCH',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${supabaseKey}`,
-        'apikey': supabaseKey
+        'apikey': supabaseKey,
+        'Prefer': 'return=minimal'
       },
       body: JSON.stringify({
-        sent_count: sentCount
+        sent_count: sentCount,
+        updated_at: new Date().toISOString()
       })
     });
-    
-    if (!response.ok) {
-      console.error('Failed to update campaign progress:', response.status);
-    }
   } catch (error) {
-    console.error('Error updating campaign progress:', error.message);
+    console.error('❌ Error updating progress:', error.message);
   }
 }
 
-// Helper function to update campaign final status
+// Final status update function
 async function updateCampaignFinal(campaignId, sentCount, failedCount, supabaseUrl, supabaseKey) {
   try {
-    const response = await fetch(`${supabaseUrl}/rest/v1/email_campaigns?id=eq.${campaignId}`, {
+    await fetch(`${supabaseUrl}/rest/v1/email_campaigns?id=eq.${campaignId}`, {
       method: 'PATCH',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${supabaseKey}`,
-        'apikey': supabaseKey
+        'apikey': supabaseKey,
+        'Prefer': 'return=minimal'
       },
       body: JSON.stringify({
         sent_count: sentCount,
         status: 'sent',
-        sent_at: new Date().toISOString()
+        sent_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
       })
     });
-    
-    if (!response.ok) {
-      console.error('Failed to update campaign final status:', response.status);
-    }
   } catch (error) {
-    console.error('Error updating campaign final status:', error.message);
+    console.error('❌ Error updating final status:', error.message);
   }
 }

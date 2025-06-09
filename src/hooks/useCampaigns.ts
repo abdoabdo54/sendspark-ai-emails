@@ -241,9 +241,33 @@ export const useCampaigns = (organizationId?: string) => {
     }
   };
 
-  const sendCampaignViaGoogleCloud = async (campaignId: string, rateLimit: number = 60, batchSize: number = 10) => {
+  const getGlobalGoogleCloudSettings = () => {
+    try {
+      const savedSettings = localStorage.getItem('emailCampaignSettings');
+      if (savedSettings) {
+        const parsed = JSON.parse(savedSettings);
+        return parsed.googleCloudFunctions;
+      }
+    } catch (error) {
+      console.error('Error loading global settings:', error);
+    }
+    return null;
+  };
+
+  const sendCampaignViaGoogleCloud = async (campaignId: string, campaignConfig?: any) => {
     try {
       console.log('Sending campaign via Google Cloud Functions:', campaignId);
+
+      // Use campaign-specific config or fall back to global settings
+      const globalSettings = getGlobalGoogleCloudSettings();
+      const gcfConfig = campaignConfig || globalSettings;
+
+      if (!gcfConfig?.functionUrl) {
+        throw new Error('Google Cloud Functions URL not configured. Please check global settings.');
+      }
+
+      const rateLimit = gcfConfig.rateLimit || gcfConfig.defaultRateLimit || 3600;
+      const batchSize = gcfConfig.batchSize || gcfConfig.defaultBatchSize || 10;
 
       // Call the Google Cloud Functions integration
       const { data, error } = await supabase.functions.invoke('send-via-google-cloud', {
@@ -259,7 +283,7 @@ export const useCampaigns = (organizationId?: string) => {
 
       toast({
         title: "Success",
-        description: "Campaign is being sent via Google Cloud Functions"
+        description: `Campaign is being sent via Google Cloud Functions at ${rateLimit} emails/hour`
       });
 
       // Refresh campaigns to get updated status
@@ -290,17 +314,21 @@ export const useCampaigns = (organizationId?: string) => {
     try {
       console.log('Sending campaign:', campaignId);
 
-      // Find the campaign to check if it should use Google Cloud Functions
+      // Find the campaign to check configuration
       const campaign = campaigns.find(c => c.id === campaignId);
       if (!campaign) {
         throw new Error('Campaign not found');
       }
 
-      // Check if Google Cloud Functions is enabled for this campaign
-      if (campaign.config?.googleCloud?.enabled) {
-        const rateLimit = campaign.config.googleCloud.rateLimit || 60;
-        const batchSize = campaign.config.googleCloud.batchSize || 10;
-        return await sendCampaignViaGoogleCloud(campaignId, rateLimit, batchSize);
+      // Check if Google Cloud Functions is enabled (campaign config or global)
+      const campaignGCFEnabled = campaign.config?.googleCloud?.enabled;
+      const globalSettings = getGlobalGoogleCloudSettings();
+      const globalGCFEnabled = globalSettings?.enabled;
+
+      if (campaignGCFEnabled || (globalGCFEnabled && !campaign.config?.googleCloud?.hasOwnProperty('enabled'))) {
+        // Use Google Cloud Functions
+        const gcfConfig = campaign.config?.googleCloud || globalSettings;
+        return await sendCampaignViaGoogleCloud(campaignId, gcfConfig);
       }
 
       // Continue with existing implementation for non-Google Cloud campaigns

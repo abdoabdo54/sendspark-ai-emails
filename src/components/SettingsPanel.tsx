@@ -1,4 +1,3 @@
-
 import { useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -9,8 +8,9 @@ import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { Settings, Shield, Bell, Mail, Sparkles, Save } from 'lucide-react';
+import { Settings, Shield, Bell, Mail, Sparkles, Save, Cloud } from 'lucide-react';
 import { toast } from "@/hooks/use-toast";
+import GoogleCloudConfigForm from './GoogleCloudConfigForm';
 
 const SettingsPanel = () => {
   const [settings, setSettings] = useState({
@@ -34,11 +34,23 @@ const SettingsPanel = () => {
     
     // Rate Limiting
     globalRateLimit: 300,
-    rateLimitWindow: 60
+    rateLimitWindow: 60,
+    
+    // Google Cloud Functions
+    googleCloudFunctions: {
+      enabled: false,
+      functionUrl: '',
+      projectId: '',
+      region: 'us-central1',
+      functionName: 'sendEmailCampaign',
+      defaultRateLimit: 3600,
+      defaultBatchSize: 10
+    }
   });
 
   const handleSave = () => {
-    // Here you would save settings to your backend
+    // Save to localStorage for now (in production, save to Supabase)
+    localStorage.setItem('emailCampaignSettings', JSON.stringify(settings));
     console.log('Saving settings:', settings);
     toast({
       title: "Settings Saved",
@@ -49,6 +61,38 @@ const SettingsPanel = () => {
   const updateSetting = (key: string, value: any) => {
     setSettings(prev => ({ ...prev, [key]: value }));
   };
+
+  const updateGoogleCloudSettings = (gcfConfig: any) => {
+    setSettings(prev => ({
+      ...prev,
+      googleCloudFunctions: gcfConfig
+    }));
+  };
+
+  const handleGoogleCloudTest = async (gcfConfig: any): Promise<boolean> => {
+    try {
+      const response = await fetch(gcfConfig.functionUrl, {
+        method: 'GET',
+      });
+      return response.ok;
+    } catch (error) {
+      console.error('Google Cloud test error:', error);
+      return false;
+    }
+  };
+
+  // Load settings on component mount
+  useState(() => {
+    const savedSettings = localStorage.getItem('emailCampaignSettings');
+    if (savedSettings) {
+      try {
+        const parsed = JSON.parse(savedSettings);
+        setSettings(prev => ({ ...prev, ...parsed }));
+      } catch (error) {
+        console.error('Error loading settings:', error);
+      }
+    }
+  });
 
   return (
     <div className="space-y-6">
@@ -64,7 +108,7 @@ const SettingsPanel = () => {
       </div>
 
       <Tabs defaultValue="general" className="w-full">
-        <TabsList className="grid w-full grid-cols-4">
+        <TabsList className="grid w-full grid-cols-5">
           <TabsTrigger value="general" className="flex items-center gap-2">
             <Settings className="w-4 h-4" />
             General
@@ -72,6 +116,10 @@ const SettingsPanel = () => {
           <TabsTrigger value="api" className="flex items-center gap-2">
             <Sparkles className="w-4 h-4" />
             API Keys
+          </TabsTrigger>
+          <TabsTrigger value="cloud" className="flex items-center gap-2">
+            <Cloud className="w-4 h-4" />
+            Cloud Functions
           </TabsTrigger>
           <TabsTrigger value="notifications" className="flex items-center gap-2">
             <Bell className="w-4 h-4" />
@@ -206,6 +254,38 @@ const SettingsPanel = () => {
                   <span className="text-sm text-slate-600">AI features enabled</span>
                 </div>
               )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="cloud" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Cloud className="w-5 h-5 text-blue-600" />
+                Global Google Cloud Functions Configuration
+              </CardTitle>
+              <CardDescription>
+                Set up Google Cloud Functions once and use across all campaigns for high-speed email sending
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <GoogleCloudConfigForm
+                config={settings.googleCloudFunctions}
+                onSave={updateGoogleCloudSettings}
+                onTest={handleGoogleCloudTest}
+              />
+              
+              <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                <h4 className="font-medium text-blue-900 mb-2">Benefits of Global Configuration:</h4>
+                <div className="text-sm text-blue-800 space-y-1">
+                  <p>✅ Configure once, use for all campaigns</p>
+                  <p>✅ Automatic rate limiting and batch processing</p>
+                  <p>✅ Supports both SMTP and Apps Script accounts</p>
+                  <p>✅ Handles 1000+ emails efficiently</p>
+                  <p>✅ Real-time progress tracking</p>
+                </div>
+              </div>
             </CardContent>
           </Card>
         </TabsContent>
