@@ -8,6 +8,7 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Make sure the function name matches your deployed function
 functions.http('sendEmailCampaign', async (req, res) => {
   // Handle CORS
   if (req.method === 'OPTIONS') {
@@ -17,6 +18,9 @@ functions.http('sendEmailCampaign', async (req, res) => {
   }
 
   try {
+    console.log('🚀 Google Cloud Function started');
+    console.log('Request body keys:', Object.keys(req.body || {}));
+
     const { 
       campaignId, 
       emailsByAccount, 
@@ -26,7 +30,18 @@ functions.http('sendEmailCampaign', async (req, res) => {
     } = req.body;
     
     if (!campaignId) {
+      console.error('Missing campaignId in request');
       throw new Error('Campaign ID is required');
+    }
+
+    if (!emailsByAccount) {
+      console.error('Missing emailsByAccount in request');
+      throw new Error('Emails by account data is required');
+    }
+
+    if (!supabaseUrl || !supabaseKey) {
+      console.error('Missing Supabase credentials');
+      throw new Error('Supabase credentials are required');
     }
 
     console.log(`🚀 STARTING MAXIMUM SPEED CAMPAIGN ${campaignId}`);
@@ -57,6 +72,11 @@ functions.http('sendEmailCampaign', async (req, res) => {
       
       try {
         if (type === 'smtp') {
+          // Validate SMTP configuration
+          if (!accountConfig.host || !accountConfig.port || !accountConfig.user || !accountConfig.pass) {
+            throw new Error(`SMTP configuration incomplete for ${accountInfo.email}. Missing host, port, username, or password.`);
+          }
+
           // Create MAXIMUM SPEED SMTP transporter with better error handling
           const transporterConfig = {
             host: accountConfig.host,
@@ -67,16 +87,16 @@ functions.http('sendEmailCampaign', async (req, res) => {
               pass: accountConfig.pass || accountConfig.password
             },
             pool: true,
-            maxConnections: 20, // MAXIMUM connections
-            maxMessages: 2000,  // MAXIMUM messages per connection
+            maxConnections: 5, // Reduced for better reliability
+            maxMessages: 100,  // Reduced for better reliability
             rateLimit: false,   // NO rate limiting for maximum speed
-            connectionTimeout: 30000, // Increased timeout
+            connectionTimeout: 60000, // Increased timeout
             greetingTimeout: 30000,   // Increased timeout
             socketTimeout: 60000,     // Increased timeout
-            logger: true,
-            debug: true,
+            logger: false, // Disable detailed logging for performance
+            debug: false,  // Disable debug for performance
             tls: {
-              rejectUnauthorized: false // For Office 365 compatibility
+              rejectUnauthorized: false // For compatibility
             }
           };
 
@@ -94,12 +114,12 @@ functions.http('sendEmailCampaign', async (req, res) => {
             await transporter.verify();
             console.log(`✅ SMTP connection verified for ${accountInfo.email}`);
           } catch (verifyError) {
-            console.error(`❌ SMTP verification failed for ${accountInfo.email}:`, verifyError);
-            throw new Error(`SMTP connection failed: ${verifyError.message}`);
+            console.error(`❌ SMTP verification failed for ${accountInfo.email}:`, verifyError.message);
+            throw new Error(`SMTP connection failed for ${accountInfo.email}: ${verifyError.message}`);
           }
 
-          // Send emails in MAXIMUM SPEED batches
-          const batchSize = 25; // Reduced for better reliability
+          // Send emails in smaller batches for better reliability
+          const batchSize = 10; // Smaller batch size
           const batches = [];
           
           for (let i = 0; i < emails.length; i += batchSize) {
@@ -115,12 +135,17 @@ functions.http('sendEmailCampaign', async (req, res) => {
             const batchResults = await Promise.allSettled(
               batch.map(async (emailData) => {
                 try {
+                  // Validate email data
+                  if (!emailData.recipient || !emailData.subject) {
+                    throw new Error('Missing recipient or subject');
+                  }
+
                   const mailOptions = {
-                    from: `${emailData.fromName} <${emailData.fromEmail}>`,
+                    from: `${emailData.fromName || accountInfo.name} <${emailData.fromEmail || accountInfo.email}>`,
                     to: emailData.recipient,
                     subject: emailData.subject,
-                    html: emailData.htmlContent,
-                    text: emailData.textContent
+                    html: emailData.htmlContent || '',
+                    text: emailData.textContent || ''
                   };
 
                   console.log(`📤 Sending email to ${emailData.recipient} via ${accountInfo.email}`);
@@ -157,15 +182,20 @@ functions.http('sendEmailCampaign', async (req, res) => {
             
             // Small delay between batches to prevent overwhelming
             if (batchIndex < batches.length - 1) {
-              await new Promise(resolve => setTimeout(resolve, 1000));
+              await new Promise(resolve => setTimeout(resolve, 2000)); // 2 second delay
             }
           }
 
           await transporter.close();
 
         } else if (type === 'apps-script') {
+          // Validate Apps Script configuration
+          if (!accountConfig.exec_url) {
+            throw new Error(`Apps Script URL missing for ${accountInfo.email}`);
+          }
+
           // MAXIMUM SPEED Apps Script processing
-          const batchSize = 25; // Increased for Apps Script maximum speed
+          const batchSize = 15; // Smaller batch for Apps Script
           const batches = [];
           
           for (let i = 0; i < emails.length; i += batchSize) {
@@ -174,36 +204,45 @@ functions.http('sendEmailCampaign', async (req, res) => {
 
           console.log(`⚡ Apps Script ${accountInfo.email}: ${batches.length} batches at MAXIMUM SPEED`);
 
-          // Process batches with controlled concurrency for Apps Script
+          // Process batches sequentially for Apps Script
           for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
             const batch = batches[batchIndex];
             
             const batchPromises = batch.map(async (emailData) => {
               try {
+                if (!emailData.recipient || !emailData.subject) {
+                  throw new Error('Missing recipient or subject');
+                }
+
                 const response = await fetch(accountConfig.exec_url, {
                   method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
+                  headers: { 
+                    'Content-Type': 'application/json',
+                    'User-Agent': 'GoogleCloudFunction/1.0'
+                  },
                   body: JSON.stringify({
                     to: emailData.recipient,
                     subject: emailData.subject,
-                    htmlBody: emailData.htmlContent,
-                    plainBody: emailData.textContent,
-                    fromName: emailData.fromName,
-                    fromAlias: emailData.fromEmail
-                  })
+                    htmlBody: emailData.htmlContent || '',
+                    plainBody: emailData.textContent || '',
+                    fromName: emailData.fromName || accountInfo.name,
+                    fromAlias: emailData.fromEmail || accountInfo.email
+                  }),
+                  timeout: 30000 // 30 second timeout
                 });
 
                 if (response.ok) {
                   const result = await response.json();
                   if (result.status === 'success') {
                     totalSent++;
-                    console.log(`✅ SENT: ${emailData.recipient} via Apps Script (Speed: MAXIMUM)`);
+                    console.log(`✅ SENT: ${emailData.recipient} via Apps Script`);
                     return { success: true, recipient: emailData.recipient };
                   } else {
                     throw new Error(result.message || 'Apps Script error');
                   }
                 } else {
-                  throw new Error(`HTTP ${response.status}`);
+                  const errorText = await response.text();
+                  throw new Error(`HTTP ${response.status}: ${errorText}`);
                 }
               } catch (error) {
                 totalFailed++;
@@ -222,11 +261,18 @@ functions.http('sendEmailCampaign', async (req, res) => {
               .eq('id', campaignId);
 
             console.log(`⚡ MAXIMUM SPEED Apps Script batch ${batchIndex + 1}/${batches.length} completed`);
+            
+            // Small delay between batches
+            if (batchIndex < batches.length - 1) {
+              await new Promise(resolve => setTimeout(resolve, 1000));
+            }
           }
+        } else {
+          throw new Error(`Unsupported account type: ${type}`);
         }
 
       } catch (accountError) {
-        console.error(`💥 Account ${accountId} CRITICAL error:`, accountError);
+        console.error(`💥 Account ${accountId} CRITICAL error:`, accountError.message);
         
         // Mark remaining emails as failed for this account
         const failedCount = emails.length;
@@ -240,6 +286,15 @@ functions.http('sendEmailCampaign', async (req, res) => {
             sent_count: totalSent
           })
           .eq('id', campaignId);
+
+        // Add failed results for this account
+        emails.forEach(email => {
+          results.push({
+            success: false,
+            recipient: email.recipient,
+            error: accountError.message
+          });
+        });
       }
     });
 
@@ -294,15 +349,17 @@ functions.http('sendEmailCampaign', async (req, res) => {
     
     // Revert campaign status on error
     try {
-      const supabase = createClient(req.body.supabaseUrl, req.body.supabaseKey);
-      await supabase
-        .from('email_campaigns')
-        .update({ 
-          status: 'failed',
-          error_message: `Maximum speed error: ${error.message}`,
-          completed_at: new Date().toISOString()
-        })
-        .eq('id', req.body.campaignId);
+      if (req.body?.campaignId && req.body?.supabaseUrl && req.body?.supabaseKey) {
+        const supabase = createClient(req.body.supabaseUrl, req.body.supabaseKey);
+        await supabase
+          .from('email_campaigns')
+          .update({ 
+            status: 'failed',
+            error_message: `Maximum speed error: ${error.message}`,
+            completed_at: new Date().toISOString()
+          })
+          .eq('id', req.body.campaignId);
+      }
     } catch (revertError) {
       console.error('Failed to revert status:', revertError);
     }
@@ -311,7 +368,7 @@ functions.http('sendEmailCampaign', async (req, res) => {
     res.status(500).json({ 
       success: false,
       error: error.message || 'Internal server error',
-      campaignId: req.body.campaignId,
+      campaignId: req.body?.campaignId || 'unknown',
       timestamp: new Date().toISOString(),
       maxSpeedMode: true
     });

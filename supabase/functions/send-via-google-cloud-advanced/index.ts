@@ -12,14 +12,24 @@ serve(async (req) => {
     return new Response('ok', { headers: corsHeaders })
   }
 
+  let requestBody: any = null;
+  let campaignId: string | null = null;
+
   try {
-    const { campaignId, resumeFromIndex = 0 } = await req.json()
+    // Parse request body once and store it
+    requestBody = await req.json()
+    campaignId = requestBody.campaignId
+    const resumeFromIndex = requestBody.resumeFromIndex || 0
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     const supabase = createClient(supabaseUrl, supabaseKey)
 
     console.log(`🚀 MAXIMUM SPEED PROCESSING for campaign ${campaignId}`)
+
+    if (!campaignId) {
+      throw new Error('Campaign ID is required')
+    }
 
     // Get campaign details with error handling
     const { data: campaign, error: campaignError } = await supabase
@@ -31,7 +41,6 @@ serve(async (req) => {
     if (campaignError || !campaign) {
       console.error('Campaign fetch error:', campaignError)
       
-      // Try to update campaign status to failed
       if (campaignId) {
         await supabase
           .from('email_campaigns')
@@ -103,14 +112,14 @@ serve(async (req) => {
         .from('email_campaigns')
         .update({ 
           status: 'failed',
-          error_message: 'Google Cloud Functions not configured. Please prepare the campaign with Google Cloud Functions enabled.',
+          error_message: 'Google Cloud Functions not configured. Please check your Google Cloud Function URL in settings.',
           completed_at: new Date().toISOString()
         })
         .eq('id', campaignId)
       
       return new Response(
         JSON.stringify({ 
-          error: 'Google Cloud Functions not configured. Please prepare the campaign again with Google Cloud Functions enabled.' 
+          error: 'Google Cloud Functions not configured. Please check your function URL in settings.' 
         }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
@@ -180,6 +189,11 @@ serve(async (req) => {
 
     console.log(`🎯 MAXIMUM SPEED payload prepared for ${emailsByAccount.size} accounts, ${emailsToSend.length} emails`)
 
+    // Validate function URL format
+    if (!gcfConfig.functionUrl.startsWith('https://')) {
+      throw new Error('Invalid Google Cloud Function URL. Must start with https://');
+    }
+
     // Send to Google Cloud Functions with MAXIMUM SPEED settings
     const response = await fetch(gcfConfig.functionUrl, {
       method: 'POST',
@@ -205,12 +219,12 @@ serve(async (req) => {
         .from('email_campaigns')
         .update({ 
           status: 'failed',
-          error_message: `Google Cloud error: ${response.status} - ${errorText}`,
+          error_message: `Google Cloud error: ${response.status} - ${errorText}. Check your function URL: ${gcfConfig.functionUrl}`,
           completed_at: new Date().toISOString()
         })
         .eq('id', campaignId)
       
-      throw new Error(`Google Cloud Functions failed: ${response.status} - ${errorText}`)
+      throw new Error(`Google Cloud Functions failed: ${response.status} - ${errorText}. Check your function URL.`)
     }
 
     const result = await response.json()
@@ -256,7 +270,6 @@ serve(async (req) => {
     
     // Try to revert campaign status on any error
     try {
-      const { campaignId } = await req.json()
       if (campaignId) {
         const supabaseUrl = Deno.env.get('SUPABASE_URL')!
         const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
