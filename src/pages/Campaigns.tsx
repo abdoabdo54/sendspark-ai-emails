@@ -15,7 +15,11 @@ import {
   Edit,
   Trash2,
   Send,
-  Copy
+  Copy,
+  Play,
+  Pause,
+  Settings,
+  Clock
 } from 'lucide-react';
 import { useSimpleOrganizations } from '@/contexts/SimpleOrganizationContext';
 import { useCampaigns } from '@/hooks/useCampaigns';
@@ -23,7 +27,16 @@ import Header from '@/components/Header';
 
 const Campaigns = () => {
   const { currentOrganization } = useSimpleOrganizations();
-  const { campaigns, loading, deleteCampaign } = useCampaigns(currentOrganization?.id);
+  const { 
+    campaigns, 
+    loading, 
+    deleteCampaign, 
+    prepareCampaign, 
+    sendCampaign, 
+    pauseCampaign, 
+    resumeCampaign,
+    duplicateCampaign 
+  } = useCampaigns(currentOrganization?.id);
   const [searchTerm, setSearchTerm] = useState('');
 
   const filteredCampaigns = campaigns?.filter(campaign =>
@@ -41,6 +54,12 @@ const Campaigns = () => {
         return 'bg-yellow-100 text-yellow-800 border-yellow-200';
       case 'draft':
         return 'bg-gray-100 text-gray-800 border-gray-200';
+      case 'prepared':
+        return 'bg-purple-100 text-purple-800 border-purple-200';
+      case 'paused':
+        return 'bg-orange-100 text-orange-800 border-orange-200';
+      case 'failed':
+        return 'bg-red-100 text-red-800 border-red-200';
       default:
         return 'bg-gray-100 text-gray-800 border-gray-200';
     }
@@ -66,21 +85,54 @@ const Campaigns = () => {
     }
   };
 
-  const handleDuplicate = (campaign: any) => {
-    // Store the campaign data to duplicate in localStorage and redirect to compose
-    localStorage.setItem('duplicateCampaign', JSON.stringify({
-      subject: `Copy of ${campaign.subject}`,
-      from_name: campaign.from_name,
-      html_content: campaign.html_content,
-      text_content: campaign.text_content,
-      recipients: campaign.recipients
-    }));
+  const handleDuplicate = async (campaignId: string) => {
+    try {
+      await duplicateCampaign(campaignId);
+    } catch (error) {
+      console.error('Error duplicating campaign:', error);
+    }
+  };
+
+  const handlePrepare = async (campaignId: string) => {
+    try {
+      await prepareCampaign(campaignId);
+    } catch (error) {
+      console.error('Error preparing campaign:', error);
+    }
+  };
+
+  const handleSend = async (campaignId: string) => {
+    try {
+      await sendCampaign(campaignId);
+    } catch (error) {
+      console.error('Error sending campaign:', error);
+    }
+  };
+
+  const handlePause = async (campaignId: string) => {
+    try {
+      await pauseCampaign(campaignId);
+    } catch (error) {
+      console.error('Error pausing campaign:', error);
+    }
+  };
+
+  const handleResume = async (campaignId: string) => {
+    try {
+      await resumeCampaign(campaignId);
+    } catch (error) {
+      console.error('Error resuming campaign:', error);
+    }
+  };
+
+  const handleEdit = (campaign: any) => {
+    localStorage.setItem('editCampaign', JSON.stringify(campaign));
     window.location.href = '/';
   };
 
   const handleViewAnalytics = (campaignId: string) => {
-    // This would typically open an analytics modal or navigate to an analytics page
     console.log('View analytics for campaign:', campaignId);
+    // This would typically open an analytics modal or navigate to an analytics page
   };
 
   return (
@@ -177,6 +229,59 @@ const Campaigns = () => {
                       </div>
                       
                       <div className="flex items-center gap-2">
+                        {/* Prepare Button - only for draft campaigns */}
+                        {campaign.status === 'draft' && (
+                          <Button 
+                            variant="outline" 
+                            size="sm"
+                            onClick={() => handlePrepare(campaign.id)}
+                            title="Prepare Campaign"
+                          >
+                            <Settings className="w-4 h-4" />
+                            Prepare
+                          </Button>
+                        )}
+
+                        {/* Send Button - for prepared campaigns */}
+                        {campaign.status === 'prepared' && (
+                          <Button 
+                            variant="default" 
+                            size="sm"
+                            onClick={() => handleSend(campaign.id)}
+                            title="Send Campaign"
+                          >
+                            <Send className="w-4 h-4" />
+                            Send
+                          </Button>
+                        )}
+
+                        {/* Pause Button - for sending campaigns */}
+                        {campaign.status === 'sending' && (
+                          <Button 
+                            variant="outline" 
+                            size="sm"
+                            onClick={() => handlePause(campaign.id)}
+                            title="Pause Campaign"
+                          >
+                            <Pause className="w-4 h-4" />
+                            Pause
+                          </Button>
+                        )}
+
+                        {/* Resume Button - for paused campaigns */}
+                        {campaign.status === 'paused' && (
+                          <Button 
+                            variant="default" 
+                            size="sm"
+                            onClick={() => handleResume(campaign.id)}
+                            title="Resume Campaign"
+                          >
+                            <Play className="w-4 h-4" />
+                            Resume
+                          </Button>
+                        )}
+
+                        {/* Analytics Button */}
                         <Button 
                           variant="outline" 
                           size="sm" 
@@ -185,28 +290,30 @@ const Campaigns = () => {
                         >
                           <BarChart3 className="w-4 h-4" />
                         </Button>
+
+                        {/* Duplicate Button */}
                         <Button 
                           variant="outline" 
                           size="sm"
-                          onClick={() => handleDuplicate(campaign)}
+                          onClick={() => handleDuplicate(campaign.id)}
                           title="Duplicate Campaign"
                         >
                           <Copy className="w-4 h-4" />
                         </Button>
+
+                        {/* Edit Button - only for draft campaigns */}
                         {campaign.status === 'draft' && (
                           <Button 
                             variant="outline" 
                             size="sm"
-                            onClick={() => {
-                              // Store campaign for editing and redirect
-                              localStorage.setItem('editCampaign', JSON.stringify(campaign));
-                              window.location.href = '/';
-                            }}
+                            onClick={() => handleEdit(campaign)}
                             title="Edit Campaign"
                           >
                             <Edit className="w-4 h-4" />
                           </Button>
                         )}
+
+                        {/* Delete Button */}
                         <Button 
                           variant="outline" 
                           size="sm"

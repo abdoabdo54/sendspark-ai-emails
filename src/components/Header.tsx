@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -54,7 +53,7 @@ const Header: React.FC<HeaderProps> = ({ activeTab, onTabChange }) => {
   const navItems = [
     { id: 'bulk', label: 'Bulk Email', icon: Mail },
     { id: 'single', label: 'Single Email', icon: Mail },
-    { id: 'campaigns', label: 'Campaigns', icon: Mail },
+    { id: 'campaigns', label: 'Email Campaigns', icon: Mail },
     { id: 'analytics', label: 'Analytics', icon: BarChart3 },
     { id: 'accounts', label: 'Accounts', icon: User },
   ];
