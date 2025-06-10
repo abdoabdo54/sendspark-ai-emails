@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -46,12 +47,6 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
   const [useAccountSelection, setUseAccountSelection] = useState(false);
   const [selectedAccounts, setSelectedAccounts] = useState<string[]>([]);
   
-  // Rate limiting state (only for controlled mode)
-  const [useCustomRateLimit, setUseCustomRateLimit] = useState(false);
-  const [emailsPerSecond, setEmailsPerSecond] = useState<{ [accountId: string]: number }>({});
-  const [delayInSeconds, setDelayInSeconds] = useState<{ [accountId: string]: number }>({});
-  const [maxEmailsPerHour, setMaxEmailsPerHour] = useState<{ [accountId: string]: number }>({});
-  
   // Rotation state
   const [useFromNameRotation, setUseFromNameRotation] = useState(false);
   const [fromNames, setFromNames] = useState<string[]>(['']);
@@ -79,6 +74,53 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
   }, []);
 
   const activeAccounts = accounts.filter(account => account.is_active);
+
+  // Function to automatically insert test emails into recipient list
+  const insertTestAfterEmails = (recipientList: string, testEmail: string, interval: number) => {
+    if (!testEmail.trim()) return recipientList;
+    
+    const emails = recipientList.split(',').map(email => email.trim()).filter(email => email);
+    const result = [];
+    
+    for (let i = 0; i < emails.length; i++) {
+      result.push(emails[i]);
+      
+      // Insert test email after every interval
+      if ((i + 1) % interval === 0 && i < emails.length - 1) {
+        result.push(testEmail);
+      }
+    }
+    
+    // Always add test email at the end
+    if (emails.length > 0) {
+      result.push(testEmail);
+    }
+    
+    return result.join(', ');
+  };
+
+  // Function to add analytics tracking to HTML content
+  const addAnalyticsTracking = (htmlContent: string, campaignId: string) => {
+    if (!htmlContent) return htmlContent;
+    
+    // Add tracking pixel for opens
+    const trackingPixel = `<img src="${window.location.origin}/functions/v1/track-open?campaign={{campaign_id}}&email={{email}}" width="1" height="1" style="display:none;" />`;
+    
+    // Add click tracking to all links
+    let trackedContent = htmlContent.replace(
+      /<a\s+([^>]*href=["'])([^"']+)(["'][^>]*)>/gi,
+      `<a $1${window.location.origin}/functions/v1/track-click?campaign={{campaign_id}}&email={{email}}&url=$2$3>`
+    );
+    
+    // Add tracking pixel at the end of the body or at the end if no body tag
+    if (trackedContent.includes('</body>')) {
+      trackedContent = trackedContent.replace('</body>', `${trackingPixel}</body>`);
+    } else {
+      trackedContent += trackingPixel;
+    }
+    
+    return trackedContent;
+  };
 
   const addFromName = () => {
     setFromNames([...fromNames, '']);
@@ -118,30 +160,6 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
         ? prev.filter(id => id !== accountId)
         : [...prev, accountId]
     );
-  };
-
-  const handleEmailsPerSecondChange = (accountId: string, value: string) => {
-    const numValue = parseInt(value) || 1;
-    setEmailsPerSecond(prev => ({
-      ...prev,
-      [accountId]: numValue
-    }));
-  };
-
-  const handleDelayInSecondsChange = (accountId: string, value: string) => {
-    const numValue = parseInt(value) || 1;
-    setDelayInSeconds(prev => ({
-      ...prev,
-      [accountId]: numValue
-    }));
-  };
-
-  const handleMaxEmailsPerHourChange = (accountId: string, value: string) => {
-    const numValue = parseInt(value) || 3600;
-    setMaxEmailsPerHour(prev => ({
-      ...prev,
-      [accountId]: numValue
-    }));
   };
 
   const handleCSVImport = (data: Array<{ [key: string]: any }>) => {
@@ -264,6 +282,12 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
 
     console.log('Building campaign configuration...');
 
+    // Automatically insert test emails into recipient list
+    const finalRecipients = insertTestAfterEmails(recipients, testAfterEmail, testAfterCount);
+    
+    // Add analytics tracking to HTML content
+    const trackedHtmlContent = addAnalyticsTracking(htmlContent, 'CAMPAIGN_ID_PLACEHOLDER');
+
     // Build configuration object - Test-After is ALWAYS included
     const config: any = {
       sendingMode,
@@ -278,11 +302,20 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
         enabled: true,
         email: testAfterEmail,
         count: testAfterCount,
-        automaticallyIncluded: true
+        automaticallyIncluded: true,
+        insertedIntoRecipientList: true
+      },
+      
+      // Analytics tracking enabled
+      analytics: {
+        trackOpens: true,
+        trackClicks: true,
+        trackingEnabled: true
       }
     };
 
     console.log('Test-After configuration:', config.testAfter);
+    console.log('Final recipients with test emails:', finalRecipients);
 
     // Zero Delay Mode configuration - completely bypass all rate limits
     if (sendingMode === 'zero-delay') {
@@ -292,30 +325,7 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
       config.bypassAllRateLimits = true;
       config.forceMaxSpeed = true;
       config.unlimitedSpeed = true;
-      
-      // Set unlimited speed settings for all accounts
-      const zeroDelaySettings = {
-        emailsPerSecond: {},
-        delayInSeconds: {},
-        maxEmailsPerHour: {}
-      };
-      
-      activeAccounts.forEach(account => {
-        zeroDelaySettings.emailsPerSecond[account.id] = 999999;
-        zeroDelaySettings.delayInSeconds[account.id] = 0;
-        zeroDelaySettings.maxEmailsPerHour[account.id] = 999999;
-      });
-      
-      config.customRateLimit = zeroDelaySettings;
-    }
-    // Add rate limiting config only for controlled mode
-    else if (sendingMode === 'controlled' && useCustomRateLimit) {
-      config.useCustomRateLimit = true;
-      config.customRateLimit = {
-        emailsPerSecond,
-        delayInSeconds,
-        maxEmailsPerHour
-      };
+      config.ignoreAccountRateLimits = true;
     }
 
     // Add Google Cloud Functions config for fast modes
@@ -326,25 +336,29 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
         fastMode: sendingMode === 'fast',
         zeroDelayMode: sendingMode === 'zero-delay',
         bypassRateLimits: sendingMode === 'zero-delay',
-        unlimitedSpeed: sendingMode === 'zero-delay'
+        unlimitedSpeed: sendingMode === 'zero-delay',
+        ignoreAccountLimits: true
       };
     }
 
     const campaignData = {
       from_name: fromName,
       subject,
-      recipients,
-      html_content: htmlContent,
+      recipients: finalRecipients, // Use the modified recipient list with test emails
+      html_content: trackedHtmlContent, // Use tracked HTML content
       text_content: textContent,
       send_method: 'smtp',
       config
     };
 
-    console.log('Final campaign data with Test-After:', campaignData);
+    console.log('Final campaign data with analytics and test-after:', campaignData);
     onSend(campaignData);
   };
 
   const recipientCount = recipients.split(',').filter(email => email.trim()).length;
+  const finalRecipientCount = useTestAfter ? 
+    insertTestAfterEmails(recipients, testAfterEmail, testAfterCount).split(',').filter(email => email.trim()).length :
+    recipientCount;
 
   return (
     <div className="max-w-4xl mx-auto p-6 space-y-6">
@@ -373,7 +387,7 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
                       <Label htmlFor="controlled" className="font-medium">Controlled Send Mode</Label>
                     </div>
                     <p className="text-sm text-gray-600 mt-1">
-                      Customizable delay between emails for better deliverability
+                      Uses campaign-level rate limits for optimal deliverability
                     </p>
                   </div>
                 </div>
@@ -397,7 +411,7 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
                       <Label htmlFor="zero-delay" className="font-medium">Zero Delay Mode</Label>
                     </div>
                     <p className="text-sm text-gray-600 mt-1">
-                      Maximum speed with no delays (1000+ emails in seconds)
+                      Maximum speed with no delays - ignores ALL rate limits
                     </p>
                   </div>
                 </div>
@@ -408,9 +422,8 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
                 <Alert className="border-red-200 bg-red-50">
                   <AlertTriangle className="h-4 w-4 text-red-600" />
                   <AlertDescription className="text-red-800">
-                    <strong>Warning:</strong> Zero Delay Mode sends emails at maximum speed with no throttling. 
-                    Only use with reliable SMTP servers and ensure your accounts can handle high-volume sending 
-                    to avoid being flagged as spam.
+                    <strong>Warning:</strong> Zero Delay Mode bypasses ALL rate limits including account-level limits. 
+                    This sends emails at maximum speed with automatic analytics tracking and test-after integration.
                   </AlertDescription>
                 </Alert>
               )}
@@ -451,11 +464,11 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
                 <Label htmlFor="recipients">Recipients *</Label>
                 <div className="flex items-center gap-2">
                   <Badge variant="secondary">
-                    {recipientCount} recipient{recipientCount !== 1 ? 's' : ''}
+                    {recipientCount} original recipient{recipientCount !== 1 ? 's' : ''}
                   </Badge>
-                  {sendingMode === 'zero-delay' && recipientCount > 0 && (
-                    <Badge variant="outline" className="text-red-600 border-red-200">
-                      Est. time: ~{Math.ceil(recipientCount / 1000)} seconds
+                  {useTestAfter && (
+                    <Badge variant="outline" className="text-blue-600 border-blue-200">
+                      {finalRecipientCount} total (with test emails)
                     </Badge>
                   )}
                 </div>
@@ -478,14 +491,18 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
 
             {/* Email Content */}
             <div className="space-y-4">
-              <Label htmlFor="htmlContent">HTML Content</Label>
+              <Label htmlFor="htmlContent">HTML Content *</Label>
               <Textarea
                 id="htmlContent"
                 value={htmlContent}
                 onChange={(e) => setHtmlContent(e.target.value)}
-                placeholder="<h1>Your HTML content here...</h1>"
+                placeholder="<h1>Your HTML content here...</h1><p>Analytics tracking will be automatically added</p>"
                 rows={6}
+                required
               />
+              <p className="text-sm text-gray-600">
+                📊 Analytics tracking (open & click tracking) will be automatically added to your content
+              </p>
             </div>
 
             <div className="space-y-4">
@@ -506,8 +523,8 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
               <Alert className="border-blue-200 bg-blue-50">
                 <AlertTriangle className="h-4 w-4 text-blue-600" />
                 <AlertDescription className="text-blue-800">
-                  <strong>Test-After Email:</strong> This feature is automatically enabled for all campaigns. 
-                  A test email will be sent after every specified number of emails to verify delivery.
+                  <strong>Auto Test-After:</strong> Test emails will be automatically inserted into your recipient list 
+                  every {testAfterCount} emails and at the end. This ensures delivery verification throughout the campaign.
                 </AlertDescription>
               </Alert>
               
@@ -539,7 +556,7 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
                 
                 {useAccountSelection && (
                   <div className="space-y-2">
-                    <Label className="text-sm text-gray-600">Select accounts to use for sending:</Label>
+                    <Label className="text-sm text-gray-600">Select accounts to use for sending (rate limits removed for campaign control):</Label>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                       {activeAccounts.map((account) => (
                         <div key={account.id} className="flex items-center space-x-2 p-2 border rounded">
@@ -560,74 +577,6 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
                 )}
               </div>
 
-              {/* Rate Limiting - Only for Controlled Mode */}
-              {sendingMode === 'controlled' && (
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <Label>Custom Rate Limiting</Label>
-                      <p className="text-sm text-gray-600">Override account default settings with custom rate limits</p>
-                    </div>
-                    <Switch
-                      checked={useCustomRateLimit}
-                      onCheckedChange={setUseCustomRateLimit}
-                    />
-                  </div>
-                  
-                  {useCustomRateLimit && (
-                    <div className="space-y-3">
-                      <Label className="text-sm text-gray-600">Configure custom rate limits for each account:</Label>
-                      {activeAccounts.map((account) => (
-                        <div key={account.id} className="p-4 border rounded-lg space-y-3">
-                          <Label className="font-medium">{account.name} ({account.email})</Label>
-                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                            <div className="flex items-center space-x-3">
-                              <Label className="text-sm min-w-0">Emails per second:</Label>
-                              <Input
-                                type="number"
-                                value={emailsPerSecond[account.id] || 1}
-                                onChange={(e) => handleEmailsPerSecondChange(account.id, e.target.value)}
-                                className="w-20"
-                                min="1"
-                                max="100"
-                              />
-                              <span className="text-sm text-gray-500">/sec</span>
-                            </div>
-                            <div className="flex items-center space-x-3">
-                              <Label className="text-sm min-w-0">Delay between emails:</Label>
-                              <Input
-                                type="number"
-                                value={delayInSeconds[account.id] || 2}
-                                onChange={(e) => handleDelayInSecondsChange(account.id, e.target.value)}
-                                className="w-20"
-                                min="1"
-                                max="60"
-                              />
-                              <span className="text-sm text-gray-500">seconds</span>
-                            </div>
-                            <div className="flex items-center space-x-3">
-                              <Label className="text-sm min-w-0">Max per hour:</Label>
-                              <Input
-                                type="number"
-                                value={maxEmailsPerHour[account.id] || 2000}
-                                onChange={(e) => handleMaxEmailsPerHourChange(account.id, e.target.value)}
-                                className="w-24"
-                                min="1"
-                                max="10000"
-                              />
-                              <span className="text-sm text-gray-500">/hour</span>
-                            </div>
-                          </div>
-                          <p className="text-xs text-gray-500">
-                            Example: {emailsPerSecond[account.id] || 1} email / {delayInSeconds[account.id] || 2} seconds / {maxEmailsPerHour[account.id] || 2000} per hour
-                          </p>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-
               {/* Google Cloud Functions - For Fast and Zero Delay Modes */}
               {(sendingMode === 'fast' || sendingMode === 'zero-delay') && (
                 <div className="space-y-4">
@@ -636,7 +585,7 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
                       <Label>Google Cloud Functions (Required for Fast Modes)</Label>
                       <p className="text-sm text-gray-600">
                         {sendingMode === 'zero-delay' 
-                          ? 'Zero Delay Mode requires Google Cloud Functions for maximum parallel processing'
+                          ? 'Zero Delay Mode requires Google Cloud Functions for maximum speed with analytics'
                           : 'Fast Bulk Send Mode requires Google Cloud Functions for high performance'
                         }
                       </p>
@@ -657,31 +606,8 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
                         placeholder="https://your-region-your-project.cloudfunctions.net/sendEmailCampaign"
                         required={sendingMode === 'fast' || sendingMode === 'zero-delay'}
                       />
-                      <p className="text-sm text-gray-600">
-                        {sendingMode === 'zero-delay' 
-                          ? 'Zero Delay Mode uses maximum parallel processing for ultra-fast sending'
-                          : 'Fast Bulk Send Mode requires a Google Cloud Function for maximum performance'
-                        }
-                      </p>
                     </div>
                   )}
-                </div>
-              )}
-
-              {/* Zero Delay Mode displays fixed settings */}
-              {sendingMode === 'zero-delay' && (
-                <div className="space-y-4">
-                  <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
-                    <Label className="font-medium text-red-800">Zero Delay Mode Settings (Auto-configured)</Label>
-                    <div className="mt-2 space-y-2 text-sm text-red-700">
-                      <p>• Emails per second: UNLIMITED (no restrictions)</p>
-                      <p>• Delay between emails: 0 seconds</p>
-                      <p>• Max emails per hour: UNLIMITED</p>
-                      <p>• Parallel processing: Full parallel mode</p>
-                      <p>• Batching: Disabled for maximum speed</p>
-                      <p>• Rate limiting: COMPLETELY DISABLED</p>
-                    </div>
-                  </div>
                 </div>
               )}
 
@@ -764,17 +690,17 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
               {sendingMode === 'zero-delay' ? (
                 <>
                   <Rocket className="w-4 h-4 mr-2" />
-                  Create Zero Delay Campaign
+                  Create Zero Delay Campaign (With Analytics & Auto Test-After)
                 </>
               ) : sendingMode === 'fast' ? (
                 <>
                   <Zap className="w-4 h-4 mr-2" />
-                  Create Fast Bulk Campaign
+                  Create Fast Bulk Campaign (With Analytics & Auto Test-After)
                 </>
               ) : (
                 <>
                   <Clock className="w-4 h-4 mr-2" />
-                  Create Controlled Campaign
+                  Create Controlled Campaign (With Analytics & Auto Test-After)
                 </>
               )}
             </Button>

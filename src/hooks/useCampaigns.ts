@@ -247,13 +247,17 @@ export const useCampaigns = (organizationId?: string) => {
 
   const prepareCampaign = async (campaignId: string) => {
     try {
-      console.log('Preparing campaign with enhanced rotation and test-after features:', campaignId);
+      console.log('Preparing campaign with enhanced analytics and auto test-after:', campaignId);
 
       // Get campaign details to check configuration
       const campaign = campaigns.find(c => c.id === campaignId);
       if (!campaign) {
         throw new Error('Campaign not found');
       }
+
+      // Parse recipients to check for test emails
+      const allRecipients = campaign.recipients.split(',').map(email => email.trim()).filter(email => email);
+      console.log('Recipients including test emails:', allRecipients);
 
       // Get accounts based on campaign configuration
       let accountQuery = supabase
@@ -311,28 +315,31 @@ export const useCampaigns = (organizationId?: string) => {
         subjects: campaignConfig.subjects || []
       };
 
-      // Test after configuration
+      // Test after configuration - always enabled and auto-included
       const testAfterConfig = {
-        useTestAfter: campaignConfig.useTestAfter || false,
-        testAfterEmail: campaignConfig.testAfterEmail || '',
-        testAfterCount: campaignConfig.testAfterCount || 100
+        enabled: true,
+        email: campaignConfig.testAfter?.email || '',
+        count: campaignConfig.testAfter?.count || 100,
+        automaticallyIncluded: true,
+        insertedIntoRecipientList: true
       };
 
-      // Rate limits for accounts
-      const rateLimit = {};
-      accountsToUse.forEach(account => {
-        const accountConfig = account.config as any;
-        const emailsPerHour = accountConfig?.emails_per_hour || 3600;
-        rateLimit[account.id] = emailsPerHour;
-      });
+      // Analytics configuration - always enabled
+      const analyticsConfig = {
+        trackOpens: true,
+        trackClicks: true,
+        trackingEnabled: true,
+        baseUrl: window.location.origin
+      };
 
       console.log('Enhanced campaign preparation with:', {
         campaignId,
         selectedAccounts: accountsToUse.map(acc => acc.id),
         rotation,
         testAfterConfig,
-        rateLimit,
-        googleCloudConfig
+        analyticsConfig,
+        googleCloudConfig,
+        totalRecipients: allRecipients.length
       });
 
       // Call the enhanced prepare function
@@ -341,9 +348,10 @@ export const useCampaigns = (organizationId?: string) => {
           campaignId,
           selectedAccounts: accountsToUse.map(acc => acc.id),
           rotation,
-          rateLimit,
           googleCloudConfig,
-          testAfterConfig
+          testAfterConfig,
+          analyticsConfig,
+          ignoreAccountRateLimits: true // Always ignore account-level rate limits
         }
       });
 
@@ -356,7 +364,7 @@ export const useCampaigns = (organizationId?: string) => {
 
       toast({
         title: "Success",
-        description: `Campaign prepared successfully! ${data.totalEmails} emails ready across ${data.accountsUsed} accounts with rotation and test-after features enabled.`
+        description: `Campaign prepared successfully! ${data.totalEmails} emails ready with analytics tracking and auto test-after integration across ${data.accountsUsed} accounts.`
       });
 
       await fetchCampaigns();
