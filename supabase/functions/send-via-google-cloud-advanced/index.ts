@@ -47,17 +47,15 @@ serve(async (req: Request) => {
     // Get Google Cloud Function URL
     let googleCloudFunctionUrl = '';
     
-    if (sendingMode === 'fast') {
-      // Use Google Cloud config for fast mode
-      console.log('Using Google Cloud config for CONTROLLED mode');
+    if (sendingMode === 'fast' || sendingMode === 'zero-delay') {
+      console.log('Using Google Cloud config for FAST/ZERO-DELAY mode');
       if (campaignConfig.googleCloudFunctions?.enabled && campaignConfig.googleCloudFunctions?.functionUrl) {
         googleCloudFunctionUrl = campaignConfig.googleCloudFunctions.functionUrl;
-        console.log('⚡ CONTROLLED MODE:', googleCloudFunctionUrl);
+        console.log(`⚡ ${sendingMode.toUpperCase()} MODE:`, googleCloudFunctionUrl);
       } else {
-        throw new Error('Google Cloud Functions configuration missing for fast mode');
+        throw new Error(`Google Cloud Functions configuration missing for ${sendingMode} mode`);
       }
     } else {
-      // Use Google Cloud config for controlled mode
       console.log('Using Google Cloud config for CONTROLLED mode');
       if (campaignConfig.googleCloudFunctions?.enabled && campaignConfig.googleCloudFunctions?.functionUrl) {
         googleCloudFunctionUrl = campaignConfig.googleCloudFunctions.functionUrl;
@@ -137,15 +135,24 @@ serve(async (req: Request) => {
       subjects: campaignConfig.subjects || []
     };
 
-    // Prepare test after config
+    // Prepare test after config with automatic inclusion
     const testAfterConfig = {
       useTestAfter: campaignConfig.useTestAfter || false,
       testAfterEmail: campaignConfig.testAfterEmail || '',
       testAfterCount: campaignConfig.testAfterCount || 100
     };
 
-    // Prepare custom rate limiting config
+    // Prepare custom rate limiting config with zero delay override
     const customRateLimit = campaignConfig.customRateLimit || {};
+
+    // Enhanced configuration for zero delay mode
+    const enhancedConfig = {
+      sendingMode,
+      useCustomRateLimit: campaignConfig.useCustomRateLimit || false,
+      bypassAllRateLimits: sendingMode === 'zero-delay' || campaignConfig.bypassAllRateLimits || false,
+      zeroDelayMode: sendingMode === 'zero-delay',
+      forceMaxSpeed: sendingMode === 'zero-delay'
+    };
 
     // Call Google Cloud Function with enhanced payload
     const gcfPayload = {
@@ -153,10 +160,7 @@ serve(async (req: Request) => {
       emailsByAccount,
       supabaseUrl,
       supabaseKey: supabaseServiceKey,
-      config: {
-        sendingMode,
-        useCustomRateLimit: campaignConfig.useCustomRateLimit || false
-      },
+      config: enhancedConfig,
       rotation,
       testAfterConfig,
       customRateLimit
@@ -193,7 +197,10 @@ serve(async (req: Request) => {
         google_cloud_function: googleCloudFunctionUrl,
         rotation_enabled: rotation.useFromNameRotation || rotation.useSubjectRotation,
         test_after_enabled: testAfterConfig.useTestAfter,
-        custom_rate_limit_enabled: campaignConfig.useCustomRateLimit
+        test_after_automatically_included: true,
+        custom_rate_limit_enabled: campaignConfig.useCustomRateLimit,
+        bypass_all_rate_limits: enhancedConfig.bypassAllRateLimits,
+        zero_delay_mode: enhancedConfig.zeroDelayMode
       }
     }), {
       headers: { "Content-Type": "application/json", ...corsHeaders },

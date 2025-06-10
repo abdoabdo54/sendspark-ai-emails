@@ -269,17 +269,19 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
       fromNames: useFromNameRotation ? fromNames.filter(name => name.trim()) : [],
       useSubjectRotation, 
       subjects: useSubjectRotation ? subjects.filter(subj => subj.trim()) : [],
-      // Add test-after configuration
+      
+      // Automatically include test-after configuration
       useTestAfter,
       testAfterEmail: useTestAfter ? testAfterEmail : '',
       testAfterCount: useTestAfter ? testAfterCount : 100
     };
 
-    // Zero Delay Mode configuration
+    // Zero Delay Mode configuration - completely bypass all rate limits
     if (sendingMode === 'zero-delay') {
       config.forceFastSend = true;
       config.useCustomRateLimit = true;
       config.zeroDelayMode = true;
+      config.bypassAllRateLimits = true; // New flag to bypass account rate limits
       
       // Set unlimited speed settings for all accounts
       const zeroDelaySettings = {
@@ -312,7 +314,8 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
         enabled: true,
         functionUrl: googleCloudFunctionUrl,
         fastMode: sendingMode === 'fast',
-        zeroDelayMode: sendingMode === 'zero-delay'
+        zeroDelayMode: sendingMode === 'zero-delay',
+        bypassRateLimits: sendingMode === 'zero-delay' // Bypass all rate limits in zero delay mode
       };
     }
 
@@ -326,7 +329,7 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
       config
     };
 
-    console.log('Campaign data with test-after config:', campaignData);
+    console.log('Campaign data with enhanced configuration:', campaignData);
     onSend(campaignData);
   };
 
@@ -502,6 +505,16 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
             {/* Advanced Configuration */}
             <div className="space-y-6">
               <h3 className="text-lg font-medium">Advanced Configuration</h3>
+
+              {/* Test-After Configuration - Always shown */}
+              <TestAfterSection
+                useTestAfter={useTestAfter}
+                onUseTestAfterChange={setUseTestAfter}
+                testAfterEmail={testAfterEmail}
+                onTestAfterEmailChange={setTestAfterEmail}
+                testAfterCount={testAfterCount}
+                onTestAfterCountChange={setTestAfterCount}
+              />
 
               {/* Account Selection */}
               <div className="space-y-4">
