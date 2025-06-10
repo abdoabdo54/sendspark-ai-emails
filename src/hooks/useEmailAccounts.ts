@@ -67,7 +67,7 @@ export const useEmailAccounts = (organizationId?: string) => {
         type: item.type as 'apps-script' | 'powermta' | 'smtp',
         // Remove rate limiting from config to use campaign-level controls
         config: {
-          ...item.config,
+          ...(item.config || {}),
           // Remove these rate limiting fields if they exist
           emails_per_hour: undefined,
           emails_per_second: undefined,
@@ -111,7 +111,7 @@ export const useEmailAccounts = (organizationId?: string) => {
         is_active: accountData.is_active,
         // Remove rate limiting from account config - will use campaign-level controls
         config: {
-          ...accountData.config,
+          ...(accountData.config || {}),
           // Ensure no rate limiting fields are saved at account level
           emails_per_hour: undefined,
           emails_per_second: undefined,
@@ -168,7 +168,7 @@ export const useEmailAccounts = (organizationId?: string) => {
       const cleanUpdates = {
         ...updates,
         config: {
-          ...updates.config,
+          ...(updates.config || {}),
           // Remove rate limiting fields
           emails_per_hour: undefined,
           emails_per_second: undefined,
