@@ -300,9 +300,19 @@ export const useCampaigns = (organizationId?: string) => {
       // Refresh campaigns to show updated status
       await fetchCampaigns();
       
+      toast({
+        title: "Success",
+        description: "Campaign sending initiated successfully!"
+      });
+      
       return response.data;
     } catch (error) {
       console.error('Error in sendCampaign:', error);
+      toast({
+        title: "Error",
+        description: `Failed to send campaign: ${error.message}`,
+        variant: "destructive"
+      });
       throw error;
     }
   };

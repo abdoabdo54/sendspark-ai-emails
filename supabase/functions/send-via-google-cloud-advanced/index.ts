@@ -221,6 +221,14 @@ serve(async (req) => {
       );
     }
 
+    // Extract test after configuration correctly from campaign config
+    const testAfterConfig = {
+      useTestAfter: campaign.config?.useTestAfter || false,
+      testAfterEmail: campaign.config?.testAfterEmail || '',
+      testAfterCount: campaign.config?.testAfterCount || 100,
+      testEmailSubjectPrefix: campaign.config?.testEmailSubjectPrefix || 'TEST DELIVERY REPORT'
+    };
+
     // Prepare MAXIMUM SPEED payload for Google Cloud Function
     const payload = {
       campaignId,
@@ -230,10 +238,12 @@ serve(async (req) => {
       supabaseUrl,
       supabaseKey,
       sendingMode: campaign.config?.sendingMode || 'controlled',
-      testAfter: campaign.config?.testAfter || {
-        useTestAfter: false,
-        testAfterEmail: '',
-        testAfterCount: 100
+      testAfterConfig: testAfterConfig, // Use testAfterConfig instead of testAfter
+      rotation: {
+        useFromNameRotation: campaign.config?.useFromNameRotation || false,
+        fromNames: campaign.config?.fromNames || [],
+        useSubjectRotation: campaign.config?.useSubjectRotation || false,
+        subjects: campaign.config?.subjects || []
       },
       config: {
         highSpeed: true,
@@ -241,12 +251,16 @@ serve(async (req) => {
         parallelProcessing: true,
         optimizedBatching: true,
         maxConcurrency: campaign.config?.sendingMode === 'maximum',
-        ultraFast: campaign.config?.sendingMode === 'fast' || campaign.config?.sendingMode === 'maximum'
+        ultraFast: campaign.config?.sendingMode === 'fast' || campaign.config?.sendingMode === 'maximum',
+        sendingMode: campaign.config?.sendingMode || 'controlled',
+        emailsPerSecond: campaign.config?.emailsPerSecond || 1,
+        useCustomDelay: campaign.config?.useCustomDelay || false,
+        customDelayMs: campaign.config?.customDelayMs || 1000
       }
     };
 
     console.log(`🎯 MAXIMUM SPEED payload prepared for ${emailsByAccount.size} selected accounts, ${actualEmailsToSend} emails`);
-    console.log('Test After config:', payload.testAfter);
+    console.log('Test After config:', testAfterConfig);
 
     // Validate function URL format
     if (!gcfConfig.functionUrl.startsWith('https://')) {
