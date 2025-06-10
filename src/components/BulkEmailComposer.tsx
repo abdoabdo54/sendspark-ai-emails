@@ -41,7 +41,8 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
   
   // Rate limiting state (only for controlled mode)
   const [useCustomRateLimit, setUseCustomRateLimit] = useState(false);
-  const [emailsPerHour, setEmailsPerHour] = useState<{ [accountId: string]: number }>({});
+  const [emailsPerSecond, setEmailsPerSecond] = useState<{ [accountId: string]: number }>({});
+  const [maxEmailsPerHour, setMaxEmailsPerHour] = useState<{ [accountId: string]: number }>({});
   
   // Rotation state
   const [useFromNameRotation, setUseFromNameRotation] = useState(false);
@@ -111,9 +112,17 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
     );
   };
 
-  const handleRateLimitChange = (accountId: string, value: string) => {
+  const handleEmailsPerSecondChange = (accountId: string, value: string) => {
+    const numValue = parseInt(value) || 1;
+    setEmailsPerSecond(prev => ({
+      ...prev,
+      [accountId]: numValue
+    }));
+  };
+
+  const handleMaxEmailsPerHourChange = (accountId: string, value: string) => {
     const numValue = parseInt(value) || 3600;
-    setEmailsPerHour(prev => ({
+    setMaxEmailsPerHour(prev => ({
       ...prev,
       [accountId]: numValue
     }));
@@ -230,7 +239,10 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
 
     // Add rate limiting config only for controlled mode
     if (sendingMode === 'controlled' && useCustomRateLimit) {
-      config.customRateLimit = emailsPerHour;
+      config.customRateLimit = {
+        emailsPerSecond,
+        maxEmailsPerHour
+      };
     }
 
     // Add Google Cloud Functions config for fast mode
@@ -432,19 +444,39 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
                   
                   {useCustomRateLimit && (
                     <div className="space-y-3">
-                      <Label className="text-sm text-gray-600">Emails per hour for each account:</Label>
+                      <Label className="text-sm text-gray-600">Configure rate limits for each account:</Label>
                       {activeAccounts.map((account) => (
-                        <div key={account.id} className="flex items-center space-x-3">
-                          <Label className="flex-1 text-sm">{account.name}:</Label>
-                          <Input
-                            type="number"
-                            value={emailsPerHour[account.id] || 3600}
-                            onChange={(e) => handleRateLimitChange(account.id, e.target.value)}
-                            className="w-24"
-                            min="1"
-                            max="10000"
-                          />
-                          <span className="text-sm text-gray-500">emails/hour</span>
+                        <div key={account.id} className="p-4 border rounded-lg space-y-3">
+                          <Label className="font-medium">{account.name} ({account.email})</Label>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="flex items-center space-x-3">
+                              <Label className="text-sm min-w-0">Emails per second:</Label>
+                              <Input
+                                type="number"
+                                value={emailsPerSecond[account.id] || 2}
+                                onChange={(e) => handleEmailsPerSecondChange(account.id, e.target.value)}
+                                className="w-20"
+                                min="1"
+                                max="100"
+                              />
+                              <span className="text-sm text-gray-500">/sec</span>
+                            </div>
+                            <div className="flex items-center space-x-3">
+                              <Label className="text-sm min-w-0">Max per hour:</Label>
+                              <Input
+                                type="number"
+                                value={maxEmailsPerHour[account.id] || 2000}
+                                onChange={(e) => handleMaxEmailsPerHourChange(account.id, e.target.value)}
+                                className="w-24"
+                                min="1"
+                                max="10000"
+                              />
+                              <span className="text-sm text-gray-500">/hour</span>
+                            </div>
+                          </div>
+                          <p className="text-xs text-gray-500">
+                            Example: 2 emails/1 second/2000 per hour
+                          </p>
                         </div>
                       ))}
                     </div>
