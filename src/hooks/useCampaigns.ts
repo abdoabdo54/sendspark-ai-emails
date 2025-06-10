@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
 
-interface Campaign {
+export interface Campaign {
   id: string;
   from_name: string;
   subject: string;
@@ -61,7 +61,13 @@ export const useCampaigns = (organizationId?: string) => {
         return;
       }
 
-      setCampaigns(data || []);
+      // Transform the data to match Campaign interface
+      const transformedData = (data || []).map(campaign => ({
+        ...campaign,
+        prepared_emails: Array.isArray(campaign.prepared_emails) ? campaign.prepared_emails : []
+      }));
+
+      setCampaigns(transformedData);
     } catch (err) {
       console.error('Error in fetchCampaigns:', err);
       setError('Failed to fetch campaigns');
@@ -147,6 +153,12 @@ export const useCampaigns = (organizationId?: string) => {
 
       console.log('Campaign created successfully:', campaign);
 
+      // Transform the returned data
+      const transformedCampaign = {
+        ...campaign,
+        prepared_emails: Array.isArray(campaign.prepared_emails) ? campaign.prepared_emails : []
+      };
+
       // Auto-prepare the campaign
       try {
         console.log('Auto-preparing campaign...');
@@ -168,9 +180,28 @@ export const useCampaigns = (organizationId?: string) => {
       // Refresh campaigns list
       await fetchCampaigns();
 
-      return campaign;
+      return transformedCampaign;
     } catch (error) {
       console.error('Error in createCampaign:', error);
+      throw error;
+    }
+  };
+
+  const updateCampaign = async (campaignId: string, updates: Partial<Campaign>) => {
+    try {
+      const { error: updateError } = await supabase
+        .from('email_campaigns')
+        .update(updates)
+        .eq('id', campaignId);
+
+      if (updateError) {
+        throw new Error(updateError.message);
+      }
+
+      // Refresh campaigns list
+      await fetchCampaigns();
+    } catch (error) {
+      console.error('Error updating campaign:', error);
       throw error;
     }
   };
@@ -228,6 +259,98 @@ export const useCampaigns = (organizationId?: string) => {
     }
   };
 
+  const pauseCampaign = async (campaignId: string) => {
+    try {
+      const { error: updateError } = await supabase
+        .from('email_campaigns')
+        .update({ status: 'paused' })
+        .eq('id', campaignId);
+
+      if (updateError) {
+        throw new Error(updateError.message);
+      }
+
+      await fetchCampaigns();
+      
+      toast({
+        title: "Success",
+        description: "Campaign paused successfully"
+      });
+    } catch (error) {
+      console.error('Error pausing campaign:', error);
+      toast({
+        title: "Error",
+        description: `Failed to pause campaign: ${error.message}`,
+        variant: "destructive"
+      });
+      throw error;
+    }
+  };
+
+  const resumeCampaign = async (campaignId: string) => {
+    try {
+      const response = await supabase.functions.invoke('send-via-google-cloud-advanced', {
+        body: { 
+          campaignId,
+          resumeFromIndex: 0
+        }
+      });
+
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+
+      await fetchCampaigns();
+      
+      toast({
+        title: "Success",
+        description: "Campaign resumed successfully"
+      });
+    } catch (error) {
+      console.error('Error resuming campaign:', error);
+      toast({
+        title: "Error",
+        description: `Failed to resume campaign: ${error.message}`,
+        variant: "destructive"
+      });
+      throw error;
+    }
+  };
+
+  const duplicateCampaign = async (campaignId: string) => {
+    try {
+      const campaign = campaigns.find(c => c.id === campaignId);
+      if (!campaign) {
+        throw new Error('Campaign not found');
+      }
+
+      const duplicateData: CreateCampaignData = {
+        from_name: campaign.from_name,
+        subject: `Copy of ${campaign.subject}`,
+        recipients: campaign.recipients,
+        html_content: campaign.html_content,
+        text_content: campaign.text_content,
+        send_method: campaign.send_method,
+        config: campaign.config
+      };
+
+      await createCampaign(duplicateData);
+      
+      toast({
+        title: "Success",
+        description: "Campaign duplicated successfully"
+      });
+    } catch (error) {
+      console.error('Error duplicating campaign:', error);
+      toast({
+        title: "Error",
+        description: `Failed to duplicate campaign: ${error.message}`,
+        variant: "destructive"
+      });
+      throw error;
+    }
+  };
+
   const deleteCampaign = async (campaignId: string) => {
     try {
       const { error: deleteError } = await supabase
@@ -267,8 +390,12 @@ export const useCampaigns = (organizationId?: string) => {
     error,
     fetchCampaigns,
     createCampaign,
+    updateCampaign,
     prepareCampaign,
     sendCampaign,
+    pauseCampaign,
+    resumeCampaign,
+    duplicateCampaign,
     deleteCampaign,
     refetch: fetchCampaigns
   };
