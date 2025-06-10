@@ -1,5 +1,6 @@
 
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -23,6 +24,7 @@ import { useCampaigns } from '@/hooks/useCampaigns';
 import Header from '@/components/Header';
 
 const Campaigns = () => {
+  const navigate = useNavigate();
   const { currentOrganization } = useSimpleOrganizations();
   const { 
     campaigns, 
@@ -124,7 +126,7 @@ const Campaigns = () => {
 
   const handleEdit = (campaign: any) => {
     localStorage.setItem('editCampaign', JSON.stringify(campaign));
-    window.location.href = '/';
+    navigate('/');
   };
 
   const handleViewAnalytics = (campaignId: string) => {
@@ -132,9 +134,13 @@ const Campaigns = () => {
     // This would typically open an analytics modal or navigate to an analytics page
   };
 
+  const handleCreateCampaign = () => {
+    navigate('/');
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
-      <Header />
+      <Header activeTab="campaigns" />
       
       <div className="container mx-auto p-6">
         {/* Header Section */}
@@ -156,7 +162,7 @@ const Campaigns = () => {
               />
             </div>
             <Button 
-              onClick={() => window.location.href = '/'} 
+              onClick={handleCreateCampaign} 
               className="flex items-center gap-2 bg-slate-900 hover:bg-slate-800"
             >
               <Plus className="w-4 h-4" />
@@ -188,7 +194,7 @@ const Campaigns = () => {
                 <p className="text-slate-600 mb-4">
                   {searchTerm ? 'No campaigns match your search.' : 'Create your first email campaign to get started.'}
                 </p>
-                <Button onClick={() => window.location.href = '/'}>
+                <Button onClick={handleCreateCampaign}>
                   <Plus className="w-4 h-4 mr-2" />
                   Create Your First Campaign
                 </Button>

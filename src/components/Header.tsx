@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { 
@@ -65,12 +65,13 @@ const Header: React.FC<HeaderProps> = ({ activeTab, onTabChange }) => {
     { id: 'bulk', label: 'Bulk Email', icon: Mail, onClick: () => { handleHomeNavigation(); onTabChange?.('bulk'); } },
     { id: 'single', label: 'Single Email', icon: Mail, onClick: () => { handleHomeNavigation(); onTabChange?.('single'); } },
     { id: 'campaigns', label: 'Email Campaigns', icon: Mail, onClick: handleEmailCampaignsClick },
+    { id: 'testing', label: 'Testing', icon: BarChart3, onClick: () => { handleHomeNavigation(); onTabChange?.('testing'); } },
     { id: 'analytics', label: 'Analytics', icon: BarChart3, onClick: () => { handleHomeNavigation(); onTabChange?.('analytics'); } },
     { id: 'accounts', label: 'Accounts', icon: User, onClick: () => { handleHomeNavigation(); onTabChange?.('accounts'); } },
   ];
 
   const sidebarItems = [
-    { id: 'accounts-local', label: 'Accounts', icon: User, onClick: () => { handleHomeNavigation(); onTabChange?.('accounts-local'); } },
+    { id: 'accounts-local', label: 'Local Accounts', icon: User, onClick: () => { handleHomeNavigation(); onTabChange?.('accounts-local'); } },
     { id: 'subscribers', label: 'Subscribers', icon: Users, onClick: () => { handleHomeNavigation(); onTabChange?.('subscribers'); } },
     { id: 'history', label: 'History', icon: History, onClick: () => { handleHomeNavigation(); onTabChange?.('history'); } },
     { id: 'settings', label: 'Settings', icon: Settings, onClick: () => { handleHomeNavigation(); onTabChange?.('settings'); } },
@@ -81,9 +82,9 @@ const Header: React.FC<HeaderProps> = ({ activeTab, onTabChange }) => {
       <header className="bg-white border-b border-gray-200 px-6 py-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-4">
-            <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+            <Link to="/" className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
               EmailCampaign Pro
-            </h1>
+            </Link>
             {currentOrganization && (
               <Badge variant="outline" className="text-sm">
                 {currentOrganization.name}
