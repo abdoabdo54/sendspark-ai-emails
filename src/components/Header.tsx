@@ -1,6 +1,5 @@
-
 import React, { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, Link, useLocation } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { 
@@ -37,6 +36,7 @@ interface HeaderProps {
 const Header: React.FC<HeaderProps> = ({ activeTab, onTabChange }) => {
   const { user, signOut } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const { currentOrganization, organizations, setCurrentOrganization } = useSimpleOrganizations();
   const [showOrgDialog, setShowOrgDialog] = useState(false);
   const [showDomainManager, setShowDomainManager] = useState(false);
@@ -57,24 +57,31 @@ const Header: React.FC<HeaderProps> = ({ activeTab, onTabChange }) => {
     navigate('/campaigns');
   };
 
-  const handleHomeNavigation = () => {
+  const handleTabNavigation = (tab: string) => {
+    // If we're on campaigns page, stay there and don't redirect
+    if (location.pathname === '/campaigns') {
+      // Don't navigate away, just update the tab if needed
+      return;
+    }
+    // Otherwise navigate to home with the tab
     navigate('/');
+    onTabChange?.(tab);
   };
 
   const navItems = [
-    { id: 'bulk', label: 'Bulk Email', icon: Mail, onClick: () => { handleHomeNavigation(); onTabChange?.('bulk'); } },
-    { id: 'single', label: 'Single Email', icon: Mail, onClick: () => { handleHomeNavigation(); onTabChange?.('single'); } },
+    { id: 'bulk', label: 'Bulk Email', icon: Mail, onClick: () => handleTabNavigation('bulk') },
+    { id: 'single', label: 'Single Email', icon: Mail, onClick: () => handleTabNavigation('single') },
     { id: 'campaigns', label: 'Email Campaigns', icon: Mail, onClick: handleEmailCampaignsClick },
-    { id: 'testing', label: 'Testing', icon: BarChart3, onClick: () => { handleHomeNavigation(); onTabChange?.('testing'); } },
-    { id: 'analytics', label: 'Analytics', icon: BarChart3, onClick: () => { handleHomeNavigation(); onTabChange?.('analytics'); } },
-    { id: 'accounts', label: 'Accounts', icon: User, onClick: () => { handleHomeNavigation(); onTabChange?.('accounts'); } },
+    { id: 'testing', label: 'Testing', icon: BarChart3, onClick: () => handleTabNavigation('testing') },
+    { id: 'analytics', label: 'Analytics', icon: BarChart3, onClick: () => handleTabNavigation('analytics') },
+    { id: 'accounts', label: 'Accounts', icon: User, onClick: () => handleTabNavigation('accounts') },
   ];
 
   const sidebarItems = [
-    { id: 'accounts-local', label: 'Local Accounts', icon: User, onClick: () => { handleHomeNavigation(); onTabChange?.('accounts-local'); } },
-    { id: 'subscribers', label: 'Subscribers', icon: Users, onClick: () => { handleHomeNavigation(); onTabChange?.('subscribers'); } },
-    { id: 'history', label: 'History', icon: History, onClick: () => { handleHomeNavigation(); onTabChange?.('history'); } },
-    { id: 'settings', label: 'Settings', icon: Settings, onClick: () => { handleHomeNavigation(); onTabChange?.('settings'); } },
+    { id: 'accounts-local', label: 'Local Accounts', icon: User, onClick: () => handleTabNavigation('accounts-local') },
+    { id: 'subscribers', label: 'Subscribers', icon: Users, onClick: () => handleTabNavigation('subscribers') },
+    { id: 'history', label: 'History', icon: History, onClick: () => handleTabNavigation('history') },
+    { id: 'settings', label: 'Settings', icon: Settings, onClick: () => handleTabNavigation('settings') },
   ];
 
   return (
@@ -98,7 +105,7 @@ const Header: React.FC<HeaderProps> = ({ activeTab, onTabChange }) => {
               {navItems.map((item) => (
                 <Button
                   key={item.id}
-                  variant={activeTab === item.id ? "default" : "ghost"}
+                  variant={activeTab === item.id || (item.id === 'campaigns' && location.pathname === '/campaigns') ? "default" : "ghost"}
                   size="sm"
                   onClick={item.onClick}
                   className="flex items-center gap-2"
@@ -168,7 +175,7 @@ const Header: React.FC<HeaderProps> = ({ activeTab, onTabChange }) => {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => { handleHomeNavigation(); onTabChange?.('settings'); }}>
+                <DropdownMenuItem onClick={() => handleTabNavigation('settings')}>
                   <Settings className="w-4 h-4 mr-2" />
                   Settings
                 </DropdownMenuItem>
@@ -188,7 +195,7 @@ const Header: React.FC<HeaderProps> = ({ activeTab, onTabChange }) => {
             {navItems.map((item) => (
               <Button
                 key={item.id}
-                variant={activeTab === item.id ? "default" : "ghost"}
+                variant={activeTab === item.id || (item.id === 'campaigns' && location.pathname === '/campaigns') ? "default" : "ghost"}
                 size="sm"
                 onClick={item.onClick}
                 className="flex items-center gap-2"

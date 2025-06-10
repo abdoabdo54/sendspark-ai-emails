@@ -17,6 +17,7 @@ import { useSimpleOrganizations } from '@/contexts/SimpleOrganizationContext';
 import CSVDataImporter from './CSVDataImporter';
 import GoogleSheetsImport from './GoogleSheetsImport';
 import AISubjectGenerator from './AISubjectGenerator';
+import TestAfterSection from './TestAfterSection';
 
 interface BulkEmailComposerProps {
   onSend: (data: any) => void;
@@ -35,6 +36,11 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
   
   // Sending mode state - updated with new zero delay mode
   const [sendingMode, setSendingMode] = useState<'controlled' | 'fast' | 'zero-delay'>('controlled');
+  
+  // Test-After state
+  const [useTestAfter, setUseTestAfter] = useState(false);
+  const [testAfterEmail, setTestAfterEmail] = useState('');
+  const [testAfterCount, setTestAfterCount] = useState(100);
   
   // Account selection state
   const [useAccountSelection, setUseAccountSelection] = useState(false);
@@ -229,6 +235,24 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
       return false;
     }
 
+    if (useTestAfter && !testAfterEmail.trim()) {
+      toast({
+        title: "Validation Error",
+        description: "Test-After email address is required when enabled",
+        variant: "destructive"
+      });
+      return false;
+    }
+
+    if (useTestAfter && testAfterCount < 1) {
+      toast({
+        title: "Validation Error",
+        description: "Test-After count must be at least 1",
+        variant: "destructive"
+      });
+      return false;
+    }
+
     return true;
   };
 
@@ -244,7 +268,11 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
       useFromNameRotation,
       fromNames: useFromNameRotation ? fromNames.filter(name => name.trim()) : [],
       useSubjectRotation, 
-      subjects: useSubjectRotation ? subjects.filter(subj => subj.trim()) : []
+      subjects: useSubjectRotation ? subjects.filter(subj => subj.trim()) : [],
+      // Add test-after configuration
+      useTestAfter,
+      testAfterEmail: useTestAfter ? testAfterEmail : '',
+      testAfterCount: useTestAfter ? testAfterCount : 100
     };
 
     // Zero Delay Mode configuration
@@ -298,7 +326,7 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
       config
     };
 
-    console.log('Campaign data with sending mode:', campaignData);
+    console.log('Campaign data with test-after config:', campaignData);
     onSend(campaignData);
   };
 
@@ -456,6 +484,18 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
                 rows={4}
               />
             </div>
+
+            <Separator />
+
+            {/* Test-After Email Section */}
+            <TestAfterSection
+              useTestAfter={useTestAfter}
+              onUseTestAfterChange={setUseTestAfter}
+              testAfterEmail={testAfterEmail}
+              onTestAfterEmailChange={setTestAfterEmail}
+              testAfterCount={testAfterCount}
+              onTestAfterCountChange={setTestAfterCount}
+            />
 
             <Separator />
 
