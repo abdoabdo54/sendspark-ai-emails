@@ -198,7 +198,7 @@ functions.http('sendEmailCampaign', async (req, res) => {
 
           console.log(`📧 Creating SMTP transporter for ${accountInfo.email} with mode: ${sendingMode}`);
 
-          const transporter = nodemailer.createTransporter(transporterConfig);
+          const transporter = nodemailer.createTransport(transporterConfig);
 
           // Enhanced connection verification
           try {

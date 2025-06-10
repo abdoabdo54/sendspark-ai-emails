@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
@@ -126,7 +127,7 @@ export const useCampaigns = (organizationId?: string) => {
         max_emails_per_hour: campaignData.config?.max_emails_per_hour || 3600
       };
 
-      // Create campaign record
+      // Create campaign record with proper error handling
       const { data: campaign, error: createError } = await supabase
         .from('email_campaigns')
         .insert({
@@ -158,22 +159,19 @@ export const useCampaigns = (organizationId?: string) => {
         prepared_emails: Array.isArray(campaign.prepared_emails) ? campaign.prepared_emails : []
       };
 
-      // Auto-prepare the campaign
+      // Show success first
+      toast({
+        title: "Success",
+        description: `Campaign created with ${totalRecipients} recipients!`
+      });
+
+      // Auto-prepare the campaign AFTER success toast
       try {
         console.log('Auto-preparing campaign...');
         await prepareCampaign(campaign.id);
-        
-        toast({
-          title: "Success",
-          description: `Campaign created and prepared with ${totalRecipients} recipients!`
-        });
       } catch (prepareError) {
         console.error('Error preparing campaign:', prepareError);
-        toast({
-          title: "Campaign Created",
-          description: `Campaign created but failed to prepare: ${prepareError.message}`,
-          variant: "destructive"
-        });
+        // Don't show error toast here as prepare will handle it
       }
 
       // Refresh campaigns list
@@ -182,6 +180,11 @@ export const useCampaigns = (organizationId?: string) => {
       return transformedCampaign;
     } catch (error) {
       console.error('Error in createCampaign:', error);
+      toast({
+        title: "Error",
+        description: `Failed to create campaign: ${error.message}`,
+        variant: "destructive"
+      });
       throw error;
     }
   };

@@ -111,7 +111,7 @@ serve(async (req) => {
       );
     }
 
-    // Get Google Cloud Functions configuration - IMPROVED LOGIC
+    // IMPROVED Google Cloud Functions configuration logic
     let gcfConfig = null;
     
     // First check campaign config for Google Cloud Functions
@@ -130,31 +130,24 @@ serve(async (req) => {
         gcfConfig = orgSettings.settings.googleCloudFunctions;
         console.log('Using organization-level Google Cloud config:', gcfConfig.functionUrl);
       } else {
-        // Use environment URL as fallback
-        const gcfUrl = Deno.env.get('GOOGLE_CLOUD_FUNCTION_URL');
-        if (gcfUrl) {
-          gcfConfig = { functionUrl: gcfUrl };
-          console.log('Using environment Google Cloud Function URL:', gcfUrl);
-        } else {
-          console.error('No Google Cloud Functions URL configured anywhere');
-          
-          await supabase
-            .from('email_campaigns')
-            .update({ 
-              status: 'failed',
-              error_message: 'Google Cloud Functions not configured. Please configure your Google Cloud Function URL in Settings → Google Cloud Config, or set the GOOGLE_CLOUD_FUNCTION_URL environment variable.',
-              completed_at: new Date().toISOString()
-            })
-            .eq('id', campaignId);
-          
-          return new Response(
-            JSON.stringify({ 
-              error: 'Google Cloud Functions not configured. Please go to Settings → Google Cloud Config to set up your function URL, or contact your administrator to set the GOOGLE_CLOUD_FUNCTION_URL environment variable.',
-              helpText: 'You need to deploy a Google Cloud Function and configure its URL in the system settings before sending campaigns.'
-            }),
-            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-          );
-        }
+        console.error('No Google Cloud Functions URL configured');
+        
+        await supabase
+          .from('email_campaigns')
+          .update({ 
+            status: 'failed',
+            error_message: 'Google Cloud Functions not configured. Please configure your Google Cloud Function URL in Settings → Google Cloud Config.',
+            completed_at: new Date().toISOString()
+          })
+          .eq('id', campaignId);
+        
+        return new Response(
+          JSON.stringify({ 
+            error: 'Google Cloud Functions not configured. Please go to Settings → Google Cloud Config to set up your function URL.',
+            helpText: 'You need to deploy a Google Cloud Function and configure its URL in the system settings before sending campaigns.'
+          }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
       }
     }
 
