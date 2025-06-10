@@ -12,36 +12,21 @@ serve(async (req) => {
     return new Response('ok', { headers: corsHeaders })
   }
 
-  let requestBody: any = null;
   let campaignId: string | null = null;
 
   try {
-    const bodyText = await req.text();
-    console.log('Raw request body:', bodyText);
-    
-    if (!bodyText) {
-      throw new Error('Empty request body');
-    }
-
-    try {
-      requestBody = JSON.parse(bodyText);
-    } catch (parseError) {
-      console.error('Failed to parse request body:', parseError);
-      throw new Error('Invalid JSON in request body');
-    }
-
+    const requestBody = await req.json();
     campaignId = requestBody.campaignId;
-    const resumeFromIndex = requestBody.resumeFromIndex || 0;
+
+    if (!campaignId) {
+      throw new Error('Campaign ID is required');
+    }
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     console.log(`🚀 Processing campaign ${campaignId}`);
-
-    if (!campaignId) {
-      throw new Error('Campaign ID is required');
-    }
 
     // Get campaign details
     const { data: campaign, error: campaignError } = await supabase
@@ -53,40 +38,36 @@ serve(async (req) => {
     if (campaignError || !campaign) {
       console.error('Campaign fetch error:', campaignError);
       
-      if (campaignId) {
-        await supabase
-          .from('email_campaigns')
-          .update({ 
-            status: 'failed',
-            error_message: `Campaign not found: ${campaignError?.message || 'Unknown error'}`,
-            completed_at: new Date().toISOString()
-          })
-          .eq('id', campaignId);
-      }
-      
-      return new Response(
-        JSON.stringify({ error: 'Campaign not found', details: campaignError }),
-        { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    // Enhanced status validation
-    if (!['prepared', 'paused', 'sending'].includes(campaign.status)) {
-      console.error('Invalid campaign status for sending:', campaign.status);
-      
       await supabase
         .from('email_campaigns')
         .update({ 
           status: 'failed',
-          error_message: `Invalid status for sending: ${campaign.status}. Campaign must be prepared first.`,
+          error_message: `Campaign not found: ${campaignError?.message || 'Unknown error'}`,
           completed_at: new Date().toISOString()
         })
         .eq('id', campaignId);
       
       return new Response(
-        JSON.stringify({ 
-          error: `Campaign status '${campaign.status}' is invalid for sending. Please prepare the campaign first.` 
-        }),
+        JSON.stringify({ error: 'Campaign not found' }),
+        { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Check if campaign is prepared
+    if (!['prepared', 'paused', 'sending'].includes(campaign.status)) {
+      console.error('Invalid campaign status:', campaign.status);
+      
+      await supabase
+        .from('email_campaigns')
+        .update({ 
+          status: 'failed',
+          error_message: `Campaign must be prepared first. Current status: ${campaign.status}`,
+          completed_at: new Date().toISOString()
+        })
+        .eq('id', campaignId);
+      
+      return new Response(
+        JSON.stringify({ error: `Campaign must be prepared first. Current status: ${campaign.status}` }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -110,15 +91,12 @@ serve(async (req) => {
       );
     }
 
-    // FIXED: Google Cloud Functions configuration logic
+    // Get Google Cloud Function URL
     let gcfUrl = null;
     
-    // Check campaign-level configuration first
     if (campaign.config?.googleCloudFunctions?.functionUrl) {
       gcfUrl = campaign.config.googleCloudFunctions.functionUrl;
-      console.log('Using campaign-level Google Cloud Function URL:', gcfUrl);
     } else {
-      // Check organization-level configuration
       const { data: orgSettings } = await supabase
         .from('organizations')
         .select('settings')
@@ -127,27 +105,27 @@ serve(async (req) => {
       
       if (orgSettings?.settings?.googleCloudFunctions?.functionUrl) {
         gcfUrl = orgSettings.settings.googleCloudFunctions.functionUrl;
-        console.log('Using organization-level Google Cloud Function URL:', gcfUrl);
-      } else {
-        console.error('No Google Cloud Function URL configured');
-        
-        await supabase
-          .from('email_campaigns')
-          .update({ 
-            status: 'failed',
-            error_message: 'Google Cloud Function URL not configured. Please configure it in Settings → Google Cloud Config.',
-            completed_at: new Date().toISOString()
-          })
-          .eq('id', campaignId);
-        
-        return new Response(
-          JSON.stringify({ 
-            error: 'Google Cloud Function URL not configured. Please go to Settings → Google Cloud Config to set up your function URL.',
-            helpText: 'You need to deploy a Google Cloud Function and configure its URL in the system settings.'
-          }),
-          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
       }
+    }
+
+    if (!gcfUrl) {
+      console.error('No Google Cloud Function URL configured');
+      
+      await supabase
+        .from('email_campaigns')
+        .update({ 
+          status: 'failed',
+          error_message: 'Google Cloud Function URL not configured. Please configure it in Settings → Google Cloud Config.',
+          completed_at: new Date().toISOString()
+        })
+        .eq('id', campaignId);
+      
+      return new Response(
+        JSON.stringify({ 
+          error: 'Google Cloud Function URL not configured. Please configure it in Settings → Google Cloud Config.',
+        }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
     }
 
     console.log(`Using Google Cloud Function URL: ${gcfUrl}`);
@@ -162,24 +140,10 @@ serve(async (req) => {
       })
       .eq('id', campaignId);
 
-    // Get emails to send
-    const emailsToSend = preparedEmails.slice(resumeFromIndex);
-    console.log(`Sending ${emailsToSend.length} emails starting from index ${resumeFromIndex}`);
-    
-    // Respect account selection from campaign config
-    const selectedAccountIds = campaign.config?.selectedAccounts || [];
-    console.log('Selected account IDs from campaign:', selectedAccountIds);
-    
     // Group emails by account
     const emailsByAccount = new Map();
-    emailsToSend.forEach((email, index) => {
+    preparedEmails.forEach((email) => {
       const accountId = email.account_id;
-      
-      // Only include emails from selected accounts
-      if (selectedAccountIds.length > 0 && !selectedAccountIds.includes(accountId)) {
-        console.log(`Skipping email for non-selected account: ${accountId}`);
-        return;
-      }
       
       if (!emailsByAccount.has(accountId)) {
         emailsByAccount.set(accountId, {
@@ -198,82 +162,52 @@ serve(async (req) => {
         fromEmail: email.fromEmail,
         fromName: email.fromName,
         htmlContent: email.htmlContent,
-        textContent: email.textContent,
-        globalIndex: resumeFromIndex + index
+        textContent: email.textContent
       });
     });
 
     const actualEmailsToSend = Array.from(emailsByAccount.values()).reduce((total, account) => total + account.emails.length, 0);
-    console.log(`Processing ${actualEmailsToSend} emails using ${emailsByAccount.size} selected accounts`);
+    console.log(`Processing ${actualEmailsToSend} emails using ${emailsByAccount.size} accounts`);
 
-    if (actualEmailsToSend === 0) {
-      await supabase
-        .from('email_campaigns')
-        .update({ 
-          status: 'failed',
-          error_message: 'No emails to send with selected accounts. Please check your account selection.',
-          completed_at: new Date().toISOString()
-        })
-        .eq('id', campaignId);
-      
-      return new Response(
-        JSON.stringify({ error: 'No emails to send with selected accounts' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    // Extract configuration for Google Cloud Function
-    const testAfterConfig = {
-      useTestAfter: campaign.config?.useTestAfter || false,
-      testAfterEmail: campaign.config?.testAfterEmail || '',
-      testAfterCount: campaign.config?.testAfterCount || 100,
-      testEmailSubjectPrefix: campaign.config?.testEmailSubjectPrefix || 'TEST DELIVERY REPORT'
-    };
-
-    // FIXED: Prepare correct payload for YOUR Google Cloud Function
+    // Prepare payload for Google Cloud Function
     const payload = {
       campaignId,
       emailsByAccount: Object.fromEntries(emailsByAccount),
-      totalEmails: actualEmailsToSend,
-      resumeFromIndex,
       supabaseUrl,
       supabaseKey,
-      sendingMode: campaign.config?.sendingMode || 'controlled',
-      testAfterConfig: testAfterConfig,
-      rotation: {
-        useFromNameRotation: campaign.config?.useFromNameRotation || false,
-        fromNames: campaign.config?.fromNames || [],
-        useSubjectRotation: campaign.config?.useSubjectRotation || false,
-        subjects: campaign.config?.subjects || []
-      },
       config: {
         sendingMode: campaign.config?.sendingMode || 'controlled',
         emailsPerSecond: campaign.config?.emailsPerSecond || 1,
         useCustomDelay: campaign.config?.useCustomDelay || false,
         customDelayMs: campaign.config?.customDelayMs || 1000,
         burstSize: campaign.config?.burstSize || 1
+      },
+      rotation: {
+        useFromNameRotation: campaign.config?.useFromNameRotation || false,
+        fromNames: campaign.config?.fromNames || [],
+        useSubjectRotation: campaign.config?.useSubjectRotation || false,
+        subjects: campaign.config?.subjects || []
+      },
+      testAfterConfig: {
+        useTestAfter: campaign.config?.useTestAfter || false,
+        testAfterEmail: campaign.config?.testAfterEmail || '',
+        testAfterCount: campaign.config?.testAfterCount || 100,
+        testEmailSubjectPrefix: campaign.config?.testEmailSubjectPrefix || 'TEST DELIVERY REPORT'
       }
     };
 
-    console.log(`Sending payload to Google Cloud Function with ${emailsByAccount.size} accounts`);
+    console.log(`Sending payload to Google Cloud Function`);
 
-    // Validate function URL format
-    if (!gcfUrl.startsWith('https://')) {
-      throw new Error('Invalid Google Cloud Function URL. Must start with https://');
-    }
-
-    // Send to Google Cloud Function with timeout
+    // Send to Google Cloud Function
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 120000); // 2 minute timeout
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
 
     try {
       const response = await fetch(gcfUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'User-Agent': 'Supabase-Campaign-Sender/1.0',
-          'X-Campaign-ID': campaignId,
-          'X-Email-Count': actualEmailsToSend.toString()
+          'User-Agent': 'Supabase-Campaign-Sender/1.0'
         },
         body: JSON.stringify(payload),
         signal: controller.signal
@@ -291,44 +225,22 @@ serve(async (req) => {
           .from('email_campaigns')
           .update({ 
             status: 'failed',
-            error_message: `Google Cloud Function error: ${response.status} - ${errorText}. Check your function URL: ${gcfUrl}`,
+            error_message: `Google Cloud Function error: ${response.status} - ${errorText}`,
             completed_at: new Date().toISOString()
           })
           .eq('id', campaignId);
         
-        throw new Error(`Google Cloud Function failed: ${response.status} - ${errorText}. Check your function URL.`);
+        throw new Error(`Google Cloud Function failed: ${response.status} - ${errorText}`);
       }
 
       const result = await response.json();
-      console.log('Google Cloud Function response:', JSON.stringify(result, null, 2));
-
-      // Handle response based on completion status
-      if (result.success && result.completed) {
-        console.log('Campaign completed successfully!');
-        
-        await supabase
-          .from('email_campaigns')
-          .update({ 
-            status: result.sentCount > 0 ? 'sent' : 'failed',
-            sent_count: result.sentCount || 0,
-            completed_at: new Date().toISOString(),
-            error_message: result.failedCount > 0 ? `${result.failedCount} emails failed to send` : null
-          })
-          .eq('id', campaignId);
-      }
+      console.log('Google Cloud Function response:', result);
 
       return new Response(
         JSON.stringify({ 
           success: true,
           message: 'Campaign processing via Google Cloud Function',
-          details: result,
-          configuration: {
-            accounts_processing: emailsByAccount.size,
-            total_emails: actualEmailsToSend,
-            selected_accounts: selectedAccountIds.length
-          },
-          gcf_url: gcfUrl,
-          completed: result.completed || false
+          details: result
         }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
@@ -337,7 +249,7 @@ serve(async (req) => {
       clearTimeout(timeoutId);
       
       if (fetchError.name === 'AbortError') {
-        throw new Error('Google Cloud Function request timed out after 2 minutes');
+        throw new Error('Google Cloud Function request timed out');
       }
       
       throw fetchError;
@@ -346,7 +258,6 @@ serve(async (req) => {
   } catch (error) {
     console.error('Critical error:', error);
     
-    // Update campaign status on error
     try {
       if (campaignId) {
         const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
@@ -369,7 +280,6 @@ serve(async (req) => {
     return new Response(
       JSON.stringify({ 
         error: `Campaign sending failed: ${error.message}`,
-        details: error.stack,
         timestamp: new Date().toISOString()
       }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
