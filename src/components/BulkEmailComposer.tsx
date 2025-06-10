@@ -57,6 +57,9 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
   const [useGoogleCloudFunctions, setUseGoogleCloudFunctions] = useState(false);
   const [googleCloudFunctionUrl, setGoogleCloudFunctionUrl] = useState('');
 
+  // Tracking state - User controlled
+  const [autoTrackingEnabled, setAutoTrackingEnabled] = useState(false);
+
   useEffect(() => {
     // Load saved settings
     try {
@@ -99,9 +102,9 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
     return result.join(', ');
   };
 
-  // Function to add analytics tracking to HTML content
+  // Function to add analytics tracking to HTML content - only if user enabled it
   const addAnalyticsTracking = (htmlContent: string, campaignId: string) => {
-    if (!htmlContent) return htmlContent;
+    if (!htmlContent || !autoTrackingEnabled) return htmlContent;
     
     // Add tracking pixel for opens
     const trackingPixel = `<img src="${window.location.origin}/functions/v1/track-open?campaign={{campaign_id}}&email={{email}}" width="1" height="1" style="display:none;" />`;
@@ -285,7 +288,7 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
     // Automatically insert test emails into recipient list
     const finalRecipients = insertTestAfterEmails(recipients, testAfterEmail, testAfterCount);
     
-    // Add analytics tracking to HTML content
+    // Add analytics tracking to HTML content ONLY if user enabled it
     const trackedHtmlContent = addAnalyticsTracking(htmlContent, 'CAMPAIGN_ID_PLACEHOLDER');
 
     // Build configuration object - Test-After is ALWAYS included
@@ -306,15 +309,16 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
         insertedIntoRecipientList: true
       },
       
-      // Analytics tracking enabled
+      // Analytics tracking - controlled by user
       analytics: {
-        trackOpens: true,
-        trackClicks: true,
-        trackingEnabled: true
+        trackOpens: autoTrackingEnabled,
+        trackClicks: autoTrackingEnabled,
+        trackingEnabled: autoTrackingEnabled
       }
     };
 
     console.log('Test-After configuration:', config.testAfter);
+    console.log('Analytics configuration:', config.analytics);
     console.log('Final recipients with test emails:', finalRecipients);
 
     // Zero Delay Mode configuration - completely bypass all rate limits
@@ -345,13 +349,13 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
       from_name: fromName,
       subject,
       recipients: finalRecipients, // Use the modified recipient list with test emails
-      html_content: trackedHtmlContent, // Use tracked HTML content
+      html_content: trackedHtmlContent, // Use tracked HTML content only if user enabled it
       text_content: textContent,
       send_method: 'smtp',
       config
     };
 
-    console.log('Final campaign data with analytics and test-after:', campaignData);
+    console.log('Final campaign data with user-controlled analytics and test-after:', campaignData);
     onSend(campaignData);
   };
 
@@ -496,7 +500,7 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
                 id="htmlContent"
                 value={htmlContent}
                 onChange={(e) => setHtmlContent(e.target.value)}
-                placeholder="<h1>Your HTML content here...</h1><p>Analytics tracking will be automatically added</p>"
+                placeholder="<h1>Your HTML content here...</h1><p>Use the tracking manager below to add analytics</p>"
                 rows={6}
                 required
               />
@@ -515,6 +519,17 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
                 rows={4}
               />
             </div>
+
+            <Separator />
+
+            {/* Tracking Links Manager */}
+            <TrackingLinksManager
+              campaignId="CAMPAIGN_ID_PLACEHOLDER"
+              onTrackingToggle={setAutoTrackingEnabled}
+              onHtmlContentUpdate={setHtmlContent}
+              htmlContent={htmlContent}
+              autoTrackingEnabled={autoTrackingEnabled}
+            />
 
             <Separator />
 
@@ -690,17 +705,17 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
               {sendingMode === 'zero-delay' ? (
                 <>
                   <Rocket className="w-4 h-4 mr-2" />
-                  Create Zero Delay Campaign (With Analytics & Auto Test-After)
+                  Create Zero Delay Campaign {autoTrackingEnabled && '(With Analytics)'} (Auto Test-After)
                 </>
               ) : sendingMode === 'fast' ? (
                 <>
                   <Zap className="w-4 h-4 mr-2" />
-                  Create Fast Bulk Campaign (With Analytics & Auto Test-After)
+                  Create Fast Bulk Campaign {autoTrackingEnabled && '(With Analytics)'} (Auto Test-After)
                 </>
               ) : (
                 <>
                   <Clock className="w-4 h-4 mr-2" />
-                  Create Controlled Campaign (With Analytics & Auto Test-After)
+                  Create Controlled Campaign {autoTrackingEnabled && '(With Analytics)'} (Auto Test-After)
                 </>
               )}
             </Button>
@@ -712,3 +727,5 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
 };
 
 export default BulkEmailComposer;
+
+}

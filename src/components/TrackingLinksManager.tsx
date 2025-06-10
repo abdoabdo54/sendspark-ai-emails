@@ -285,9 +285,9 @@ const TrackingLinksManager = ({
           <Code className="h-4 w-4" />
           <AlertDescription>
             <strong>Usage Instructions:</strong><br />
-            • Open Tracking: Add the pixel image anywhere in your HTML, preferably before {`</body>`}<br />
+            • Open Tracking: Add the pixel image anywhere in your HTML, preferably before closing body tag<br />
             • Click Tracking: Replace your normal links with the tracking URLs<br />
-            • Use {{`{email}`}} as a placeholder - it will be replaced with actual recipient emails<br />
+            • Use {{email}} as a placeholder - it will be replaced with actual recipient emails<br />
             • All tracking data will appear in your Campaign Analytics dashboard
           </AlertDescription>
         </Alert>
