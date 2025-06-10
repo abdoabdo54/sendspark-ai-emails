@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -50,12 +51,16 @@ const Header: React.FC<HeaderProps> = ({ activeTab, onTabChange }) => {
     setCurrentOrganization(org);
   };
 
+  const handleEmailCampaignsClick = () => {
+    window.location.href = '/campaigns';
+  };
+
   const navItems = [
-    { id: 'bulk', label: 'Bulk Email', icon: Mail },
-    { id: 'single', label: 'Single Email', icon: Mail },
-    { id: 'campaigns', label: 'Email Campaigns', icon: Mail },
-    { id: 'analytics', label: 'Analytics', icon: BarChart3 },
-    { id: 'accounts', label: 'Accounts', icon: User },
+    { id: 'bulk', label: 'Bulk Email', icon: Mail, onClick: () => onTabChange?.('bulk') },
+    { id: 'single', label: 'Single Email', icon: Mail, onClick: () => onTabChange?.('single') },
+    { id: 'campaigns', label: 'Email Campaigns', icon: Mail, onClick: handleEmailCampaignsClick },
+    { id: 'analytics', label: 'Analytics', icon: BarChart3, onClick: () => onTabChange?.('analytics') },
+    { id: 'accounts', label: 'Accounts', icon: User, onClick: () => onTabChange?.('accounts') },
   ];
 
   const sidebarItems = [
@@ -88,7 +93,7 @@ const Header: React.FC<HeaderProps> = ({ activeTab, onTabChange }) => {
                   key={item.id}
                   variant={activeTab === item.id ? "default" : "ghost"}
                   size="sm"
-                  onClick={() => onTabChange?.(item.id)}
+                  onClick={item.onClick}
                   className="flex items-center gap-2"
                 >
                   <item.icon className="w-4 h-4" />
@@ -178,7 +183,7 @@ const Header: React.FC<HeaderProps> = ({ activeTab, onTabChange }) => {
                 key={item.id}
                 variant={activeTab === item.id ? "default" : "ghost"}
                 size="sm"
-                onClick={() => onTabChange?.(item.id)}
+                onClick={item.onClick}
                 className="flex items-center gap-2"
               >
                 <item.icon className="w-4 h-4" />
