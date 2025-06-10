@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -19,6 +18,7 @@ import CSVDataImporter from './CSVDataImporter';
 import GoogleSheetsImport from './GoogleSheetsImport';
 import AISubjectGenerator from './AISubjectGenerator';
 import TestAfterSection from './TestAfterSection';
+import TrackingLinksManager from './TrackingLinksManager';
 
 interface BulkEmailComposerProps {
   onSend: (data: any) => void;
