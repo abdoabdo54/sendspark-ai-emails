@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -31,26 +30,16 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
     send_method: 'bulk',
     email_account_id: '',
     config: {
-      // New flexible rate limiting
-      sendingMode: 'controlled', // 'controlled', 'fast', 'maximum'
+      // Simplified sending modes - only two options
+      sendingMode: 'controlled', // 'controlled' or 'instant'
       emailsPerSecond: 1,
-      emailsPerMinute: 60,
-      burstSize: 10, // For burst sending
-      useCustomDelay: false,
-      customDelayMs: 1000,
       selectedAccounts: [] as string[],
       
       // Rotation settings
       useFromNameRotation: false,
       fromNames: [] as string[],
       useSubjectRotation: false,
-      subjects: [] as string[],
-      
-      // Enhanced test after settings
-      useTestAfter: false,
-      testAfterEmail: '',
-      testAfterCount: 100,
-      testEmailSubjectPrefix: 'TEST DELIVERY REPORT'
+      subjects: [] as string[]
     }
   });
 
@@ -120,27 +109,7 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
       return;
     }
 
-    // Enhanced validation for test after settings
-    if (formData.config.useTestAfter) {
-      if (!formData.config.testAfterEmail || !formData.config.testAfterEmail.includes('@')) {
-        toast({
-          title: "Error",
-          description: "Please provide a valid test email address",
-          variant: "destructive"
-        });
-        return;
-      }
-      if (formData.config.testAfterCount <= 0 || formData.config.testAfterCount > recipientCount) {
-        toast({
-          title: "Error",
-          description: `Test after count must be between 1 and ${recipientCount}`,
-          variant: "destructive"
-        });
-        return;
-      }
-    }
-
-    // Rate limiting validation
+    // Rate limiting validation for controlled mode
     if (formData.config.sendingMode === 'controlled') {
       if (formData.config.emailsPerSecond <= 0 || formData.config.emailsPerSecond > 100) {
         toast({
@@ -206,19 +175,11 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
         config: {
           sendingMode: 'controlled',
           emailsPerSecond: 1,
-          emailsPerMinute: 60,
-          burstSize: 10,
-          useCustomDelay: false,
-          customDelayMs: 1000,
           selectedAccounts: [],
           useFromNameRotation: false,
           fromNames: [],
           useSubjectRotation: false,
-          subjects: [],
-          useTestAfter: false,
-          testAfterEmail: '',
-          testAfterCount: 100,
-          testEmailSubjectPrefix: 'TEST DELIVERY REPORT'
+          subjects: []
         }
       });
 
@@ -241,14 +202,9 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
 
   const calculateDelayFromMode = (config: any) => {
     switch (config.sendingMode) {
-      case 'maximum':
-        return 0; // No delay for maximum speed
-      case 'fast':
-        return 0.1; // 100ms delay
+      case 'instant':
+        return 0; // No delay for instant sending
       case 'controlled':
-        if (config.useCustomDelay) {
-          return config.customDelayMs / 1000;
-        }
         return 1 / config.emailsPerSecond;
       default:
         return 1;
@@ -257,10 +213,8 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
 
   const calculateMaxEmailsPerHour = (config: any) => {
     switch (config.sendingMode) {
-      case 'maximum':
+      case 'instant':
         return 999999; // Unlimited
-      case 'fast':
-        return 36000; // 10 emails per second
       case 'controlled':
         return config.emailsPerSecond * 3600;
       default:
@@ -358,12 +312,10 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
 
   const getSendingModeDescription = (mode: string) => {
     switch (mode) {
-      case 'maximum':
-        return 'Send all emails as fast as possible (0 delay)';
-      case 'fast':
-        return 'Fast sending with minimal delay (10 emails/sec)';
+      case 'instant':
+        return 'Send all emails instantly with no delay (maximum speed)';
       case 'controlled':
-        return 'Controlled rate with custom timing';
+        return 'Controlled rate with custom timing to respect limits';
       default:
         return '';
     }
@@ -374,6 +326,10 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
     
     const delay = calculateDelayFromMode(formData.config);
     const totalSeconds = recipientCount * delay;
+    
+    if (formData.config.sendingMode === 'instant') {
+      return 'Instant (no delay)';
+    }
     
     if (totalSeconds < 60) {
       return `~${Math.ceil(totalSeconds)} seconds`;
@@ -485,15 +441,15 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
         </CardContent>
       </Card>
 
-      {/* Enhanced Rate Limiting Section */}
+      {/* Simplified Sending Rate Control */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Clock className="w-5 h-5" />
-            Sending Rate Control
+            Sending Mode
           </CardTitle>
           <CardDescription>
-            Configure how fast emails are sent. Estimated time: {getEstimatedTime()}
+            Choose how fast emails are sent. Estimated time: {getEstimatedTime()}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -510,22 +466,16 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="maximum">
-                  <div className="flex items-center gap-2">
-                    <Zap className="w-4 h-4" />
-                    Maximum Speed
-                  </div>
-                </SelectItem>
-                <SelectItem value="fast">
-                  <div className="flex items-center gap-2">
-                    <RefreshCw className="w-4 h-4" />
-                    Fast (10/sec)
-                  </div>
-                </SelectItem>
                 <SelectItem value="controlled">
                   <div className="flex items-center gap-2">
                     <Clock className="w-4 h-4" />
-                    Controlled Rate
+                    Controlled Rate (Recommended)
+                  </div>
+                </SelectItem>
+                <SelectItem value="instant">
+                  <div className="flex items-center gap-2">
+                    <Zap className="w-4 h-4" />
+                    Instant Sending (Maximum Speed)
                   </div>
                 </SelectItem>
               </SelectContent>
@@ -536,73 +486,22 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
           </div>
 
           {formData.config.sendingMode === 'controlled' && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <Label htmlFor="emailsPerSecond">Emails per Second</Label>
-                <Input
-                  id="emailsPerSecond"
-                  type="number"
-                  min="0.1"
-                  max="100"
-                  step="0.1"
-                  value={formData.config.emailsPerSecond}
-                  onChange={(e) => setFormData(prev => ({
-                    ...prev,
-                    config: { ...prev.config, emailsPerSecond: parseFloat(e.target.value) || 1 }
-                  }))}
-                />
-                <p className="text-xs text-slate-500 mt-1">
-                  Example: 2 = send 2 emails per second, 0.5 = send 1 email every 2 seconds
-                </p>
-              </div>
-              
-              <div>
-                <Label htmlFor="burstSize">Burst Size</Label>
-                <Input
-                  id="burstSize"
-                  type="number"
-                  min="1"
-                  max="100"
-                  value={formData.config.burstSize}
-                  onChange={(e) => setFormData(prev => ({
-                    ...prev,
-                    config: { ...prev.config, burstSize: parseInt(e.target.value) || 10 }
-                  }))}
-                />
-                <p className="text-xs text-slate-500 mt-1">
-                  Number of emails to send in quick succession
-                </p>
-              </div>
-            </div>
-          )}
-
-          <div className="flex items-center space-x-2">
-            <Switch
-              checked={formData.config.useCustomDelay}
-              onCheckedChange={(checked) => setFormData(prev => ({
-                ...prev,
-                config: { ...prev.config, useCustomDelay: checked }
-              }))}
-            />
-            <Label>Use Custom Delay (milliseconds)</Label>
-          </div>
-          
-          {formData.config.useCustomDelay && (
             <div>
-              <Label htmlFor="customDelayMs">Custom Delay (ms)</Label>
+              <Label htmlFor="emailsPerSecond">Emails per Second</Label>
               <Input
-                id="customDelayMs"
+                id="emailsPerSecond"
                 type="number"
-                min="0"
-                max="60000"
-                value={formData.config.customDelayMs}
+                min="0.1"
+                max="100"
+                step="0.1"
+                value={formData.config.emailsPerSecond}
                 onChange={(e) => setFormData(prev => ({
                   ...prev,
-                  config: { ...prev.config, customDelayMs: parseInt(e.target.value) || 1000 }
+                  config: { ...prev.config, emailsPerSecond: parseFloat(e.target.value) || 1 }
                 }))}
               />
               <p className="text-xs text-slate-500 mt-1">
-                0 = no delay (maximum speed), 1000 = 1 second delay
+                Example: 2 = send 2 emails per second, 0.5 = send 1 email every 2 seconds
               </p>
             </div>
           )}
@@ -728,79 +627,6 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
                   onChange={(e) => setFormData(prev => ({ ...prev, subject: e.target.value }))}
                   placeholder="Your email subject"
                 />
-              </div>
-            )}
-          </div>
-
-          {/* Enhanced Test After Section */}
-          <div className="space-y-4">
-            <div className="flex items-center space-x-2">
-              <Switch
-                checked={formData.config.useTestAfter}
-                onCheckedChange={(checked) => setFormData(prev => ({
-                  ...prev,
-                  config: { ...prev.config, useTestAfter: checked }
-                }))}
-              />
-              <Label>Enable Test After Delivery Reports</Label>
-            </div>
-            
-            {formData.config.useTestAfter && (
-              <div className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <Label htmlFor="testAfterEmail">Test Email Address</Label>
-                    <Input
-                      id="testAfterEmail"
-                      type="email"
-                      value={formData.config.testAfterEmail}
-                      onChange={(e) => setFormData(prev => ({
-                        ...prev,
-                        config: { ...prev.config, testAfterEmail: e.target.value }
-                      }))}
-                      placeholder="test@gmail.com"
-                      required={formData.config.useTestAfter}
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="testAfterCount">Send Test After Every</Label>
-                    <Input
-                      id="testAfterCount"
-                      type="number"
-                      min="1"
-                      max={recipientCount || 1000}
-                      value={formData.config.testAfterCount}
-                      onChange={(e) => setFormData(prev => ({
-                        ...prev,
-                        config: { ...prev.config, testAfterCount: parseInt(e.target.value) || 100 }
-                      }))}
-                      placeholder="10"
-                      required={formData.config.useTestAfter}
-                    />
-                    <p className="text-xs text-slate-500 mt-1">emails delivered</p>
-                  </div>
-                </div>
-                <div>
-                  <Label htmlFor="testEmailSubjectPrefix">Test Email Subject Prefix</Label>
-                  <Input
-                    id="testEmailSubjectPrefix"
-                    value={formData.config.testEmailSubjectPrefix}
-                    onChange={(e) => setFormData(prev => ({
-                      ...prev,
-                      config: { ...prev.config, testEmailSubjectPrefix: e.target.value }
-                    }))}
-                    placeholder="TEST DELIVERY REPORT"
-                  />
-                </div>
-                {recipientCount > 0 && (
-                  <div className="text-sm bg-blue-50 p-3 rounded-lg">
-                    <p className="font-medium text-blue-800">Test Email Preview:</p>
-                    <p className="text-blue-700">
-                      With {recipientCount} recipients and test after every {formData.config.testAfterCount} emails, 
-                      you will receive approximately {Math.floor(recipientCount / formData.config.testAfterCount)} test emails.
-                    </p>
-                  </div>
-                )}
               </div>
             )}
           </div>

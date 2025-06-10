@@ -8,19 +8,12 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Calculate delay based on config
+// Calculate delay based on config - simplified to two modes
 function calculateDelay(config) {
   const mode = config.sendingMode || 'controlled';
   
-  if (mode === 'maximum') return 0;
-  if (mode === 'fast') return 100;
-  if (mode === 'controlled') {
-    if (config.useCustomDelay) {
-      return config.customDelayMs || 1000;
-    }
-    return Math.max(0, (1000 / (config.emailsPerSecond || 1)));
-  }
-  return 1000;
+  if (mode === 'instant') return 0;  // New instant mode - no delay
+  return Math.max(0, (1000 / (config.emailsPerSecond || 1))); // Old controlled mode
 }
 
 // Apply rotation
@@ -39,31 +32,6 @@ function applyRotation(emailData, index, rotation) {
   return { fromName, subject };
 }
 
-// Send test email
-async function sendTestEmail(index, testAfterConfig, transporter, lastEmail, campaignId) {
-  if (!testAfterConfig.useTestAfter || !testAfterConfig.testAfterEmail || !testAfterConfig.testAfterCount) {
-    return false;
-  }
-
-  const emailNumber = index + 1;
-  if (emailNumber % testAfterConfig.testAfterCount === 0) {
-    const testNumber = Math.floor(emailNumber / testAfterConfig.testAfterCount);
-    const testSubject = `${testAfterConfig.testEmailSubjectPrefix || 'TEST DELIVERY REPORT'} #${testNumber}`;
-    
-    await transporter.sendMail({
-      from: lastEmail.from,
-      to: testAfterConfig.testAfterEmail,
-      subject: testSubject,
-      html: `<h2>📊 Test Email #${testNumber}</h2><p>Campaign: ${campaignId}</p><p>Emails Sent: ${emailNumber}</p><div style="border:1px solid #ccc;padding:10px;">${lastEmail.html || ''}</div>`,
-      text: `TEST DELIVERY REPORT #${testNumber}\n\nCampaign: ${campaignId}\nEmails Sent: ${emailNumber}\n\n${lastEmail.text || ''}`
-    });
-    
-    console.log(`Test email #${testNumber} sent after ${emailNumber} emails`);
-    return true;
-  }
-  return false;
-}
-
 functions.http('sendEmailCampaign', async (req, res) => {
   if (req.method === 'OPTIONS') {
     res.set(corsHeaders);
@@ -78,8 +46,7 @@ functions.http('sendEmailCampaign', async (req, res) => {
       supabaseUrl, 
       supabaseKey,
       config = {},
-      rotation = {},
-      testAfterConfig = {}
+      rotation = {}
     } = req.body || {};
     
     if (!campaignId || !emailsByAccount || !supabaseUrl || !supabaseKey) {
@@ -93,14 +60,17 @@ functions.http('sendEmailCampaign', async (req, res) => {
     
     let totalSent = 0;
     let totalFailed = 0;
-    let testEmailsSent = 0;
     let globalEmailIndex = 0;
 
     // Process each account
     for (const [accountId, accountData] of Object.entries(emailsByAccount)) {
       const { type, config: accountConfig, emails, accountInfo } = accountData;
       
-      console.log(`Processing ${type} account: ${accountInfo.email} (${emails.length} emails)`);
+      // Fix: Ensure accountInfo exists and has email property
+      const accountEmail = accountInfo?.email || accountConfig?.user || accountConfig?.email || 'unknown@domain.com';
+      const accountName = accountInfo?.name || accountInfo?.email || accountEmail;
+      
+      console.log(`Processing ${type} account: ${accountEmail} (${emails.length} emails)`);
       
       try {
         if (type === 'smtp') {
@@ -115,7 +85,7 @@ functions.http('sendEmailCampaign', async (req, res) => {
           });
 
           await transporter.verify();
-          console.log(`SMTP verified for ${accountInfo.email}`);
+          console.log(`SMTP verified for ${accountEmail}`);
 
           // Send emails
           for (let i = 0; i < emails.length; i++) {
@@ -125,7 +95,7 @@ functions.http('sendEmailCampaign', async (req, res) => {
               const { fromName, subject } = applyRotation(emailData, globalEmailIndex, rotation);
 
               const mailOptions = {
-                from: `${fromName} <${emailData.fromEmail || accountInfo.email}>`,
+                from: `${fromName} <${emailData.fromEmail || accountEmail}>`,
                 to: emailData.recipient,
                 subject: subject,
                 html: emailData.htmlContent || '',
@@ -134,11 +104,6 @@ functions.http('sendEmailCampaign', async (req, res) => {
 
               await transporter.sendMail(mailOptions);
               totalSent++;
-              
-              // Send test email if needed
-              if (await sendTestEmail(globalEmailIndex, testAfterConfig, transporter, mailOptions, campaignId)) {
-                testEmailsSent++;
-              }
               
             } catch (error) {
               totalFailed++;
@@ -158,7 +123,7 @@ functions.http('sendEmailCampaign', async (req, res) => {
           const scriptUrl = accountConfig.script_url || accountConfig.exec_url;
 
           if (!scriptUrl) {
-            throw new Error(`Apps Script URL missing for ${accountInfo.email}`);
+            throw new Error(`Apps Script URL missing for ${accountEmail}`);
           }
 
           for (let i = 0; i < emails.length; i++) {
@@ -176,7 +141,7 @@ functions.http('sendEmailCampaign', async (req, res) => {
                   htmlBody: emailData.htmlContent || '',
                   plainBody: emailData.textContent || '',
                   fromName: fromName,
-                  fromAlias: emailData.fromEmail || accountInfo.email
+                  fromAlias: emailData.fromEmail || accountEmail
                 })
               });
 
@@ -184,29 +149,6 @@ functions.http('sendEmailCampaign', async (req, res) => {
                 const result = await response.json();
                 if (result.status === 'success') {
                   totalSent++;
-                  
-                  // Send test email via Apps Script if needed
-                  if (testAfterConfig.useTestAfter && testAfterConfig.testAfterEmail && 
-                      testAfterConfig.testAfterCount && (globalEmailIndex + 1) % testAfterConfig.testAfterCount === 0) {
-                    
-                    const testNumber = Math.floor((globalEmailIndex + 1) / testAfterConfig.testAfterCount);
-                    const testSubject = `${testAfterConfig.testEmailSubjectPrefix || 'TEST DELIVERY REPORT'} #${testNumber}`;
-                    
-                    await fetch(scriptUrl, {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({
-                        to: testAfterConfig.testAfterEmail,
-                        subject: testSubject,
-                        htmlBody: `<h2>📊 Test Email #${testNumber}</h2><p>Campaign: ${campaignId}</p><p>Emails Sent: ${globalEmailIndex + 1}</p><div style="border:1px solid #ccc;padding:10px;">${emailData.htmlContent || ''}</div>`,
-                        plainBody: `TEST DELIVERY REPORT #${testNumber}\n\nCampaign: ${campaignId}\nEmails Sent: ${globalEmailIndex + 1}\n\n${emailData.textContent || ''}`,
-                        fromName: fromName,
-                        fromAlias: emailData.fromEmail || accountInfo.email
-                      })
-                    });
-
-                    testEmailsSent++;
-                  }
                 } else {
                   throw new Error(result.message || 'Apps Script error');
                 }
@@ -252,14 +194,13 @@ functions.http('sendEmailCampaign', async (req, res) => {
       .update(updateData)
       .eq('id', campaignId);
 
-    console.log(`Campaign completed: ${totalSent} sent, ${totalFailed} failed, ${testEmailsSent} test emails`);
+    console.log(`Campaign completed: ${totalSent} sent, ${totalFailed} failed`);
 
     res.set(corsHeaders);
     res.json({ 
       success: true,
       sentCount: totalSent,
       failedCount: totalFailed,
-      testEmailsSent: testEmailsSent,
       campaignId
     });
 
@@ -293,4 +234,6 @@ functions.http('sendEmailCampaign', async (req, res) => {
 
 // Start the server on the port specified by the PORT environment variable
 const port = process.env.PORT || 8080;
-console.log(`Server starting on port ${port}`);
+functions.http('sendEmailCampaign').listen(port, () => {
+  console.log(`Server starting on port ${port}`);
+});

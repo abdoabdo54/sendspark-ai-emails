@@ -140,7 +140,7 @@ serve(async (req) => {
       })
       .eq('id', campaignId);
 
-    // Group emails by account
+    // Group emails by account with proper accountInfo structure
     const emailsByAccount = new Map();
     preparedEmails.forEach((email) => {
       const accountId = email.account_id;
@@ -152,7 +152,7 @@ serve(async (req) => {
           emails: [],
           accountInfo: {
             name: email.fromName || 'Unknown',
-            email: email.fromEmail || 'unknown@domain.com'
+            email: email.fromEmail || email.accountConfig?.user || email.accountConfig?.email || 'unknown@domain.com'
           }
         });
       }
@@ -168,7 +168,7 @@ serve(async (req) => {
 
     console.log(`Processing ${preparedEmails.length} emails using ${emailsByAccount.size} accounts`);
 
-    // Prepare payload for Google Cloud Function - EXACT format expected
+    // Prepare simplified payload for Google Cloud Function
     const payload = {
       campaignId,
       emailsByAccount: Object.fromEntries(emailsByAccount),
@@ -176,21 +176,13 @@ serve(async (req) => {
       supabaseKey,
       config: {
         sendingMode: campaign.config?.sendingMode || 'controlled',
-        emailsPerSecond: campaign.config?.emailsPerSecond || 1,
-        useCustomDelay: campaign.config?.useCustomDelay || false,
-        customDelayMs: campaign.config?.customDelayMs || 1000
+        emailsPerSecond: campaign.config?.emailsPerSecond || 1
       },
       rotation: {
         useFromNameRotation: campaign.config?.useFromNameRotation || false,
         fromNames: campaign.config?.fromNames || [],
         useSubjectRotation: campaign.config?.useSubjectRotation || false,
         subjects: campaign.config?.subjects || []
-      },
-      testAfterConfig: {
-        useTestAfter: campaign.config?.useTestAfter || false,
-        testAfterEmail: campaign.config?.testAfterEmail || '',
-        testAfterCount: campaign.config?.testAfterCount || 100,
-        testEmailSubjectPrefix: campaign.config?.testEmailSubjectPrefix || 'TEST DELIVERY REPORT'
       }
     };
 
