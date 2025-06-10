@@ -123,23 +123,30 @@ serve(async (req) => {
     }
     
     if (!gcfConfig?.functionUrl) {
-      console.error('No Google Cloud Functions URL configured');
-      
-      await supabase
-        .from('email_campaigns')
-        .update({ 
-          status: 'failed',
-          error_message: 'Google Cloud Functions not configured. Please check your Google Cloud Function URL in settings.',
-          completed_at: new Date().toISOString()
-        })
-        .eq('id', campaignId);
-      
-      return new Response(
-        JSON.stringify({ 
-          error: 'Google Cloud Functions not configured. Please check your function URL in settings.' 
-        }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+      // Use environment URL as fallback
+      const gcfUrl = Deno.env.get('GOOGLE_CLOUD_FUNCTION_URL');
+      if (gcfUrl) {
+        gcfConfig = { functionUrl: gcfUrl };
+        console.log('Using environment Google Cloud Function URL');
+      } else {
+        console.error('No Google Cloud Functions URL configured');
+        
+        await supabase
+          .from('email_campaigns')
+          .update({ 
+            status: 'failed',
+            error_message: 'Google Cloud Functions not configured. Please check your Google Cloud Function URL in settings.',
+            completed_at: new Date().toISOString()
+          })
+          .eq('id', campaignId);
+        
+        return new Response(
+          JSON.stringify({ 
+            error: 'Google Cloud Functions not configured. Please check your function URL in settings.' 
+          }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
     }
 
     console.log(`⚡ MAXIMUM SPEED: ${gcfConfig.functionUrl}`);
@@ -222,17 +229,24 @@ serve(async (req) => {
       resumeFromIndex,
       supabaseUrl,
       supabaseKey,
+      sendingMode: campaign.config?.sendingMode || 'controlled',
+      testAfter: campaign.config?.testAfter || {
+        useTestAfter: false,
+        testAfterEmail: '',
+        testAfterCount: 100
+      },
       config: {
         highSpeed: true,
-        maxSpeed: true,
+        maxSpeed: campaign.config?.sendingMode === 'maximum',
         parallelProcessing: true,
         optimizedBatching: true,
-        maxConcurrency: true,
-        ultraFast: true
+        maxConcurrency: campaign.config?.sendingMode === 'maximum',
+        ultraFast: campaign.config?.sendingMode === 'fast' || campaign.config?.sendingMode === 'maximum'
       }
     };
 
     console.log(`🎯 MAXIMUM SPEED payload prepared for ${emailsByAccount.size} selected accounts, ${actualEmailsToSend} emails`);
+    console.log('Test After config:', payload.testAfter);
 
     // Validate function URL format
     if (!gcfConfig.functionUrl.startsWith('https://')) {

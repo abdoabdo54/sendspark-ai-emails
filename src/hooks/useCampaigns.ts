@@ -209,9 +209,47 @@ export const useCampaigns = (organizationId?: string) => {
   const prepareCampaign = async (campaignId: string) => {
     try {
       console.log('Preparing campaign:', campaignId);
+      
+      // Get the campaign to access its config
+      const campaign = campaigns.find(c => c.id === campaignId);
+      if (!campaign) {
+        throw new Error('Campaign not found');
+      }
+      
+      // Ensure we have accounts selected
+      const selectedAccounts = campaign.config?.selectedAccounts || [];
+      console.log('Selected accounts for preparation:', selectedAccounts);
+      
+      if (!selectedAccounts || selectedAccounts.length === 0) {
+        console.error('No accounts selected for campaign');
+        throw new Error('Please select at least one email account for sending');
+      }
+
+      // Prepare the request body with all necessary configuration
+      const requestBody = {
+        campaignId,
+        selectedAccounts,
+        rotation: {
+          useFromNameRotation: campaign.config?.useFromNameRotation || false,
+          fromNames: campaign.config?.fromNames || [],
+          useSubjectRotation: campaign.config?.useSubjectRotation || false,
+          subjects: campaign.config?.subjects || []
+        },
+        rateLimit: campaign.config?.rateLimit || {},
+        testAfter: {
+          useTestAfter: campaign.config?.useTestAfter || false,
+          testAfterEmail: campaign.config?.testAfterEmail || '',
+          testAfterCount: campaign.config?.testAfterCount || 100,
+          testEmailSubjectPrefix: campaign.config?.testEmailSubjectPrefix || 'TEST DELIVERY REPORT'
+        },
+        sendingMode: campaign.config?.sendingMode || 'controlled',
+        googleCloudConfig: campaign.config?.googleCloudConfig || null
+      };
+      
+      console.log('Prepare campaign request body:', requestBody);
 
       const response = await supabase.functions.invoke('prepare-campaign-advanced', {
-        body: { campaignId }
+        body: requestBody
       });
 
       if (response.error) {
@@ -224,9 +262,19 @@ export const useCampaigns = (organizationId?: string) => {
       // Refresh campaigns to show updated status
       await fetchCampaigns();
       
+      toast({
+        title: "Success",
+        description: "Campaign prepared successfully and ready to send!"
+      });
+      
       return response.data;
     } catch (error) {
       console.error('Error in prepareCampaign:', error);
+      toast({
+        title: "Error",
+        description: `Failed to prepare campaign: ${error.message}`,
+        variant: "destructive"
+      });
       throw error;
     }
   };
