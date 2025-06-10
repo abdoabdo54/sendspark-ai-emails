@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
@@ -292,7 +291,22 @@ export const useCampaigns = (organizationId?: string) => {
 
       if (response.error) {
         console.error('Error sending campaign:', response.error);
-        throw new Error(response.error.message);
+        
+        // Provide more helpful error messages based on error content
+        let errorMessage = response.error.message;
+        if (errorMessage.includes('Google Cloud Functions not configured')) {
+          errorMessage = 'Google Cloud Function URL not configured. Please go to Settings → Google Cloud Config to set up your function URL.';
+        } else if (errorMessage.includes('non-2xx status code')) {
+          errorMessage = 'Google Cloud Function URL is not responding correctly. Please check your function URL in Settings → Google Cloud Config.';
+        }
+        
+        toast({
+          title: "Configuration Error",
+          description: errorMessage,
+          variant: "destructive"
+        });
+        
+        throw new Error(errorMessage);
       }
 
       console.log('Campaign sending initiated:', response.data);
@@ -308,11 +322,16 @@ export const useCampaigns = (organizationId?: string) => {
       return response.data;
     } catch (error) {
       console.error('Error in sendCampaign:', error);
-      toast({
-        title: "Error",
-        description: `Failed to send campaign: ${error.message}`,
-        variant: "destructive"
-      });
+      
+      // Don't show duplicate toast if we already showed one above
+      if (!error.message.includes('Google Cloud Function')) {
+        toast({
+          title: "Error",
+          description: `Failed to send campaign: ${error.message}`,
+          variant: "destructive"
+        });
+      }
+      
       throw error;
     }
   };
