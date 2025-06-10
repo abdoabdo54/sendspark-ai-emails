@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
@@ -171,9 +172,19 @@ export const useCampaigns = (organizationId?: string) => {
 
       setCampaigns(prev => [typedCampaign, ...prev]);
       
+      // Enhanced success notification with redirect button
       toast({
-        title: "Success",
-        description: "Campaign created successfully"
+        title: "Campaign Created Successfully!",
+        description: "Your campaign has been created and is ready to be prepared and sent.",
+        action: (
+          <button
+            onClick={() => window.location.href = '/campaigns'}
+            className="inline-flex h-8 shrink-0 items-center justify-center rounded-md border bg-transparent px-3 text-sm font-medium ring-offset-background transition-colors hover:bg-secondary focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none disabled:opacity-50"
+          >
+            Go to Campaigns
+          </button>
+        ),
+        duration: 8000,
       });
       
       return typedCampaign;
