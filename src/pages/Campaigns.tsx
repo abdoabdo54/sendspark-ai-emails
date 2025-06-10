@@ -8,18 +8,15 @@ import {
   Search, 
   Plus, 
   Mail, 
-  Calendar, 
   Users, 
   BarChart3,
-  Eye,
+  Copy,
   Edit,
   Trash2,
   Send,
-  Copy,
-  Play,
-  Pause,
   Settings,
-  Clock
+  Play,
+  Pause
 } from 'lucide-react';
 import { useSimpleOrganizations } from '@/contexts/SimpleOrganizationContext';
 import { useCampaigns } from '@/hooks/useCampaigns';
@@ -136,52 +133,53 @@ const Campaigns = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-slate-100">
+    <div className="min-h-screen bg-gray-50">
       <Header />
       
       <div className="container mx-auto p-6">
-        <div className="mb-6">
+        {/* Header Section */}
+        <div className="mb-8">
           <h1 className="text-3xl font-bold text-slate-800 mb-2">Email Campaigns</h1>
           <p className="text-slate-600">Manage and monitor your email campaigns</p>
         </div>
 
-        {/* Search and Actions */}
-        <Card className="mb-6">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between gap-4">
-              <div className="relative flex-1 max-w-md">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                <Input
-                  placeholder="Search campaigns..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10"
-                />
-              </div>
-              <Button onClick={() => window.location.href = '/'} className="flex items-center gap-2">
-                <Plus className="w-4 h-4" />
-                Create Campaign
-              </Button>
+        {/* Search and Create Section */}
+        <div className="bg-white rounded-lg border p-4 mb-6">
+          <div className="flex items-center justify-between gap-4">
+            <div className="relative flex-1 max-w-md">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+              <Input
+                placeholder="Search campaigns..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-10"
+              />
             </div>
-          </CardContent>
-        </Card>
+            <Button 
+              onClick={() => window.location.href = '/'} 
+              className="flex items-center gap-2 bg-slate-900 hover:bg-slate-800"
+            >
+              <Plus className="w-4 h-4" />
+              Create Campaign
+            </Button>
+          </div>
+        </div>
 
-        {/* Campaigns List */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Mail className="w-5 h-5" />
-              All Campaigns ({filteredCampaigns.length})
-            </CardTitle>
-            <CardDescription>
-              View and manage your email campaigns
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
+        {/* Campaigns List Section */}
+        <div className="bg-white rounded-lg border">
+          <div className="border-b p-4">
+            <div className="flex items-center gap-2">
+              <Mail className="w-5 h-5 text-slate-600" />
+              <h2 className="text-lg font-semibold">All Campaigns ({filteredCampaigns.length})</h2>
+            </div>
+            <p className="text-sm text-slate-600 mt-1">View and manage your email campaigns</p>
+          </div>
+
+          <div className="divide-y">
             {loading ? (
-              <div className="text-center py-8">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-2"></div>
-                <p className="text-slate-600">Loading campaigns...</p>
+              <div className="flex items-center justify-center py-12">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mr-3"></div>
+                <span className="text-slate-600">Loading campaigns...</span>
               </div>
             ) : filteredCampaigns.length === 0 ? (
               <div className="text-center py-12">
@@ -196,140 +194,134 @@ const Campaigns = () => {
                 </Button>
               </div>
             ) : (
-              <div className="space-y-4">
-                {filteredCampaigns.map((campaign) => (
-                  <div key={campaign.id} className="border rounded-lg p-4 hover:bg-slate-50 transition-colors">
-                    <div className="flex items-center justify-between">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-3 mb-2">
-                          <h3 className="font-medium text-slate-900">{campaign.subject}</h3>
-                          <Badge className={getStatusColor(campaign.status)}>
-                            {campaign.status}
-                          </Badge>
-                        </div>
-                        
-                        <div className="flex items-center gap-6 text-sm text-slate-600">
-                          <div className="flex items-center gap-1">
-                            <Mail className="w-4 h-4" />
-                            From: {campaign.from_name}
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <Users className="w-4 h-4" />
-                            Recipients: {campaign.total_recipients || 0}
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <Send className="w-4 h-4" />
-                            Sent: {campaign.sent_count || 0}
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <Calendar className="w-4 h-4" />
-                            {campaign.sent_at ? formatDate(campaign.sent_at) : formatDate(campaign.created_at)}
-                          </div>
-                        </div>
+              filteredCampaigns.map((campaign) => (
+                <div key={campaign.id} className="p-4 hover:bg-gray-50 transition-colors">
+                  <div className="flex items-center justify-between">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-3 mb-2">
+                        <h3 className="font-medium text-slate-900">{campaign.subject}</h3>
+                        <Badge className={`text-xs ${getStatusColor(campaign.status)}`}>
+                          {campaign.status}
+                        </Badge>
                       </div>
                       
-                      <div className="flex items-center gap-2">
-                        {/* Prepare Button - only for draft campaigns */}
-                        {campaign.status === 'draft' && (
-                          <Button 
-                            variant="outline" 
-                            size="sm"
-                            onClick={() => handlePrepare(campaign.id)}
-                            title="Prepare Campaign"
-                          >
-                            <Settings className="w-4 h-4" />
-                            Prepare
-                          </Button>
-                        )}
-
-                        {/* Send Button - for prepared campaigns */}
-                        {campaign.status === 'prepared' && (
-                          <Button 
-                            variant="default" 
-                            size="sm"
-                            onClick={() => handleSend(campaign.id)}
-                            title="Send Campaign"
-                          >
-                            <Send className="w-4 h-4" />
-                            Send
-                          </Button>
-                        )}
-
-                        {/* Pause Button - for sending campaigns */}
-                        {campaign.status === 'sending' && (
-                          <Button 
-                            variant="outline" 
-                            size="sm"
-                            onClick={() => handlePause(campaign.id)}
-                            title="Pause Campaign"
-                          >
-                            <Pause className="w-4 h-4" />
-                            Pause
-                          </Button>
-                        )}
-
-                        {/* Resume Button - for paused campaigns */}
-                        {campaign.status === 'paused' && (
-                          <Button 
-                            variant="default" 
-                            size="sm"
-                            onClick={() => handleResume(campaign.id)}
-                            title="Resume Campaign"
-                          >
-                            <Play className="w-4 h-4" />
-                            Resume
-                          </Button>
-                        )}
-
-                        {/* Analytics Button */}
-                        <Button 
-                          variant="outline" 
-                          size="sm" 
-                          onClick={() => handleViewAnalytics(campaign.id)}
-                          title="View Analytics"
-                        >
-                          <BarChart3 className="w-4 h-4" />
-                        </Button>
-
-                        {/* Duplicate Button */}
-                        <Button 
-                          variant="outline" 
-                          size="sm"
-                          onClick={() => handleDuplicate(campaign.id)}
-                          title="Duplicate Campaign"
-                        >
-                          <Copy className="w-4 h-4" />
-                        </Button>
-
-                        {/* Edit Button - only for draft campaigns */}
-                        {campaign.status === 'draft' && (
-                          <Button 
-                            variant="outline" 
-                            size="sm"
-                            onClick={() => handleEdit(campaign)}
-                            title="Edit Campaign"
-                          >
-                            <Edit className="w-4 h-4" />
-                          </Button>
-                        )}
-
-                        {/* Delete Button */}
-                        <Button 
-                          variant="outline" 
-                          size="sm"
-                          onClick={() => handleDelete(campaign.id)}
-                          title="Delete Campaign"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
+                      <div className="flex items-center gap-6 text-sm text-slate-600">
+                        <div className="flex items-center gap-1">
+                          <Mail className="w-4 h-4" />
+                          <span>From: {campaign.from_name}</span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <Users className="w-4 h-4" />
+                          <span>Recipients: {campaign.total_recipients || 0}</span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <Send className="w-4 h-4" />
+                          <span>Sent: {campaign.sent_count || 0}</span>
+                        </div>
+                        <div className="text-slate-500">
+                          {campaign.sent_at ? formatDate(campaign.sent_at) : formatDate(campaign.created_at)}
+                        </div>
                       </div>
                     </div>
+                    
+                    <div className="flex items-center gap-2">
+                      {/* Prepare Button - only for draft campaigns */}
+                      {campaign.status === 'draft' && (
+                        <Button 
+                          variant="outline" 
+                          size="sm"
+                          onClick={() => handlePrepare(campaign.id)}
+                          title="Prepare Campaign"
+                        >
+                          <Settings className="w-4 h-4" />
+                        </Button>
+                      )}
+
+                      {/* Send Button - for prepared campaigns */}
+                      {campaign.status === 'prepared' && (
+                        <Button 
+                          variant="default" 
+                          size="sm"
+                          onClick={() => handleSend(campaign.id)}
+                          title="Send Campaign"
+                        >
+                          <Send className="w-4 h-4" />
+                        </Button>
+                      )}
+
+                      {/* Pause Button - for sending campaigns */}
+                      {campaign.status === 'sending' && (
+                        <Button 
+                          variant="outline" 
+                          size="sm"
+                          onClick={() => handlePause(campaign.id)}
+                          title="Pause Campaign"
+                        >
+                          <Pause className="w-4 h-4" />
+                        </Button>
+                      )}
+
+                      {/* Resume Button - for paused campaigns */}
+                      {campaign.status === 'paused' && (
+                        <Button 
+                          variant="default" 
+                          size="sm"
+                          onClick={() => handleResume(campaign.id)}
+                          title="Resume Campaign"
+                        >
+                          <Play className="w-4 h-4" />
+                        </Button>
+                      )}
+
+                      {/* Analytics Button */}
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        onClick={() => handleViewAnalytics(campaign.id)}
+                        title="View Analytics"
+                      >
+                        <BarChart3 className="w-4 h-4" />
+                      </Button>
+
+                      {/* Duplicate Button */}
+                      <Button 
+                        variant="outline" 
+                        size="sm"
+                        onClick={() => handleDuplicate(campaign.id)}
+                        title="Duplicate Campaign"
+                      >
+                        <Copy className="w-4 h-4" />
+                      </Button>
+
+                      {/* Edit Button - only for draft campaigns */}
+                      {campaign.status === 'draft' && (
+                        <Button 
+                          variant="outline" 
+                          size="sm"
+                          onClick={() => handleEdit(campaign)}
+                          title="Edit Campaign"
+                        >
+                          <Edit className="w-4 h-4" />
+                        </Button>
+                      )}
+
+                      {/* Delete Button */}
+                      <Button 
+                        variant="outline" 
+                        size="sm"
+                        onClick={() => handleDelete(campaign.id)}
+                        title="Delete Campaign"
+                        className="text-red-600 hover:text-red-700"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </div>
                   </div>
-                ))}
-              </div>
+                </div>
+              ))
             )}
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       </div>
     </div>
   );
