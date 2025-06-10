@@ -38,7 +38,7 @@ serve(async (req) => {
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    console.log(`🚀 MAXIMUM SPEED PROCESSING for campaign ${campaignId}`);
+    console.log(`🚀 DUAL MODE PROCESSING for campaign ${campaignId}`);
 
     if (!campaignId) {
       throw new Error('Campaign ID is required');
@@ -111,38 +111,90 @@ serve(async (req) => {
       );
     }
 
-    // Get Google Cloud Functions configuration - Check campaign config first
+    // Determine sending mode from campaign configuration
+    const sendingMode = campaign.config?.sendingMode || 'controlled';
+    console.log(`📊 Campaign sending mode: ${sendingMode.toUpperCase()}`);
+
+    // Get Google Cloud Functions configuration based on sending mode
     let gcfConfig = null;
     
-    // First check campaign config for Google Cloud Functions
-    if (campaign.config?.googleCloudFunctions) {
-      gcfConfig = campaign.config.googleCloudFunctions;
-      console.log('Using campaign-level Google Cloud config');
+    if (sendingMode === 'fast') {
+      // For fast mode, require Google Cloud Functions
+      if (campaign.config?.googleCloudFunctions) {
+        gcfConfig = campaign.config.googleCloudFunctions;
+        console.log('Using campaign-level Google Cloud config for FAST mode');
+      } else {
+        console.error('Fast mode requires Google Cloud Functions configuration');
+        
+        await supabase
+          .from('email_campaigns')
+          .update({ 
+            status: 'failed',
+            error_message: 'Fast Bulk Send Mode requires Google Cloud Functions configuration. Please configure it in the campaign settings.',
+            completed_at: new Date().toISOString()
+          })
+          .eq('id', campaignId);
+        
+        return new Response(
+          JSON.stringify({ 
+            error: 'Fast Bulk Send Mode requires Google Cloud Functions configuration.' 
+          }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
     } else {
-      console.log('No campaign-level Google Cloud config found, checking for global config');
+      // For controlled mode, try to use Google Cloud Functions if available, otherwise fallback to Supabase
+      if (campaign.config?.googleCloudFunctions?.enabled) {
+        gcfConfig = campaign.config.googleCloudFunctions;
+        console.log('Using Google Cloud config for CONTROLLED mode');
+      } else {
+        console.log('No Google Cloud config for controlled mode, will handle internally');
+        // Could fallback to internal Supabase processing here
+      }
     }
     
     if (!gcfConfig?.functionUrl) {
-      console.error('No Google Cloud Functions URL configured');
-      
-      await supabase
-        .from('email_campaigns')
-        .update({ 
-          status: 'failed',
-          error_message: 'Google Cloud Functions not configured. Please check your Google Cloud Function URL in settings.',
-          completed_at: new Date().toISOString()
-        })
-        .eq('id', campaignId);
-      
-      return new Response(
-        JSON.stringify({ 
-          error: 'Google Cloud Functions not configured. Please check your function URL in settings.' 
-        }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+      if (sendingMode === 'fast') {
+        console.error('No Google Cloud Functions URL configured for fast mode');
+        
+        await supabase
+          .from('email_campaigns')
+          .update({ 
+            status: 'failed',
+            error_message: 'Fast mode requires Google Cloud Functions URL. Please check your function URL in campaign settings.',
+            completed_at: new Date().toISOString()
+          })
+          .eq('id', campaignId);
+        
+        return new Response(
+          JSON.stringify({ 
+            error: 'Fast mode requires Google Cloud Functions URL. Please check your function URL in campaign settings.' 
+          }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      } else {
+        // For controlled mode without GCF, we could process internally
+        console.log('Controlled mode without Google Cloud Functions - processing internally (not implemented yet)');
+        
+        await supabase
+          .from('email_campaigns')
+          .update({ 
+            status: 'failed',
+            error_message: 'Internal processing for controlled mode not yet implemented. Please configure Google Cloud Functions.',
+            completed_at: new Date().toISOString()
+          })
+          .eq('id', campaignId);
+        
+        return new Response(
+          JSON.stringify({ 
+            error: 'Internal processing for controlled mode not yet implemented. Please configure Google Cloud Functions.' 
+          }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
     }
 
-    console.log(`⚡ MAXIMUM SPEED: ${gcfConfig.functionUrl}`);
+    console.log(`⚡ ${sendingMode.toUpperCase()} MODE: ${gcfConfig.functionUrl}`);
 
     // Ensure campaign is marked as sending
     await supabase
@@ -156,13 +208,13 @@ serve(async (req) => {
 
     // Get emails to send (from resumeFromIndex onwards)
     const emailsToSend = preparedEmails.slice(resumeFromIndex);
-    console.log(`⚡ SENDING ${emailsToSend.length} emails at MAXIMUM SPEED starting from index ${resumeFromIndex}`);
+    console.log(`⚡ SENDING ${emailsToSend.length} emails in ${sendingMode.toUpperCase()} MODE starting from index ${resumeFromIndex}`);
     
     // Respect user's account selection from campaign config
     const selectedAccountIds = campaign.config?.selectedAccounts || [];
     console.log('Selected account IDs from campaign:', selectedAccountIds);
     
-    // Group emails by account for ultra-optimized processing - ONLY USE SELECTED ACCOUNTS
+    // Group emails by account for optimized processing - ONLY USE SELECTED ACCOUNTS
     const emailsByAccount = new Map();
     emailsToSend.forEach((email, index) => {
       const accountId = email.account_id;
@@ -196,7 +248,7 @@ serve(async (req) => {
     });
 
     const actualEmailsToSend = Array.from(emailsByAccount.values()).reduce((total, account) => total + account.emails.length, 0);
-    console.log(`⚡ ULTRA-OPTIMIZED: ${actualEmailsToSend} emails using ${emailsByAccount.size} selected accounts`);
+    console.log(`⚡ ${sendingMode.toUpperCase()} MODE: ${actualEmailsToSend} emails using ${emailsByAccount.size} selected accounts`);
 
     if (actualEmailsToSend === 0) {
       await supabase
@@ -214,7 +266,7 @@ serve(async (req) => {
       );
     }
 
-    // Prepare MAXIMUM SPEED payload for Google Cloud Function
+    // Prepare payload for Google Cloud Function with sending mode
     const payload = {
       campaignId,
       emailsByAccount: Object.fromEntries(emailsByAccount),
@@ -222,24 +274,30 @@ serve(async (req) => {
       resumeFromIndex,
       supabaseUrl,
       supabaseKey,
+      sendingMode, // Pass the sending mode to Google Cloud Function
+      rotation: {
+        useFromNameRotation: campaign.config?.useFromNameRotation || false,
+        fromNames: campaign.config?.fromNames || [],
+        useSubjectRotation: campaign.config?.useSubjectRotation || false,
+        subjects: campaign.config?.subjects || []
+      },
       config: {
-        highSpeed: true,
-        maxSpeed: true,
-        parallelProcessing: true,
-        optimizedBatching: true,
-        maxConcurrency: true,
-        ultraFast: true
+        sendingMode: sendingMode,
+        fastMode: sendingMode === 'fast',
+        controlledMode: sendingMode === 'controlled',
+        parallelProcessing: sendingMode === 'fast',
+        sequentialProcessing: sendingMode === 'controlled'
       }
     };
 
-    console.log(`🎯 MAXIMUM SPEED payload prepared for ${emailsByAccount.size} selected accounts, ${actualEmailsToSend} emails`);
+    console.log(`🎯 ${sendingMode.toUpperCase()} MODE payload prepared for ${emailsByAccount.size} selected accounts, ${actualEmailsToSend} emails`);
 
     // Validate function URL format
     if (!gcfConfig.functionUrl.startsWith('https://')) {
       throw new Error('Invalid Google Cloud Function URL. Must start with https://');
     }
 
-    // Send to Google Cloud Functions with MAXIMUM SPEED settings and timeout
+    // Send to Google Cloud Functions with mode-specific settings and timeout
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 120000); // 2 minute timeout
 
@@ -248,11 +306,11 @@ serve(async (req) => {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'User-Agent': 'Supabase-MaxSpeed/3.3',
+          'User-Agent': `Supabase-${sendingMode}Mode/1.0`,
           'X-Campaign-ID': campaignId,
           'X-Email-Count': actualEmailsToSend.toString(),
-          'X-Max-Speed': 'true',
-          'X-Ultra-Fast': 'true'
+          'X-Sending-Mode': sendingMode,
+          'X-Fast-Mode': sendingMode === 'fast' ? 'true' : 'false'
         },
         body: JSON.stringify(payload),
         signal: controller.signal
@@ -260,18 +318,18 @@ serve(async (req) => {
 
       clearTimeout(timeoutId);
 
-      console.log(`⚡ Google Cloud MAXIMUM SPEED response: ${response.status}`);
+      console.log(`⚡ Google Cloud ${sendingMode.toUpperCase()} MODE response: ${response.status}`);
 
       if (!response.ok) {
         const errorText = await response.text();
-        console.error(`💥 Google Cloud CRITICAL ERROR: ${response.status} - ${errorText}`);
+        console.error(`💥 Google Cloud ${sendingMode.toUpperCase()} MODE ERROR: ${response.status} - ${errorText}`);
         
         // Update campaign with error
         await supabase
           .from('email_campaigns')
           .update({ 
             status: 'failed',
-            error_message: `Google Cloud error: ${response.status} - ${errorText}. Check your function URL: ${gcfConfig.functionUrl}`,
+            error_message: `Google Cloud ${sendingMode} mode error: ${response.status} - ${errorText}. Check your function URL: ${gcfConfig.functionUrl}`,
             completed_at: new Date().toISOString()
           })
           .eq('id', campaignId);
@@ -280,11 +338,11 @@ serve(async (req) => {
       }
 
       const result = await response.json();
-      console.log('✅ MAXIMUM SPEED Google Cloud response:', JSON.stringify(result, null, 2));
+      console.log(`✅ ${sendingMode.toUpperCase()} MODE Google Cloud response:`, JSON.stringify(result, null, 2));
 
       // Handle response based on completion status
       if (result.success && result.completed) {
-        console.log('🎉 MAXIMUM SPEED Campaign completed successfully!');
+        console.log(`🎉 ${sendingMode.toUpperCase()} MODE Campaign completed successfully!`);
         
         // Final status update
         await supabase
@@ -301,19 +359,24 @@ serve(async (req) => {
       return new Response(
         JSON.stringify({ 
           success: true,
-          message: 'MAXIMUM SPEED campaign processing via Google Cloud Functions',
+          message: `${sendingMode.toUpperCase()} MODE campaign processing via Google Cloud Functions`,
           details: result,
           configuration: {
             accounts_processing: emailsByAccount.size,
             total_emails: actualEmailsToSend,
             selected_accounts: selectedAccountIds.length,
-            max_speed_mode: true,
-            ultra_fast_processing: true,
-            parallel_processing: true
+            sending_mode: sendingMode,
+            fast_mode: sendingMode === 'fast',
+            controlled_mode: sendingMode === 'controlled'
           },
           gcf_url: gcfConfig.functionUrl,
           completed: result.completed || false,
-          performance: { ...result.performance, maxSpeed: true, ultraFast: true }
+          performance: { 
+            ...result.performance, 
+            sendingMode: sendingMode,
+            fastMode: sendingMode === 'fast',
+            controlledMode: sendingMode === 'controlled'
+          }
         }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
@@ -329,7 +392,7 @@ serve(async (req) => {
     }
 
   } catch (error) {
-    console.error('💥 CRITICAL MAXIMUM SPEED ERROR:', error);
+    console.error(`💥 CRITICAL ${requestBody?.config?.sendingMode?.toUpperCase() || 'DUAL'} MODE ERROR:`, error);
     
     // Try to revert campaign status on any error
     try {
@@ -342,7 +405,7 @@ serve(async (req) => {
           .from('email_campaigns')
           .update({ 
             status: 'failed',
-            error_message: `Maximum speed sender error: ${error.message}`,
+            error_message: `Dual mode sender error: ${error.message}`,
             completed_at: new Date().toISOString()
           })
           .eq('id', campaignId);
@@ -353,7 +416,7 @@ serve(async (req) => {
     
     return new Response(
       JSON.stringify({ 
-        error: `MAXIMUM SPEED Google Cloud Functions failed: ${error.message}`,
+        error: `Dual Mode Google Cloud Functions failed: ${error.message}`,
         details: error.stack,
         timestamp: new Date().toISOString()
       }),
