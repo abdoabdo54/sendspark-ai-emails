@@ -191,7 +191,7 @@ const TrackingLinksManager = ({
           </div>
           
           <div>
-            <Label className="text-sm text-gray-600">Template Code (use {{email}} placeholder):</Label>
+            <Label className="text-sm text-gray-600">Template Code (use {`{{email}}`} placeholder):</Label>
             <div className="flex items-center gap-2 mt-1">
               <Textarea
                 value={trackingPixel}
@@ -240,7 +240,7 @@ const TrackingLinksManager = ({
           </div>
           
           <div>
-            <Label className="text-sm text-gray-600">Template URL (use {{email}} placeholder):</Label>
+            <Label className="text-sm text-gray-600">Template URL (use {`{{email}}`} placeholder):</Label>
             <div className="flex items-center gap-2 mt-1">
               <Textarea
                 value={clickTrackingUrl}
@@ -287,7 +287,7 @@ const TrackingLinksManager = ({
             <strong>Usage Instructions:</strong><br />
             • Open Tracking: Add the pixel image anywhere in your HTML, preferably before closing body tag<br />
             • Click Tracking: Replace your normal links with the tracking URLs<br />
-            • Use {{email}} as a placeholder - it will be replaced with actual recipient emails<br />
+            • Use {`{{email}}`} as a placeholder - it will be replaced with actual recipient emails<br />
             • All tracking data will appear in your Campaign Analytics dashboard
           </AlertDescription>
         </Alert>
