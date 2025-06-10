@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -505,7 +506,7 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
                 required
               />
               <p className="text-sm text-gray-600">
-                📊 Analytics tracking (open & click tracking) will be automatically added to your content
+                📊 Use the tracking manager below to control analytics tracking
               </p>
             </div>
 
@@ -727,5 +728,3 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
 };
 
 export default BulkEmailComposer;
-
-}
