@@ -1,5 +1,6 @@
 
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { 
@@ -35,6 +36,7 @@ interface HeaderProps {
 
 const Header: React.FC<HeaderProps> = ({ activeTab, onTabChange }) => {
   const { user, signOut } = useAuth();
+  const navigate = useNavigate();
   const { currentOrganization, organizations, setCurrentOrganization } = useSimpleOrganizations();
   const [showOrgDialog, setShowOrgDialog] = useState(false);
   const [showDomainManager, setShowDomainManager] = useState(false);
@@ -52,22 +54,26 @@ const Header: React.FC<HeaderProps> = ({ activeTab, onTabChange }) => {
   };
 
   const handleEmailCampaignsClick = () => {
-    window.location.href = '/campaigns';
+    navigate('/campaigns');
+  };
+
+  const handleHomeNavigation = () => {
+    navigate('/');
   };
 
   const navItems = [
-    { id: 'bulk', label: 'Bulk Email', icon: Mail, onClick: () => onTabChange?.('bulk') },
-    { id: 'single', label: 'Single Email', icon: Mail, onClick: () => onTabChange?.('single') },
+    { id: 'bulk', label: 'Bulk Email', icon: Mail, onClick: () => { handleHomeNavigation(); onTabChange?.('bulk'); } },
+    { id: 'single', label: 'Single Email', icon: Mail, onClick: () => { handleHomeNavigation(); onTabChange?.('single'); } },
     { id: 'campaigns', label: 'Email Campaigns', icon: Mail, onClick: handleEmailCampaignsClick },
-    { id: 'analytics', label: 'Analytics', icon: BarChart3, onClick: () => onTabChange?.('analytics') },
-    { id: 'accounts', label: 'Accounts', icon: User, onClick: () => onTabChange?.('accounts') },
+    { id: 'analytics', label: 'Analytics', icon: BarChart3, onClick: () => { handleHomeNavigation(); onTabChange?.('analytics'); } },
+    { id: 'accounts', label: 'Accounts', icon: User, onClick: () => { handleHomeNavigation(); onTabChange?.('accounts'); } },
   ];
 
   const sidebarItems = [
-    { id: 'accounts-local', label: 'Accounts', icon: User },
-    { id: 'subscribers', label: 'Subscribers', icon: Users },
-    { id: 'history', label: 'History', icon: History },
-    { id: 'settings', label: 'Settings', icon: Settings },
+    { id: 'accounts-local', label: 'Accounts', icon: User, onClick: () => { handleHomeNavigation(); onTabChange?.('accounts-local'); } },
+    { id: 'subscribers', label: 'Subscribers', icon: Users, onClick: () => { handleHomeNavigation(); onTabChange?.('subscribers'); } },
+    { id: 'history', label: 'History', icon: History, onClick: () => { handleHomeNavigation(); onTabChange?.('history'); } },
+    { id: 'settings', label: 'Settings', icon: Settings, onClick: () => { handleHomeNavigation(); onTabChange?.('settings'); } },
   ];
 
   return (
@@ -161,7 +167,7 @@ const Header: React.FC<HeaderProps> = ({ activeTab, onTabChange }) => {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => onTabChange?.('settings')}>
+                <DropdownMenuItem onClick={() => { handleHomeNavigation(); onTabChange?.('settings'); }}>
                   <Settings className="w-4 h-4 mr-2" />
                   Settings
                 </DropdownMenuItem>
@@ -201,7 +207,7 @@ const Header: React.FC<HeaderProps> = ({ activeTab, onTabChange }) => {
                 key={item.id}
                 variant={activeTab === item.id ? "default" : "ghost"}
                 size="sm"
-                onClick={() => onTabChange?.(item.id)}
+                onClick={item.onClick}
                 className="flex items-center gap-2"
               >
                 <item.icon className="w-4 h-4" />
