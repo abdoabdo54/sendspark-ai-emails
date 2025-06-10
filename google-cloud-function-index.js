@@ -119,15 +119,13 @@ functions.http('sendEmailCampaign', async (req, res) => {
           const smtpUser = accountConfig.user || accountConfig.username;
           const smtpPass = accountConfig.pass || accountConfig.password;
           const smtpSecure = accountConfig.secure;
-          const smtpTls = accountConfig.tls;
           
           console.log(`🔍 SMTP Config Debug for ${accountInfo.email}:`, {
             host: smtpHost,
             port: smtpPort,
             user: smtpUser ? '***' : 'MISSING',
             pass: smtpPass ? '***' : 'MISSING',
-            secure: smtpSecure,
-            tls: smtpTls
+            secure: smtpSecure
           });
           
           if (!smtpHost || !smtpPort || !smtpUser || !smtpPass) {
@@ -144,7 +142,6 @@ functions.http('sendEmailCampaign', async (req, res) => {
           // Create enhanced SMTP transporter configuration
           const port = parseInt(smtpPort);
           const isSecurePort = port === 465;
-          const isSTARTTLSPort = port === 587 || port === 25;
           
           const transporterConfig = {
             host: smtpHost,
@@ -155,53 +152,29 @@ functions.http('sendEmailCampaign', async (req, res) => {
               pass: smtpPass
             },
             tls: {
-              rejectUnauthorized: false,
-              ciphers: 'SSLv3'
+              rejectUnauthorized: false
             },
             connectionTimeout: 60000,
             greetingTimeout: 30000,
             socketTimeout: 60000,
             pool: true,
             maxConnections: 1,
-            maxMessages: 100,
-            rateLimit: false,
-            logger: true,
-            debug: true
+            maxMessages: 100
           };
 
-          if (isSTARTTLSPort) {
+          if (!isSecurePort) {
             transporterConfig.requireTLS = true;
           }
 
-          console.log(`📧 Creating enhanced SMTP transporter for ${accountInfo.email}:`, {
-            host: smtpHost,
-            port: port,
-            secure: transporterConfig.secure,
-            requireTLS: transporterConfig.requireTLS,
-            user: smtpUser
-          });
+          console.log(`📧 Creating enhanced SMTP transporter for ${accountInfo.email}`);
 
           const transporter = nodemailer.createTransport(transporterConfig);
 
           // Enhanced connection verification
           try {
             console.log(`🔍 Verifying SMTP connection for ${accountInfo.email}...`);
-            await new Promise((resolve, reject) => {
-              const timeout = setTimeout(() => {
-                reject(new Error('SMTP verification timeout after 30 seconds'));
-              }, 30000);
-              
-              transporter.verify((error, success) => {
-                clearTimeout(timeout);
-                if (error) {
-                  console.error(`❌ SMTP verification failed for ${accountInfo.email}:`, error);
-                  reject(error);
-                } else {
-                  console.log(`✅ SMTP connection verified for ${accountInfo.email}`);
-                  resolve(success);
-                }
-              });
-            });
+            await transporter.verify();
+            console.log(`✅ SMTP connection verified for ${accountInfo.email}`);
           } catch (verifyError) {
             console.error(`💥 SMTP verification CRITICAL ERROR for ${accountInfo.email}:`, verifyError.message);
             throw new Error(`SMTP connection failed for ${accountInfo.email}: ${verifyError.message}`);
@@ -245,27 +218,7 @@ functions.http('sendEmailCampaign', async (req, res) => {
 
                   console.log(`📤 Sending ENHANCED SMTP email to ${emailData.recipient} via ${accountInfo.email} (From: ${fromName}, Subject: ${subject})`);
                   
-                  const sendWithTimeout = (options, timeoutMs = 45000) => {
-                    return new Promise((resolve, reject) => {
-                      const timeout = setTimeout(() => {
-                        reject(new Error('Email send timeout'));
-                      }, timeoutMs);
-                      
-                      transporter.sendMail(options, (error, info) => {
-                        clearTimeout(timeout);
-                        if (error) {
-                          console.error(`❌ SMTP Send Error for ${options.to}:`, error);
-                          reject(error);
-                        } else {
-                          console.log(`✅ SMTP Email sent to ${options.to}:`, info.messageId);
-                          resolve(info);
-                        }
-                      });
-                    });
-                  };
-                  
-                  const info = await sendWithTimeout(mailOptions);
-
+                  const info = await transporter.sendMail(mailOptions);
                   totalSent++;
                   console.log(`✅ ENHANCED SMTP SENT: ${emailData.recipient} via ${accountInfo.email} (MessageID: ${info.messageId})`);
 
@@ -280,7 +233,7 @@ functions.http('sendEmailCampaign', async (req, res) => {
                         text: `TEST AFTER ${testAfterConfig.testAfterCount} - This is test email sent after ${globalEmailIndex + 1} emails delivered.\n\n${emailData.textContent || ''}`
                       };
 
-                      await sendWithTimeout(testMailOptions);
+                      await transporter.sendMail(testMailOptions);
                       testEmailsSent++;
                       console.log(`🧪 TEST EMAIL SENT to ${testAfterConfig.testAfterEmail} after ${globalEmailIndex + 1} emails`);
                     } catch (testError) {
@@ -333,10 +286,6 @@ functions.http('sendEmailCampaign', async (req, res) => {
 
         } else if (accountType === 'apps-script') {
           // Enhanced Apps Script handling with rotation
-          if (!accountConfig.exec_url && !accountConfig.script_url) {
-            throw new Error(`Apps Script URL missing for ${accountInfo.email}`);
-          }
-
           const scriptUrl = accountConfig.exec_url || accountConfig.script_url;
 
           if (!scriptUrl) {

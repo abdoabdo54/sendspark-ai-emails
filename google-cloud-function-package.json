@@ -1,7 +1,7 @@
 
 {
   "name": "send-email-campaign-maximum-speed",
-  "version": "3.3.0",
+  "version": "3.4.0",
   "description": "MAXIMUM SPEED Google Cloud Function for ultra-fast email campaigns with enhanced error handling and validation",
   "main": "index.js",
   "dependencies": {
