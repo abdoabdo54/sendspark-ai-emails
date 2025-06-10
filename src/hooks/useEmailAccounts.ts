@@ -62,19 +62,24 @@ export const useEmailAccounts = (organizationId?: string) => {
       
       console.log('Raw fetched accounts data:', data);
       
-      const typedData = (data || []).map(item => ({
-        ...item,
-        type: item.type as 'apps-script' | 'powermta' | 'smtp',
-        // Remove rate limiting from config to use campaign-level controls
-        config: {
-          ...(item.config || {}),
-          // Remove these rate limiting fields if they exist
-          emails_per_hour: undefined,
-          emails_per_second: undefined,
-          delay_in_seconds: undefined,
-          rate_limit_enabled: false
-        }
-      })) as EmailAccount[];
+      const typedData = (data || []).map(item => {
+        // Ensure config is always an object
+        const baseConfig = item.config && typeof item.config === 'object' ? item.config : {};
+        
+        return {
+          ...item,
+          type: item.type as 'apps-script' | 'powermta' | 'smtp',
+          // Remove rate limiting from config to use campaign-level controls
+          config: {
+            ...baseConfig,
+            // Remove these rate limiting fields if they exist
+            emails_per_hour: undefined,
+            emails_per_second: undefined,
+            delay_in_seconds: undefined,
+            rate_limit_enabled: false
+          }
+        };
+      }) as EmailAccount[];
       
       console.log('Processed accounts data (rate limits removed):', typedData);
       setAccounts(typedData);
@@ -104,6 +109,9 @@ export const useEmailAccounts = (organizationId?: string) => {
       console.log('Creating account with data:', accountData);
       console.log('Organization ID:', organizationId);
       
+      // Ensure config is always an object and remove rate limiting fields
+      const baseConfig = accountData.config && typeof accountData.config === 'object' ? accountData.config : {};
+      
       const accountToCreate = {
         name: accountData.name,
         type: accountData.type,
@@ -111,7 +119,7 @@ export const useEmailAccounts = (organizationId?: string) => {
         is_active: accountData.is_active,
         // Remove rate limiting from account config - will use campaign-level controls
         config: {
-          ...(accountData.config || {}),
+          ...baseConfig,
           // Ensure no rate limiting fields are saved at account level
           emails_per_hour: undefined,
           emails_per_second: undefined,
@@ -164,11 +172,13 @@ export const useEmailAccounts = (organizationId?: string) => {
 
   const updateAccount = async (id: string, updates: Partial<EmailAccount>) => {
     try {
-      // Remove rate limiting fields from updates
+      // Ensure config is always an object and remove rate limiting fields
+      const baseConfig = updates.config && typeof updates.config === 'object' ? updates.config : {};
+      
       const cleanUpdates = {
         ...updates,
         config: {
-          ...(updates.config || {}),
+          ...baseConfig,
           // Remove rate limiting fields
           emails_per_hour: undefined,
           emails_per_second: undefined,
