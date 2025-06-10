@@ -10,8 +10,8 @@
     "nodemailer": "^6.9.8"
   },
   "scripts": {
-    "start": "functions-framework --target=sendEmailCampaign --port=8080",
-    "deploy": "gcloud functions deploy sendEmailCampaign --runtime nodejs20 --trigger-http --allow-unauthenticated --memory=2GB --timeout=540s --max-instances=10 --region=us-central1 --set-env-vars PORT=8080"
+    "start": "functions-framework --target=sendEmailCampaign",
+    "deploy": "gcloud functions deploy sendEmailCampaign --runtime nodejs20 --trigger-http --allow-unauthenticated --memory=2GB --timeout=540s --max-instances=10 --region=us-central1"
   },
   "engines": {
     "node": ">=18.0.0"
