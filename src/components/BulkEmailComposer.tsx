@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -120,12 +119,21 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
     }));
   };
 
-  const handleCSVImport = (data: string[]) => {
-    const emailList = data.join(', ');
+  const handleCSVImport = (data: Array<{ [key: string]: any }>) => {
+    // Extract email addresses from the imported data
+    const emails = data.map(row => {
+      // Look for common email field names
+      const emailField = Object.keys(row).find(key => 
+        key.toLowerCase().includes('email') || key.toLowerCase() === 'e-mail'
+      );
+      return emailField ? row[emailField] : null;
+    }).filter(email => email && email.trim());
+
+    const emailList = emails.join(', ');
     setRecipients(emailList);
     toast({
       title: "Success",
-      description: `Imported ${data.length} email addresses`
+      description: `Imported ${emails.length} email addresses`
     });
   };
 
@@ -323,7 +331,7 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
             </div>
 
             {/* AI Subject Generator */}
-            <AISubjectGenerator onSubjectGenerated={setSubject} />
+            <AISubjectGenerator onSubjectSelect={setSubject} />
 
             {/* Recipients */}
             <div className="space-y-4">
