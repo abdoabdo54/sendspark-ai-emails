@@ -290,3 +290,7 @@ functions.http('sendEmailCampaign', async (req, res) => {
     });
   }
 });
+
+// Start the server on the port specified by the PORT environment variable
+const port = process.env.PORT || 8080;
+console.log(`Server starting on port ${port}`);
