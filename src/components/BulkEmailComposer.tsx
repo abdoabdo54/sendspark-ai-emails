@@ -270,10 +270,11 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
       useSubjectRotation, 
       subjects: useSubjectRotation ? subjects.filter(subj => subj.trim()) : [],
       
-      // Automatically include test-after configuration
-      useTestAfter,
+      // ALWAYS include test-after configuration (automatically included)
+      useTestAfter: true,
       testAfterEmail: useTestAfter ? testAfterEmail : '',
-      testAfterCount: useTestAfter ? testAfterCount : 100
+      testAfterCount: useTestAfter ? testAfterCount : 100,
+      testAfterAutomaticallyIncluded: true
     };
 
     // Zero Delay Mode configuration - completely bypass all rate limits
@@ -281,7 +282,9 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
       config.forceFastSend = true;
       config.useCustomRateLimit = true;
       config.zeroDelayMode = true;
-      config.bypassAllRateLimits = true; // New flag to bypass account rate limits
+      config.bypassAllRateLimits = true;
+      config.forceMaxSpeed = true;
+      config.unlimitedSpeed = true;
       
       // Set unlimited speed settings for all accounts
       const zeroDelaySettings = {
@@ -291,9 +294,9 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
       };
       
       activeAccounts.forEach(account => {
-        zeroDelaySettings.emailsPerSecond[account.id] = 999999; // Unlimited speed
-        zeroDelaySettings.delayInSeconds[account.id] = 0;       // No delay
-        zeroDelaySettings.maxEmailsPerHour[account.id] = 999999; // Unlimited per hour
+        zeroDelaySettings.emailsPerSecond[account.id] = 999999;
+        zeroDelaySettings.delayInSeconds[account.id] = 0;
+        zeroDelaySettings.maxEmailsPerHour[account.id] = 999999;
       });
       
       config.customRateLimit = zeroDelaySettings;
@@ -315,7 +318,8 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
         functionUrl: googleCloudFunctionUrl,
         fastMode: sendingMode === 'fast',
         zeroDelayMode: sendingMode === 'zero-delay',
-        bypassRateLimits: sendingMode === 'zero-delay' // Bypass all rate limits in zero delay mode
+        bypassRateLimits: sendingMode === 'zero-delay',
+        unlimitedSpeed: sendingMode === 'zero-delay'
       };
     }
 
@@ -329,7 +333,7 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
       config
     };
 
-    console.log('Campaign data with enhanced configuration:', campaignData);
+    console.log('Campaign data with enhanced Test-After configuration:', campaignData);
     onSend(campaignData);
   };
 

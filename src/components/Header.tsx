@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { useNavigate, Link, useLocation } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
@@ -53,25 +54,22 @@ const Header: React.FC<HeaderProps> = ({ activeTab, onTabChange }) => {
     setCurrentOrganization(org);
   };
 
-  const handleEmailCampaignsClick = () => {
-    navigate('/campaigns');
+  const handleTabNavigation = (tab: string) => {
+    if (tab === 'campaigns') {
+      navigate('/campaigns');
+    } else {
+      navigate('/');
+      onTabChange?.(tab);
+    }
   };
 
-  const handleTabNavigation = (tab: string) => {
-    // If we're on campaigns page, stay there and don't redirect
-    if (location.pathname === '/campaigns') {
-      // Don't navigate away, just update the tab if needed
-      return;
-    }
-    // Otherwise navigate to home with the tab
-    navigate('/');
-    onTabChange?.(tab);
-  };
+  // Determine if we're on campaigns page
+  const isOnCampaignsPage = location.pathname === '/campaigns';
 
   const navItems = [
     { id: 'bulk', label: 'Bulk Email', icon: Mail, onClick: () => handleTabNavigation('bulk') },
     { id: 'single', label: 'Single Email', icon: Mail, onClick: () => handleTabNavigation('single') },
-    { id: 'campaigns', label: 'Email Campaigns', icon: Mail, onClick: handleEmailCampaignsClick },
+    { id: 'campaigns', label: 'Email Campaigns', icon: Mail, onClick: () => handleTabNavigation('campaigns') },
     { id: 'testing', label: 'Testing', icon: BarChart3, onClick: () => handleTabNavigation('testing') },
     { id: 'analytics', label: 'Analytics', icon: BarChart3, onClick: () => handleTabNavigation('analytics') },
     { id: 'accounts', label: 'Accounts', icon: User, onClick: () => handleTabNavigation('accounts') },
@@ -102,18 +100,21 @@ const Header: React.FC<HeaderProps> = ({ activeTab, onTabChange }) => {
           <div className="flex items-center space-x-4">
             {/* Navigation Tabs */}
             <div className="hidden md:flex items-center space-x-2">
-              {navItems.map((item) => (
-                <Button
-                  key={item.id}
-                  variant={activeTab === item.id || (item.id === 'campaigns' && location.pathname === '/campaigns') ? "default" : "ghost"}
-                  size="sm"
-                  onClick={item.onClick}
-                  className="flex items-center gap-2"
-                >
-                  <item.icon className="w-4 h-4" />
-                  {item.label}
-                </Button>
-              ))}
+              {navItems.map((item) => {
+                const isActive = isOnCampaignsPage ? item.id === 'campaigns' : activeTab === item.id;
+                return (
+                  <Button
+                    key={item.id}
+                    variant={isActive ? "default" : "ghost"}
+                    size="sm"
+                    onClick={item.onClick}
+                    className="flex items-center gap-2"
+                  >
+                    <item.icon className="w-4 h-4" />
+                    {item.label}
+                  </Button>
+                );
+              })}
             </div>
 
             {/* Domain & Server Management */}
@@ -192,18 +193,21 @@ const Header: React.FC<HeaderProps> = ({ activeTab, onTabChange }) => {
         {/* Mobile Navigation */}
         <div className="md:hidden mt-4 border-t pt-4">
           <div className="flex flex-wrap gap-2">
-            {navItems.map((item) => (
-              <Button
-                key={item.id}
-                variant={activeTab === item.id || (item.id === 'campaigns' && location.pathname === '/campaigns') ? "default" : "ghost"}
-                size="sm"
-                onClick={item.onClick}
-                className="flex items-center gap-2"
-              >
-                <item.icon className="w-4 h-4" />
-                {item.label}
-              </Button>
-            ))}
+            {navItems.map((item) => {
+              const isActive = isOnCampaignsPage ? item.id === 'campaigns' : activeTab === item.id;
+              return (
+                <Button
+                  key={item.id}
+                  variant={isActive ? "default" : "ghost"}
+                  size="sm"
+                  onClick={item.onClick}
+                  className="flex items-center gap-2"
+                >
+                  <item.icon className="w-4 h-4" />
+                  {item.label}
+                </Button>
+              );
+            })}
           </div>
         </div>
 
