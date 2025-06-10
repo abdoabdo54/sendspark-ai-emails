@@ -166,10 +166,9 @@ serve(async (req) => {
       });
     });
 
-    const actualEmailsToSend = Array.from(emailsByAccount.values()).reduce((total, account) => total + account.emails.length, 0);
-    console.log(`Processing ${actualEmailsToSend} emails using ${emailsByAccount.size} accounts`);
+    console.log(`Processing ${preparedEmails.length} emails using ${emailsByAccount.size} accounts`);
 
-    // Prepare payload for Google Cloud Function
+    // Prepare payload for Google Cloud Function - EXACT format expected
     const payload = {
       campaignId,
       emailsByAccount: Object.fromEntries(emailsByAccount),
@@ -179,8 +178,7 @@ serve(async (req) => {
         sendingMode: campaign.config?.sendingMode || 'controlled',
         emailsPerSecond: campaign.config?.emailsPerSecond || 1,
         useCustomDelay: campaign.config?.useCustomDelay || false,
-        customDelayMs: campaign.config?.customDelayMs || 1000,
-        burstSize: campaign.config?.burstSize || 1
+        customDelayMs: campaign.config?.customDelayMs || 1000
       },
       rotation: {
         useFromNameRotation: campaign.config?.useFromNameRotation || false,
@@ -199,61 +197,43 @@ serve(async (req) => {
     console.log(`Sending payload to Google Cloud Function`);
 
     // Send to Google Cloud Function
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000);
+    const response = await fetch(gcfUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload)
+    });
 
-    try {
-      const response = await fetch(gcfUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'User-Agent': 'Supabase-Campaign-Sender/1.0'
-        },
-        body: JSON.stringify(payload),
-        signal: controller.signal
-      });
+    console.log(`Google Cloud Function response: ${response.status}`);
 
-      clearTimeout(timeoutId);
-
-      console.log(`Google Cloud Function response: ${response.status}`);
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error(`Google Cloud Function error: ${response.status} - ${errorText}`);
-        
-        await supabase
-          .from('email_campaigns')
-          .update({ 
-            status: 'failed',
-            error_message: `Google Cloud Function error: ${response.status} - ${errorText}`,
-            completed_at: new Date().toISOString()
-          })
-          .eq('id', campaignId);
-        
-        throw new Error(`Google Cloud Function failed: ${response.status} - ${errorText}`);
-      }
-
-      const result = await response.json();
-      console.log('Google Cloud Function response:', result);
-
-      return new Response(
-        JSON.stringify({ 
-          success: true,
-          message: 'Campaign processing via Google Cloud Function',
-          details: result
-        }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-
-    } catch (fetchError) {
-      clearTimeout(timeoutId);
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`Google Cloud Function error: ${response.status} - ${errorText}`);
       
-      if (fetchError.name === 'AbortError') {
-        throw new Error('Google Cloud Function request timed out');
-      }
+      await supabase
+        .from('email_campaigns')
+        .update({ 
+          status: 'failed',
+          error_message: `Google Cloud Function error: ${response.status} - ${errorText}`,
+          completed_at: new Date().toISOString()
+        })
+        .eq('id', campaignId);
       
-      throw fetchError;
+      throw new Error(`Google Cloud Function failed: ${response.status} - ${errorText}`);
     }
+
+    const result = await response.json();
+    console.log('Google Cloud Function response:', result);
+
+    return new Response(
+      JSON.stringify({ 
+        success: true,
+        message: 'Campaign sent successfully via Google Cloud Function',
+        details: result
+      }),
+      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
 
   } catch (error) {
     console.error('Critical error:', error);

@@ -8,7 +8,7 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Calculate delay based on sending mode
+// Calculate delay based on config
 function calculateDelay(config) {
   const mode = config.sendingMode || 'controlled';
   
@@ -23,7 +23,7 @@ function calculateDelay(config) {
   return 1000;
 }
 
-// Apply rotation if enabled
+// Apply rotation
 function applyRotation(emailData, index, rotation) {
   let fromName = emailData.fromName;
   let subject = emailData.subject;
@@ -39,7 +39,7 @@ function applyRotation(emailData, index, rotation) {
   return { fromName, subject };
 }
 
-// Send test email if needed
+// Send test email
 async function sendTestEmail(index, testAfterConfig, transporter, lastEmail, campaignId) {
   if (!testAfterConfig.useTestAfter || !testAfterConfig.testAfterEmail || !testAfterConfig.testAfterCount) {
     return false;
@@ -54,19 +54,8 @@ async function sendTestEmail(index, testAfterConfig, transporter, lastEmail, cam
       from: lastEmail.from,
       to: testAfterConfig.testAfterEmail,
       subject: testSubject,
-      html: `
-        <h2>📊 Test Email Delivery Report #${testNumber}</h2>
-        <p><strong>Campaign:</strong> ${campaignId}</p>
-        <p><strong>Emails Delivered:</strong> ${emailNumber}</p>
-        <p><strong>Test Frequency:</strong> Every ${testAfterConfig.testAfterCount} emails</p>
-        <p><strong>Timestamp:</strong> ${new Date().toISOString()}</p>
-        <hr/>
-        <h3>Last Email Sample:</h3>
-        <div style="border: 1px solid #ccc; padding: 10px;">
-          ${lastEmail.html || ''}
-        </div>
-      `,
-      text: `TEST DELIVERY REPORT #${testNumber}\n\nCampaign: ${campaignId}\nEmails Delivered: ${emailNumber}\n\n${lastEmail.text || ''}`
+      html: `<h2>📊 Test Email #${testNumber}</h2><p>Campaign: ${campaignId}</p><p>Emails Sent: ${emailNumber}</p><div style="border:1px solid #ccc;padding:10px;">${lastEmail.html || ''}</div>`,
+      text: `TEST DELIVERY REPORT #${testNumber}\n\nCampaign: ${campaignId}\nEmails Sent: ${emailNumber}\n\n${lastEmail.text || ''}`
     });
     
     console.log(`Test email #${testNumber} sent after ${emailNumber} emails`);
@@ -209,8 +198,8 @@ functions.http('sendEmailCampaign', async (req, res) => {
                       body: JSON.stringify({
                         to: testAfterConfig.testAfterEmail,
                         subject: testSubject,
-                        htmlBody: `<h2>📊 Test Email Delivery Report #${testNumber}</h2><p><strong>Campaign:</strong> ${campaignId}</p><p><strong>Emails Delivered:</strong> ${globalEmailIndex + 1}</p><div style="border: 1px solid #ccc; padding: 10px;">${emailData.htmlContent || ''}</div>`,
-                        plainBody: `TEST DELIVERY REPORT #${testNumber}\n\nCampaign: ${campaignId}\nEmails Delivered: ${globalEmailIndex + 1}\n\n${emailData.textContent || ''}`,
+                        htmlBody: `<h2>📊 Test Email #${testNumber}</h2><p>Campaign: ${campaignId}</p><p>Emails Sent: ${globalEmailIndex + 1}</p><div style="border:1px solid #ccc;padding:10px;">${emailData.htmlContent || ''}</div>`,
+                        plainBody: `TEST DELIVERY REPORT #${testNumber}\n\nCampaign: ${campaignId}\nEmails Sent: ${globalEmailIndex + 1}\n\n${emailData.textContent || ''}`,
                         fromName: fromName,
                         fromAlias: emailData.fromEmail || accountInfo.email
                       })
