@@ -11,32 +11,19 @@ import {
   Calendar, 
   Users, 
   BarChart3,
+  Eye,
   Edit,
   Trash2,
-  Copy,
-  Play,
-  Pause,
-  Clock
+  Send,
+  Copy
 } from 'lucide-react';
 import { useSimpleOrganizations } from '@/contexts/SimpleOrganizationContext';
 import { useCampaigns } from '@/hooks/useCampaigns';
 import Header from '@/components/Header';
-import { format } from 'date-fns';
-import CampaignAnalyticsDropdown from '@/components/CampaignAnalyticsDropdown';
-import CampaignEditDialog from '@/components/CampaignEditDialog';
 
 const Campaigns = () => {
   const { currentOrganization } = useSimpleOrganizations();
-  const { 
-    campaigns, 
-    loading, 
-    prepareCampaign,
-    sendCampaign,
-    pauseCampaign,
-    resumeCampaign,
-    duplicateCampaign,
-    deleteCampaign 
-  } = useCampaigns(currentOrganization?.id);
+  const { campaigns, loading, deleteCampaign } = useCampaigns(currentOrganization?.id);
   const [searchTerm, setSearchTerm] = useState('');
 
   const filteredCampaigns = campaigns?.filter(campaign =>
@@ -50,12 +37,8 @@ const Campaigns = () => {
         return 'bg-green-100 text-green-800 border-green-200';
       case 'sending':
         return 'bg-blue-100 text-blue-800 border-blue-200';
-      case 'prepared':
+      case 'scheduled':
         return 'bg-yellow-100 text-yellow-800 border-yellow-200';
-      case 'paused':
-        return 'bg-orange-100 text-orange-800 border-orange-200';
-      case 'failed':
-        return 'bg-red-100 text-red-800 border-red-200';
       case 'draft':
         return 'bg-gray-100 text-gray-800 border-gray-200';
       default:
@@ -63,32 +46,23 @@ const Campaigns = () => {
     }
   };
 
-  const handleAction = async (action: string, campaignId: string) => {
-    try {
-      switch (action) {
-        case 'prepare':
-          await prepareCampaign(campaignId);
-          break;
-        case 'send':
-          await sendCampaign(campaignId);
-          break;
-        case 'pause':
-          await pauseCampaign(campaignId);
-          break;
-        case 'resume':
-          await resumeCampaign(campaignId);
-          break;
-        case 'duplicate':
-          await duplicateCampaign(campaignId);
-          break;
-        case 'delete':
-          if (confirm('Are you sure you want to delete this campaign?')) {
-            await deleteCampaign(campaignId);
-          }
-          break;
+  const formatDate = (dateString: string) => {
+    return new Date(dateString).toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
+
+  const handleDelete = async (campaignId: string) => {
+    if (confirm('Are you sure you want to delete this campaign?')) {
+      try {
+        await deleteCampaign(campaignId);
+      } catch (error) {
+        console.error('Error deleting campaign:', error);
       }
-    } catch (error) {
-      console.error('Action failed:', error);
     }
   };
 
@@ -102,6 +76,11 @@ const Campaigns = () => {
       recipients: campaign.recipients
     }));
     window.location.href = '/';
+  };
+
+  const handleViewAnalytics = (campaignId: string) => {
+    // This would typically open an analytics modal or navigate to an analytics page
+    console.log('View analytics for campaign:', campaignId);
   };
 
   return (
@@ -168,137 +147,76 @@ const Campaigns = () => {
               <div className="space-y-4">
                 {filteredCampaigns.map((campaign) => (
                   <div key={campaign.id} className="border rounded-lg p-4 hover:bg-slate-50 transition-colors">
-                    <div className="flex items-start justify-between mb-4">
+                    <div className="flex items-center justify-between">
                       <div className="flex-1">
                         <div className="flex items-center gap-3 mb-2">
-                          <h3 className="font-medium text-slate-900 text-lg">{campaign.subject}</h3>
+                          <h3 className="font-medium text-slate-900">{campaign.subject}</h3>
                           <Badge className={getStatusColor(campaign.status)}>
                             {campaign.status}
                           </Badge>
                         </div>
                         
-                        <div className="space-y-1 text-sm text-slate-600 mb-3">
+                        <div className="flex items-center gap-6 text-sm text-slate-600">
                           <div className="flex items-center gap-1">
                             <Mail className="w-4 h-4" />
                             From: {campaign.from_name}
                           </div>
-                          <div className="flex items-center gap-6">
-                            <div className="flex items-center gap-1">
-                              <Users className="w-4 h-4" />
-                              Recipients: {campaign.total_recipients || 0}
-                            </div>
-                            <div className="flex items-center gap-1">
-                              <Mail className="w-4 h-4" />
-                              Sent: {campaign.sent_count || 0}
-                            </div>
+                          <div className="flex items-center gap-1">
+                            <Users className="w-4 h-4" />
+                            Recipients: {campaign.total_recipients || 0}
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <Send className="w-4 h-4" />
+                            Sent: {campaign.sent_count || 0}
                           </div>
                           <div className="flex items-center gap-1">
                             <Calendar className="w-4 h-4" />
-                            Created: {format(new Date(campaign.created_at), 'MMM dd, yyyy HH:mm')}
-                            {campaign.sent_at && (
-                              <> | Sent: {format(new Date(campaign.sent_at), 'MMM dd, yyyy HH:mm')}</>
-                            )}
+                            {campaign.sent_at ? formatDate(campaign.sent_at) : formatDate(campaign.created_at)}
                           </div>
                         </div>
-
-                        {/* Show selected accounts and rotation info */}
-                        {campaign.config?.selectedAccounts && (
-                          <div className="text-xs text-slate-500 mb-3">
-                            <div>Accounts: {campaign.config.selectedAccounts.length} selected</div>
-                            {campaign.config.rotation?.useFromNameRotation && (
-                              <div>FROM rotation: {campaign.config.rotation.fromNames?.length || 0} variants</div>
-                            )}
-                            {campaign.config.rotation?.useSubjectRotation && (
-                              <div>Subject rotation: {campaign.config.rotation.subjects?.length || 0} variants</div>
-                            )}
-                          </div>
+                      </div>
+                      
+                      <div className="flex items-center gap-2">
+                        <Button 
+                          variant="outline" 
+                          size="sm" 
+                          onClick={() => handleViewAnalytics(campaign.id)}
+                          title="View Analytics"
+                        >
+                          <BarChart3 className="w-4 h-4" />
+                        </Button>
+                        <Button 
+                          variant="outline" 
+                          size="sm"
+                          onClick={() => handleDuplicate(campaign)}
+                          title="Duplicate Campaign"
+                        >
+                          <Copy className="w-4 h-4" />
+                        </Button>
+                        {campaign.status === 'draft' && (
+                          <Button 
+                            variant="outline" 
+                            size="sm"
+                            onClick={() => {
+                              // Store campaign for editing and redirect
+                              localStorage.setItem('editCampaign', JSON.stringify(campaign));
+                              window.location.href = '/';
+                            }}
+                            title="Edit Campaign"
+                          >
+                            <Edit className="w-4 h-4" />
+                          </Button>
                         )}
+                        <Button 
+                          variant="outline" 
+                          size="sm"
+                          onClick={() => handleDelete(campaign.id)}
+                          title="Delete Campaign"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
                       </div>
                     </div>
-
-                    {/* Action Buttons */}
-                    <div className="flex flex-wrap gap-2 mb-3">
-                      {campaign.status === 'draft' && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => handleAction('prepare', campaign.id)}
-                        >
-                          <Clock className="w-4 h-4 mr-1" />
-                          Prepare
-                        </Button>
-                      )}
-                      
-                      {campaign.status === 'prepared' && (
-                        <Button
-                          size="sm"
-                          onClick={() => handleAction('send', campaign.id)}
-                        >
-                          <Play className="w-4 h-4 mr-1" />
-                          Send
-                        </Button>
-                      )}
-                      
-                      {campaign.status === 'sending' && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => handleAction('pause', campaign.id)}
-                        >
-                          <Pause className="w-4 h-4 mr-1" />
-                          Pause
-                        </Button>
-                      )}
-                      
-                      {campaign.status === 'paused' && (
-                        <Button
-                          size="sm"
-                          onClick={() => handleAction('resume', campaign.id)}
-                        >
-                          <Play className="w-4 h-4 mr-1" />
-                          Resume
-                        </Button>
-                      )}
-
-                      {campaign.status !== 'sending' && (
-                        <CampaignEditDialog 
-                          campaign={campaign}
-                          trigger={
-                            <Button size="sm" variant="outline">
-                              <Edit className="w-4 h-4 mr-1" />
-                              Edit
-                            </Button>
-                          }
-                        />
-                      )}
-
-                      <Button 
-                        variant="outline" 
-                        size="sm"
-                        onClick={() => handleDuplicate(campaign)}
-                        title="Duplicate Campaign"
-                      >
-                        <Copy className="w-4 h-4 mr-1" />
-                        Duplicate
-                      </Button>
-
-                      {campaign.status !== 'sending' && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => handleAction('delete', campaign.id)}
-                        >
-                          <Trash2 className="w-4 h-4 mr-1" />
-                          Delete
-                        </Button>
-                      )}
-                    </div>
-
-                    {/* Analytics Dropdown */}
-                    <CampaignAnalyticsDropdown 
-                      campaignId={campaign.id}
-                      campaignName={campaign.subject}
-                    />
                   </div>
                 ))}
               </div>
