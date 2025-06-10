@@ -253,7 +253,7 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
       config.useCustomRateLimit = true;
       config.zeroDelayMode = true;
       
-      // Set maximum speed settings for all accounts
+      // Set unlimited speed settings for all accounts
       const zeroDelaySettings = {
         emailsPerSecond: {},
         delayInSeconds: {},
@@ -261,9 +261,9 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
       };
       
       activeAccounts.forEach(account => {
-        zeroDelaySettings.emailsPerSecond[account.id] = 50; // Maximum speed
-        zeroDelaySettings.delayInSeconds[account.id] = 0;   // No delay
-        zeroDelaySettings.maxEmailsPerHour[account.id] = 10000; // High limit
+        zeroDelaySettings.emailsPerSecond[account.id] = 999999; // Unlimited speed
+        zeroDelaySettings.delayInSeconds[account.id] = 0;       // No delay
+        zeroDelaySettings.maxEmailsPerHour[account.id] = 999999; // Unlimited per hour
       });
       
       config.customRateLimit = zeroDelaySettings;
@@ -610,11 +610,12 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
                   <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
                     <Label className="font-medium text-red-800">Zero Delay Mode Settings (Auto-configured)</Label>
                     <div className="mt-2 space-y-2 text-sm text-red-700">
-                      <p>• Emails per second: 50 (maximum)</p>
+                      <p>• Emails per second: UNLIMITED (no restrictions)</p>
                       <p>• Delay between emails: 0 seconds</p>
-                      <p>• Max emails per hour: 10,000</p>
+                      <p>• Max emails per hour: UNLIMITED</p>
                       <p>• Parallel processing: Full parallel mode</p>
                       <p>• Batching: Disabled for maximum speed</p>
+                      <p>• Rate limiting: COMPLETELY DISABLED</p>
                     </div>
                   </div>
                 </div>
@@ -721,3 +722,5 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
 };
 
 export default BulkEmailComposer;
+
+}

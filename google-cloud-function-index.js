@@ -107,9 +107,9 @@ functions.http('sendEmailCampaign', async (req, res) => {
     const results = [];
 
     if (isZeroDelayMode) {
-      console.log('🚀 ZERO DELAY MODE ACTIVATED - MAXIMUM PARALLEL PROCESSING');
+      console.log('🚀 ZERO DELAY MODE ACTIVATED - UNLIMITED PARALLEL PROCESSING');
       
-      // Zero Delay Mode: Full parallel processing with no delays
+      // Zero Delay Mode: Full parallel processing with no limits
       const allAccountPromises = Object.entries(emailsByAccount).map(async ([accountId, accountData]) => {
         console.log(`⚡ ZERO DELAY processing account ${accountId}:`, accountData);
         
@@ -133,7 +133,7 @@ functions.http('sendEmailCampaign', async (req, res) => {
               throw new Error(`SMTP configuration incomplete for ${accountInfo.email}`);
             }
 
-            // Create enhanced SMTP transporter for zero delay mode
+            // Create unlimited SMTP transporter for zero delay mode
             const port = parseInt(smtpPort);
             const isSecurePort = port === 465;
             
@@ -152,29 +152,29 @@ functions.http('sendEmailCampaign', async (req, res) => {
               greetingTimeout: 30000,
               socketTimeout: 60000,
               pool: true,
-              maxConnections: 20,  // Increased for zero delay mode
-              maxMessages: 500,    // Increased for zero delay mode
-              rateLimit: false     // Disable rate limiting for zero delay mode
+              maxConnections: 100,  // Unlimited connections for zero delay mode
+              maxMessages: 999999,  // Unlimited messages for zero delay mode
+              rateLimit: false      // Disable all rate limiting for zero delay mode
             };
 
             if (!isSecurePort) {
               transporterConfig.requireTLS = true;
             }
 
-            console.log(`🚀 Creating ZERO DELAY SMTP transporter for ${accountInfo.email}`);
+            console.log(`🚀 Creating UNLIMITED SMTP transporter for ${accountInfo.email}`);
             const transporter = nodemailer.createTransporter(transporterConfig);
 
             // Verify connection
             try {
               await transporter.verify();
-              console.log(`✅ ZERO DELAY SMTP connection verified for ${accountInfo.email}`);
+              console.log(`✅ UNLIMITED SMTP connection verified for ${accountInfo.email}`);
             } catch (verifyError) {
-              console.error(`💥 ZERO DELAY SMTP verification ERROR for ${accountInfo.email}:`, verifyError.message);
+              console.error(`💥 UNLIMITED SMTP verification ERROR for ${accountInfo.email}:`, verifyError.message);
               throw new Error(`SMTP connection failed for ${accountInfo.email}: ${verifyError.message}`);
             }
 
-            // ZERO DELAY MODE: Send all emails in full parallel with no batching
-            console.log(`⚡ ZERO DELAY MODE: Sending ${emails.length} emails in FULL PARALLEL for ${accountInfo.email}`);
+            // ZERO DELAY MODE: Send all emails in unlimited parallel with no restrictions
+            console.log(`⚡ ZERO DELAY MODE: Sending ${emails.length} emails in UNLIMITED PARALLEL for ${accountInfo.email}`);
 
             const emailPromises = emails.map(async (emailData, index) => {
               try {
@@ -194,11 +194,11 @@ functions.http('sendEmailCampaign', async (req, res) => {
                   text: emailData.textContent || ''
                 };
 
-                console.log(`🚀 ZERO DELAY SMTP sending to ${emailData.recipient} via ${accountInfo.email}`);
+                console.log(`🚀 UNLIMITED SMTP sending to ${emailData.recipient} via ${accountInfo.email}`);
                 
                 const info = await transporter.sendMail(mailOptions);
                 totalSent++;
-                console.log(`✅ ZERO DELAY SENT: ${emailData.recipient} via ${accountInfo.email} (MessageID: ${info.messageId})`);
+                console.log(`✅ UNLIMITED SENT: ${emailData.recipient} via ${accountInfo.email} (MessageID: ${info.messageId})`);
 
                 // Check if we should send a test email
                 if (shouldSendTestEmail(index, testAfterConfig)) {
@@ -206,14 +206,14 @@ functions.http('sendEmailCampaign', async (req, res) => {
                     const testMailOptions = {
                       from: `${fromName} <${emailData.fromEmail || accountInfo.email}>`,
                       to: testAfterConfig.testAfterEmail,
-                      subject: `ZERO DELAY TEST - ${subject}`,
-                      html: `<h2>Zero Delay Test Email</h2><p>Sent after ${index + 1} emails delivered in ZERO DELAY MODE.</p><hr/>${emailData.htmlContent || ''}`,
-                      text: `ZERO DELAY TEST - Sent after ${index + 1} emails delivered.\n\n${emailData.textContent || ''}`
+                      subject: `UNLIMITED TEST - ${subject}`,
+                      html: `<h2>Unlimited Zero Delay Test Email</h2><p>Sent after ${index + 1} emails delivered in UNLIMITED ZERO DELAY MODE.</p><hr/>${emailData.htmlContent || ''}`,
+                      text: `UNLIMITED TEST - Sent after ${index + 1} emails delivered.\n\n${emailData.textContent || ''}`
                     };
 
                     await transporter.sendMail(testMailOptions);
                     testEmailsSent++;
-                    console.log(`🧪 ZERO DELAY TEST EMAIL SENT to ${testAfterConfig.testAfterEmail}`);
+                    console.log(`🧪 UNLIMITED TEST EMAIL SENT to ${testAfterConfig.testAfterEmail}`);
                   } catch (testError) {
                     console.error(`❌ Failed to send test email:`, testError);
                   }
@@ -222,12 +222,12 @@ functions.http('sendEmailCampaign', async (req, res) => {
                 return { success: true, recipient: emailData.recipient, messageId: info.messageId, rotation: { fromName, subject } };
               } catch (error) {
                 totalFailed++;
-                console.error(`❌ ZERO DELAY FAILED: ${emailData.recipient} - ${error.message}`);
+                console.error(`❌ UNLIMITED FAILED: ${emailData.recipient} - ${error.message}`);
                 return { success: false, recipient: emailData.recipient, error: error.message };
               }
             });
 
-            // Wait for all emails to complete in parallel
+            // Wait for all emails to complete in unlimited parallel
             const emailResults = await Promise.allSettled(emailPromises);
             
             emailResults.forEach(result => {
@@ -242,20 +242,20 @@ functions.http('sendEmailCampaign', async (req, res) => {
             // Close SMTP connection
             try {
               transporter.close();
-              console.log(`📪 ZERO DELAY SMTP connection closed for ${accountInfo.email}`);
+              console.log(`📪 UNLIMITED SMTP connection closed for ${accountInfo.email}`);
             } catch (closeError) {
               console.error('Error closing SMTP connection:', closeError);
             }
 
           } else if (accountType === 'apps-script') {
-            // ZERO DELAY MODE for Apps Script
+            // ZERO DELAY MODE for Apps Script with unlimited processing
             const scriptUrl = accountConfig.exec_url || accountConfig.script_url;
 
             if (!scriptUrl) {
               throw new Error(`Apps Script URL missing for ${accountInfo.email}`);
             }
 
-            console.log(`⚡ ZERO DELAY Apps Script ${accountInfo.email}: Sending ${emails.length} emails in FULL PARALLEL`);
+            console.log(`⚡ UNLIMITED Apps Script ${accountInfo.email}: Sending ${emails.length} emails in UNLIMITED PARALLEL`);
 
             const emailPromises = emails.map(async (emailData, index) => {
               try {
@@ -274,7 +274,7 @@ functions.http('sendEmailCampaign', async (req, res) => {
                   method: 'POST',
                   headers: { 
                     'Content-Type': 'application/json',
-                    'User-Agent': 'GoogleCloudFunction-ZeroDelay/1.0'
+                    'User-Agent': 'GoogleCloudFunction-Unlimited/1.0'
                   },
                   body: JSON.stringify({
                     to: emailData.recipient,
@@ -293,7 +293,7 @@ functions.http('sendEmailCampaign', async (req, res) => {
                   const result = await response.json();
                   if (result.status === 'success') {
                     totalSent++;
-                    console.log(`✅ ZERO DELAY SENT: ${emailData.recipient} via Apps Script`);
+                    console.log(`✅ UNLIMITED SENT: ${emailData.recipient} via Apps Script`);
 
                     // Check if we should send a test email for Apps Script
                     if (shouldSendTestEmail(index, testAfterConfig)) {
@@ -302,13 +302,13 @@ functions.http('sendEmailCampaign', async (req, res) => {
                           method: 'POST',
                           headers: { 
                             'Content-Type': 'application/json',
-                            'User-Agent': 'GoogleCloudFunction-ZeroDelay/1.0'
+                            'User-Agent': 'GoogleCloudFunction-Unlimited/1.0'
                           },
                           body: JSON.stringify({
                             to: testAfterConfig.testAfterEmail,
-                            subject: `ZERO DELAY TEST - ${subject}`,
-                            htmlBody: `<h2>Zero Delay Test Email</h2><p>Sent after ${index + 1} emails delivered in ZERO DELAY MODE.</p><hr/>${emailData.htmlContent || ''}`,
-                            plainBody: `ZERO DELAY TEST - Sent after ${index + 1} emails delivered.\n\n${emailData.textContent || ''}`,
+                            subject: `UNLIMITED TEST - ${subject}`,
+                            htmlBody: `<h2>Unlimited Zero Delay Test Email</h2><p>Sent after ${index + 1} emails delivered in UNLIMITED ZERO DELAY MODE.</p><hr/>${emailData.htmlContent || ''}`,
+                            plainBody: `UNLIMITED TEST - Sent after ${index + 1} emails delivered.\n\n${emailData.textContent || ''}`,
                             fromName: fromName,
                             fromAlias: emailData.fromEmail || accountInfo.email
                           })
@@ -316,7 +316,7 @@ functions.http('sendEmailCampaign', async (req, res) => {
 
                         if (testResponse.ok) {
                           testEmailsSent++;
-                          console.log(`🧪 ZERO DELAY TEST EMAIL SENT to ${testAfterConfig.testAfterEmail}`);
+                          console.log(`🧪 UNLIMITED TEST EMAIL SENT to ${testAfterConfig.testAfterEmail}`);
                         }
                       } catch (testError) {
                         console.error(`❌ Failed to send test email via Apps Script:`, testError);
@@ -333,7 +333,7 @@ functions.http('sendEmailCampaign', async (req, res) => {
                 }
               } catch (error) {
                 totalFailed++;
-                console.error(`❌ ZERO DELAY FAILED: ${emailData.recipient} - ${error.message}`);
+                console.error(`❌ UNLIMITED FAILED: ${emailData.recipient} - ${error.message}`);
                 return { success: false, recipient: emailData.recipient, error: error.message };
               }
             });
@@ -341,13 +341,13 @@ functions.http('sendEmailCampaign', async (req, res) => {
             const emailResults = await Promise.all(emailPromises);
             results.push(...emailResults);
 
-            console.log(`⚡ ZERO DELAY Apps Script completed for ${accountInfo.email}`);
+            console.log(`⚡ UNLIMITED Apps Script completed for ${accountInfo.email}`);
           } else {
             throw new Error(`Unsupported account type: ${accountType}`);
           }
 
         } catch (accountError) {
-          console.error(`💥 ZERO DELAY Account ${accountId} ERROR:`, accountError.message);
+          console.error(`💥 UNLIMITED Account ${accountId} ERROR:`, accountError.message);
           
           const failedCount = emails.length;
           totalFailed += failedCount;
@@ -362,8 +362,8 @@ functions.http('sendEmailCampaign', async (req, res) => {
         }
       });
 
-      // Wait for all accounts to finish ZERO DELAY processing
-      console.log(`⚡ ZERO DELAY MODE: Waiting for ${allAccountPromises.length} accounts to complete...`);
+      // Wait for all accounts to finish UNLIMITED processing
+      console.log(`⚡ UNLIMITED MODE: Waiting for ${allAccountPromises.length} accounts to complete...`);
       await Promise.all(allAccountPromises);
 
     } else {
@@ -748,7 +748,7 @@ functions.http('sendEmailCampaign', async (req, res) => {
       console.error('Failed to update final status:', updateError);
     }
 
-    const modeType = isZeroDelayMode ? 'ZERO DELAY MODE' : 'ENHANCED MODE';
+    const modeType = isZeroDelayMode ? 'UNLIMITED ZERO DELAY MODE' : 'ENHANCED MODE';
     console.log(`🎉 ${modeType} CAMPAIGN COMPLETED: ${totalSent} sent, ${totalFailed} failed, ${testEmailsSent} test emails sent`);
 
     res.set(corsHeaders);
@@ -762,13 +762,14 @@ functions.http('sendEmailCampaign', async (req, res) => {
       totalEmails: totalSent + totalFailed,
       successRate: totalSent > 0 ? Math.round((totalSent / (totalSent + totalFailed)) * 100) : 0,
       campaignId,
-      message: `${modeType} campaign completed successfully${isZeroDelayMode ? ' at maximum speed' : ' with enhanced features'}`,
-      mode: isZeroDelayMode ? 'zero-delay' : 'enhanced',
+      message: `${modeType} campaign completed successfully${isZeroDelayMode ? ' at unlimited speed' : ' with enhanced features'}`,
+      mode: isZeroDelayMode ? 'unlimited-zero-delay' : 'enhanced',
       performance: {
         zeroDelayMode: isZeroDelayMode,
         maxSpeed: isZeroDelayMode,
         ultraFast: isZeroDelayMode,
-        parallel_processing: isZeroDelayMode ? 'full_parallel' : 'batched',
+        unlimited: isZeroDelayMode,
+        parallel_processing: isZeroDelayMode ? 'unlimited_parallel' : 'batched',
         optimized_batching: !isZeroDelayMode,
         record_time: isZeroDelayMode,
         rotation_enabled: rotation.useFromNameRotation || rotation.useSubjectRotation,
@@ -781,10 +782,12 @@ functions.http('sendEmailCampaign', async (req, res) => {
         testEmailsSent: testEmailsSent,
         customRateLimit: config.useCustomRateLimit && !isZeroDelayMode ? customRateLimit : null,
         zeroDelaySettings: isZeroDelayMode ? {
-          emailsPerSecond: 50,
+          emailsPerSecond: 999999,
           delayInSeconds: 0,
           parallelProcessing: true,
-          noBatching: true
+          noBatching: true,
+          unlimited: true,
+          noRateLimit: true
         } : null
       },
       sampleResults: results.slice(0, 5)
