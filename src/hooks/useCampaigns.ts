@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
@@ -61,7 +60,6 @@ export const useCampaigns = (organizationId?: string) => {
         return;
       }
 
-      // Transform the data to match Campaign interface
       const transformedData = (data || []).map(campaign => ({
         ...campaign,
         prepared_emails: Array.isArray(campaign.prepared_emails) ? campaign.prepared_emails : []
@@ -96,38 +94,27 @@ export const useCampaigns = (organizationId?: string) => {
         throw new Error('No valid email recipients found');
       }
 
-      // Enhanced config with all new features
+      // Enhanced config with all features
       const enhancedConfig = {
         ...campaignData.config,
-        // Ensure all rotation settings are preserved
         useFromNameRotation: campaignData.config?.useFromNameRotation || false,
         fromNames: campaignData.config?.fromNames || [],
         useSubjectRotation: campaignData.config?.useSubjectRotation || false,
         subjects: campaignData.config?.subjects || [],
-        
-        // Enhanced test after configuration
         useTestAfter: campaignData.config?.useTestAfter || false,
         testAfterEmail: campaignData.config?.testAfterEmail || '',
         testAfterCount: campaignData.config?.testAfterCount || 100,
         testEmailSubjectPrefix: campaignData.config?.testEmailSubjectPrefix || 'TEST DELIVERY REPORT',
-        
-        // Flexible rate limiting
         sendingMode: campaignData.config?.sendingMode || 'controlled',
         emailsPerSecond: campaignData.config?.emailsPerSecond || 1,
         emailsPerMinute: campaignData.config?.emailsPerMinute || 60,
         burstSize: campaignData.config?.burstSize || 10,
         useCustomDelay: campaignData.config?.useCustomDelay || false,
         customDelayMs: campaignData.config?.customDelayMs || 1000,
-        
-        // Selected accounts
-        selectedAccounts: campaignData.config?.selectedAccounts || [],
-        
-        // Legacy compatibility
-        delay_between_emails: campaignData.config?.delay_between_emails || 1,
-        max_emails_per_hour: campaignData.config?.max_emails_per_hour || 3600
+        selectedAccounts: campaignData.config?.selectedAccounts || []
       };
 
-      // Create campaign record with proper error handling
+      // Create campaign record
       const { data: campaign, error: createError } = await supabase
         .from('email_campaigns')
         .insert({
@@ -153,27 +140,20 @@ export const useCampaigns = (organizationId?: string) => {
 
       console.log('Campaign created successfully:', campaign);
 
-      // Transform the returned data
       const transformedCampaign = {
         ...campaign,
         prepared_emails: Array.isArray(campaign.prepared_emails) ? campaign.prepared_emails : []
       };
 
-      // Show success first
+      // Show success message
       toast({
         title: "Success",
         description: `Campaign created with ${totalRecipients} recipients!`
       });
 
-      // Auto-prepare the campaign AFTER success toast
-      try {
-        console.log('Auto-preparing campaign...');
-        await prepareCampaign(campaign.id);
-      } catch (prepareError) {
-        console.error('Error preparing campaign:', prepareError);
-        // Don't show error toast here as prepare will handle it
-      }
-
+      // FIXED: Prevent double preparation - only auto-prepare if specifically requested
+      // Remove auto-preparation to prevent page refresh and errors
+      
       // Refresh campaigns list
       await fetchCampaigns();
 
@@ -189,36 +169,15 @@ export const useCampaigns = (organizationId?: string) => {
     }
   };
 
-  const updateCampaign = async (campaignId: string, updates: Partial<Campaign>) => {
-    try {
-      const { error: updateError } = await supabase
-        .from('email_campaigns')
-        .update(updates)
-        .eq('id', campaignId);
-
-      if (updateError) {
-        throw new Error(updateError.message);
-      }
-
-      // Refresh campaigns list
-      await fetchCampaigns();
-    } catch (error) {
-      console.error('Error updating campaign:', error);
-      throw error;
-    }
-  };
-
   const prepareCampaign = async (campaignId: string) => {
     try {
       console.log('Preparing campaign:', campaignId);
       
-      // Get the campaign to access its config
       const campaign = campaigns.find(c => c.id === campaignId);
       if (!campaign) {
         throw new Error('Campaign not found');
       }
       
-      // Ensure we have accounts selected
       const selectedAccounts = campaign.config?.selectedAccounts || [];
       console.log('Selected accounts for preparation:', selectedAccounts);
       
@@ -227,7 +186,6 @@ export const useCampaigns = (organizationId?: string) => {
         throw new Error('Please select at least one email account for sending');
       }
 
-      // Prepare the request body with all necessary configuration
       const requestBody = {
         campaignId,
         selectedAccounts,
@@ -237,15 +195,13 @@ export const useCampaigns = (organizationId?: string) => {
           useSubjectRotation: campaign.config?.useSubjectRotation || false,
           subjects: campaign.config?.subjects || []
         },
-        rateLimit: campaign.config?.rateLimit || {},
         testAfter: {
           useTestAfter: campaign.config?.useTestAfter || false,
           testAfterEmail: campaign.config?.testAfterEmail || '',
           testAfterCount: campaign.config?.testAfterCount || 100,
           testEmailSubjectPrefix: campaign.config?.testEmailSubjectPrefix || 'TEST DELIVERY REPORT'
         },
-        sendingMode: campaign.config?.sendingMode || 'controlled',
-        googleCloudConfig: campaign.config?.googleCloudConfig || null
+        sendingMode: campaign.config?.sendingMode || 'controlled'
       };
       
       console.log('Prepare campaign request body:', requestBody);
@@ -295,11 +251,10 @@ export const useCampaigns = (organizationId?: string) => {
       if (response.error) {
         console.error('Error sending campaign:', response.error);
         
-        // Provide more helpful error messages based on error content
         let errorMessage = response.error.message;
-        if (errorMessage.includes('Google Cloud Functions not configured')) {
+        if (errorMessage.includes('Google Cloud Function URL not configured')) {
           errorMessage = 'Google Cloud Function URL not configured. Please go to Settings → Google Cloud Config to set up your function URL.';
-        } else if (errorMessage.includes('non-2xx status code')) {
+        } else if (errorMessage.includes('not responding correctly')) {
           errorMessage = 'Google Cloud Function URL is not responding correctly. Please check your function URL in Settings → Google Cloud Config.';
         }
         
@@ -442,7 +397,6 @@ export const useCampaigns = (organizationId?: string) => {
         throw new Error(deleteError.message);
       }
 
-      // Refresh campaigns list
       await fetchCampaigns();
       
       toast({
@@ -470,7 +424,23 @@ export const useCampaigns = (organizationId?: string) => {
     error,
     fetchCampaigns,
     createCampaign,
-    updateCampaign,
+    updateCampaign: async (campaignId: string, updates: Partial<Campaign>) => {
+      try {
+        const { error: updateError } = await supabase
+          .from('email_campaigns')
+          .update(updates)
+          .eq('id', campaignId);
+
+        if (updateError) {
+          throw new Error(updateError.message);
+        }
+
+        await fetchCampaigns();
+      } catch (error) {
+        console.error('Error updating campaign:', error);
+        throw error;
+      }
+    },
     prepareCampaign,
     sendCampaign,
     pauseCampaign,

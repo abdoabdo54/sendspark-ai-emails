@@ -16,7 +16,6 @@ serve(async (req) => {
   let campaignId: string | null = null;
 
   try {
-    // Parse request body once and store it
     const bodyText = await req.text();
     console.log('Raw request body:', bodyText);
     
@@ -38,13 +37,13 @@ serve(async (req) => {
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    console.log(`🚀 MAXIMUM SPEED PROCESSING for campaign ${campaignId}`);
+    console.log(`🚀 Processing campaign ${campaignId}`);
 
     if (!campaignId) {
       throw new Error('Campaign ID is required');
     }
 
-    // Get campaign details with error handling
+    // Get campaign details
     const { data: campaign, error: campaignError } = await supabase
       .from('email_campaigns')
       .select('*')
@@ -111,15 +110,15 @@ serve(async (req) => {
       );
     }
 
-    // IMPROVED Google Cloud Functions configuration logic
-    let gcfConfig = null;
+    // FIXED: Google Cloud Functions configuration logic
+    let gcfUrl = null;
     
-    // First check campaign config for Google Cloud Functions
+    // Check campaign-level configuration first
     if (campaign.config?.googleCloudFunctions?.functionUrl) {
-      gcfConfig = campaign.config.googleCloudFunctions;
-      console.log('Using campaign-level Google Cloud config:', gcfConfig.functionUrl);
+      gcfUrl = campaign.config.googleCloudFunctions.functionUrl;
+      console.log('Using campaign-level Google Cloud Function URL:', gcfUrl);
     } else {
-      // Check for global Google Cloud config in organization settings
+      // Check organization-level configuration
       const { data: orgSettings } = await supabase
         .from('organizations')
         .select('settings')
@@ -127,33 +126,33 @@ serve(async (req) => {
         .single();
       
       if (orgSettings?.settings?.googleCloudFunctions?.functionUrl) {
-        gcfConfig = orgSettings.settings.googleCloudFunctions;
-        console.log('Using organization-level Google Cloud config:', gcfConfig.functionUrl);
+        gcfUrl = orgSettings.settings.googleCloudFunctions.functionUrl;
+        console.log('Using organization-level Google Cloud Function URL:', gcfUrl);
       } else {
-        console.error('No Google Cloud Functions URL configured');
+        console.error('No Google Cloud Function URL configured');
         
         await supabase
           .from('email_campaigns')
           .update({ 
             status: 'failed',
-            error_message: 'Google Cloud Functions not configured. Please configure your Google Cloud Function URL in Settings → Google Cloud Config.',
+            error_message: 'Google Cloud Function URL not configured. Please configure it in Settings → Google Cloud Config.',
             completed_at: new Date().toISOString()
           })
           .eq('id', campaignId);
         
         return new Response(
           JSON.stringify({ 
-            error: 'Google Cloud Functions not configured. Please go to Settings → Google Cloud Config to set up your function URL.',
-            helpText: 'You need to deploy a Google Cloud Function and configure its URL in the system settings before sending campaigns.'
+            error: 'Google Cloud Function URL not configured. Please go to Settings → Google Cloud Config to set up your function URL.',
+            helpText: 'You need to deploy a Google Cloud Function and configure its URL in the system settings.'
           }),
           { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
     }
 
-    console.log(`⚡ MAXIMUM SPEED: ${gcfConfig.functionUrl}`);
+    console.log(`Using Google Cloud Function URL: ${gcfUrl}`);
 
-    // Ensure campaign is marked as sending
+    // Update campaign status to sending
     await supabase
       .from('email_campaigns')
       .update({ 
@@ -163,15 +162,15 @@ serve(async (req) => {
       })
       .eq('id', campaignId);
 
-    // Get emails to send (from resumeFromIndex onwards)
+    // Get emails to send
     const emailsToSend = preparedEmails.slice(resumeFromIndex);
-    console.log(`⚡ SENDING ${emailsToSend.length} emails at MAXIMUM SPEED starting from index ${resumeFromIndex}`);
+    console.log(`Sending ${emailsToSend.length} emails starting from index ${resumeFromIndex}`);
     
-    // Respect user's account selection from campaign config
+    // Respect account selection from campaign config
     const selectedAccountIds = campaign.config?.selectedAccounts || [];
     console.log('Selected account IDs from campaign:', selectedAccountIds);
     
-    // Group emails by account for ultra-optimized processing - ONLY USE SELECTED ACCOUNTS
+    // Group emails by account
     const emailsByAccount = new Map();
     emailsToSend.forEach((email, index) => {
       const accountId = email.account_id;
@@ -205,7 +204,7 @@ serve(async (req) => {
     });
 
     const actualEmailsToSend = Array.from(emailsByAccount.values()).reduce((total, account) => total + account.emails.length, 0);
-    console.log(`⚡ ULTRA-OPTIMIZED: ${actualEmailsToSend} emails using ${emailsByAccount.size} selected accounts`);
+    console.log(`Processing ${actualEmailsToSend} emails using ${emailsByAccount.size} selected accounts`);
 
     if (actualEmailsToSend === 0) {
       await supabase
@@ -223,7 +222,7 @@ serve(async (req) => {
       );
     }
 
-    // Extract test after configuration correctly from campaign config
+    // Extract configuration for Google Cloud Function
     const testAfterConfig = {
       useTestAfter: campaign.config?.useTestAfter || false,
       testAfterEmail: campaign.config?.testAfterEmail || '',
@@ -231,7 +230,7 @@ serve(async (req) => {
       testEmailSubjectPrefix: campaign.config?.testEmailSubjectPrefix || 'TEST DELIVERY REPORT'
     };
 
-    // Prepare MAXIMUM SPEED payload for Google Cloud Function
+    // FIXED: Prepare correct payload for YOUR Google Cloud Function
     const payload = {
       campaignId,
       emailsByAccount: Object.fromEntries(emailsByAccount),
@@ -248,12 +247,6 @@ serve(async (req) => {
         subjects: campaign.config?.subjects || []
       },
       config: {
-        highSpeed: true,
-        maxSpeed: campaign.config?.sendingMode === 'maximum',
-        parallelProcessing: true,
-        optimizedBatching: true,
-        maxConcurrency: campaign.config?.sendingMode === 'maximum',
-        ultraFast: campaign.config?.sendingMode === 'fast' || campaign.config?.sendingMode === 'maximum',
         sendingMode: campaign.config?.sendingMode || 'controlled',
         emailsPerSecond: campaign.config?.emailsPerSecond || 1,
         useCustomDelay: campaign.config?.useCustomDelay || false,
@@ -262,28 +255,25 @@ serve(async (req) => {
       }
     };
 
-    console.log(`🎯 MAXIMUM SPEED payload prepared for ${emailsByAccount.size} selected accounts, ${actualEmailsToSend} emails`);
-    console.log('Test After config:', testAfterConfig);
+    console.log(`Sending payload to Google Cloud Function with ${emailsByAccount.size} accounts`);
 
     // Validate function URL format
-    if (!gcfConfig.functionUrl.startsWith('https://')) {
+    if (!gcfUrl.startsWith('https://')) {
       throw new Error('Invalid Google Cloud Function URL. Must start with https://');
     }
 
-    // Send to Google Cloud Functions with MAXIMUM SPEED settings and timeout
+    // Send to Google Cloud Function with timeout
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 120000); // 2 minute timeout
 
     try {
-      const response = await fetch(gcfConfig.functionUrl, {
+      const response = await fetch(gcfUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'User-Agent': 'Supabase-MaxSpeed/3.3',
+          'User-Agent': 'Supabase-Campaign-Sender/1.0',
           'X-Campaign-ID': campaignId,
-          'X-Email-Count': actualEmailsToSend.toString(),
-          'X-Max-Speed': 'true',
-          'X-Ultra-Fast': 'true'
+          'X-Email-Count': actualEmailsToSend.toString()
         },
         body: JSON.stringify(payload),
         signal: controller.signal
@@ -291,33 +281,31 @@ serve(async (req) => {
 
       clearTimeout(timeoutId);
 
-      console.log(`⚡ Google Cloud MAXIMUM SPEED response: ${response.status}`);
+      console.log(`Google Cloud Function response: ${response.status}`);
 
       if (!response.ok) {
         const errorText = await response.text();
-        console.error(`💥 Google Cloud CRITICAL ERROR: ${response.status} - ${errorText}`);
+        console.error(`Google Cloud Function error: ${response.status} - ${errorText}`);
         
-        // Update campaign with error
         await supabase
           .from('email_campaigns')
           .update({ 
             status: 'failed',
-            error_message: `Google Cloud error: ${response.status} - ${errorText}. Check your function URL: ${gcfConfig.functionUrl}`,
+            error_message: `Google Cloud Function error: ${response.status} - ${errorText}. Check your function URL: ${gcfUrl}`,
             completed_at: new Date().toISOString()
           })
           .eq('id', campaignId);
         
-        throw new Error(`Google Cloud Functions failed: ${response.status} - ${errorText}. Check your function URL.`);
+        throw new Error(`Google Cloud Function failed: ${response.status} - ${errorText}. Check your function URL.`);
       }
 
       const result = await response.json();
-      console.log('✅ MAXIMUM SPEED Google Cloud response:', JSON.stringify(result, null, 2));
+      console.log('Google Cloud Function response:', JSON.stringify(result, null, 2));
 
       // Handle response based on completion status
       if (result.success && result.completed) {
-        console.log('🎉 MAXIMUM SPEED Campaign completed successfully!');
+        console.log('Campaign completed successfully!');
         
-        // Final status update
         await supabase
           .from('email_campaigns')
           .update({ 
@@ -332,19 +320,15 @@ serve(async (req) => {
       return new Response(
         JSON.stringify({ 
           success: true,
-          message: 'MAXIMUM SPEED campaign processing via Google Cloud Functions',
+          message: 'Campaign processing via Google Cloud Function',
           details: result,
           configuration: {
             accounts_processing: emailsByAccount.size,
             total_emails: actualEmailsToSend,
-            selected_accounts: selectedAccountIds.length,
-            max_speed_mode: true,
-            ultra_fast_processing: true,
-            parallel_processing: true
+            selected_accounts: selectedAccountIds.length
           },
-          gcf_url: gcfConfig.functionUrl,
-          completed: result.completed || false,
-          performance: { ...result.performance, maxSpeed: true, ultraFast: true }
+          gcf_url: gcfUrl,
+          completed: result.completed || false
         }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
@@ -360,9 +344,9 @@ serve(async (req) => {
     }
 
   } catch (error) {
-    console.error('💥 CRITICAL MAXIMUM SPEED ERROR:', error);
+    console.error('Critical error:', error);
     
-    // Try to revert campaign status on any error
+    // Update campaign status on error
     try {
       if (campaignId) {
         const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
@@ -373,7 +357,7 @@ serve(async (req) => {
           .from('email_campaigns')
           .update({ 
             status: 'failed',
-            error_message: `Maximum speed sender error: ${error.message}`,
+            error_message: `Campaign sender error: ${error.message}`,
             completed_at: new Date().toISOString()
           })
           .eq('id', campaignId);
@@ -384,7 +368,7 @@ serve(async (req) => {
     
     return new Response(
       JSON.stringify({ 
-        error: `MAXIMUM SPEED Google Cloud Functions failed: ${error.message}`,
+        error: `Campaign sending failed: ${error.message}`,
         details: error.stack,
         timestamp: new Date().toISOString()
       }),
