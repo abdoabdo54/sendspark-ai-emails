@@ -264,7 +264,8 @@ serve(async (req) => {
         sendingMode: campaign.config?.sendingMode || 'controlled',
         emailsPerSecond: campaign.config?.emailsPerSecond || 1,
         useCustomDelay: campaign.config?.useCustomDelay || false,
-        customDelayMs: campaign.config?.customDelayMs || 1000
+        customDelayMs: campaign.config?.customDelayMs || 1000,
+        burstSize: campaign.config?.burstSize || 1
       }
     };
 
