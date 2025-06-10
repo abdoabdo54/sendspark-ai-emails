@@ -51,7 +51,8 @@ functions.http('sendEmailCampaign', async (req, res) => {
       supabaseKey,
       config = {},
       rotation = {},
-      testAfterConfig = {}
+      testAfterConfig = {},
+      customRateLimit = {}
     } = req.body || {};
     
     // Validate required fields
@@ -77,6 +78,7 @@ functions.http('sendEmailCampaign', async (req, res) => {
     console.log(`⚡ Processing ${Object.keys(emailsByAccount).length} accounts with rotation and test-after features`);
     console.log('Rotation config:', rotation);
     console.log('Test after config:', testAfterConfig);
+    console.log('Custom rate limit config:', customRateLimit);
 
     // Initialize Supabase client
     const supabase = createClient(supabaseUrl, supabaseKey);
@@ -109,7 +111,14 @@ functions.http('sendEmailCampaign', async (req, res) => {
       const emails = accountData.emails || [];
       const accountInfo = accountData.accountInfo || { name: 'Unknown', email: 'unknown@domain.com' };
       
+      // Get rate limiting settings - use custom if available, otherwise use account defaults
+      const useCustom = config.useCustomRateLimit && customRateLimit.emailsPerSecond && customRateLimit.delayInSeconds;
+      const emailsPerSecond = useCustom ? customRateLimit.emailsPerSecond[accountId] : accountConfig.emails_per_second || 1;
+      const delayInSeconds = useCustom ? customRateLimit.delayInSeconds[accountId] : 2;
+      const maxEmailsPerHour = useCustom ? customRateLimit.maxEmailsPerHour[accountId] : accountConfig.emails_per_hour || 2000;
+      
       console.log(`⚡ ENHANCED MAXIMUM SPEED processing ${accountType} account: ${accountInfo.email} (${emails.length} emails)`);
+      console.log(`📊 Rate limits for ${accountInfo.email}: ${emailsPerSecond} emails/sec, ${delayInSeconds}s delay, ${maxEmailsPerHour}/hour (Custom: ${useCustom})`);
       
       try {
         if (accountType === 'smtp') {
@@ -168,7 +177,7 @@ functions.http('sendEmailCampaign', async (req, res) => {
 
           console.log(`📧 Creating enhanced SMTP transporter for ${accountInfo.email}`);
 
-          const transporter = nodemailer.createTransporter(transporterConfig);
+          const transporter = nodemailer.createTransport(transporterConfig);
 
           // Enhanced connection verification
           try {
@@ -180,17 +189,17 @@ functions.http('sendEmailCampaign', async (req, res) => {
             throw new Error(`SMTP connection failed for ${accountInfo.email}: ${verifyError.message}`);
           }
 
-          // Send emails in small batches for SMTP reliability
-          const batchSize = 2;
+          // Calculate batch size based on emails per second
+          const batchSize = Math.max(1, emailsPerSecond);
           const batches = [];
           
           for (let i = 0; i < emails.length; i += batchSize) {
             batches.push(emails.slice(i, i + batchSize));
           }
 
-          console.log(`⚡ ENHANCED SMTP ${accountInfo.email}: ${batches.length} batches of ${batchSize} emails each`);
+          console.log(`⚡ ENHANCED SMTP ${accountInfo.email}: ${batches.length} batches of ${batchSize} emails each with ${delayInSeconds}s delay`);
 
-          // Process batches sequentially for SMTP reliability
+          // Process batches with custom delay
           for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
             const batch = batches[batchIndex];
             
@@ -271,8 +280,11 @@ functions.http('sendEmailCampaign', async (req, res) => {
               
             console.log(`⚡ ENHANCED SMTP Batch ${batchIndex + 1}/${batches.length}: ${totalSent} sent, ${totalFailed} failed, ${testEmailsSent} test emails sent`);
             
+            // Apply custom delay between batches (convert seconds to milliseconds)
             if (batchIndex < batches.length - 1) {
-              await new Promise(resolve => setTimeout(resolve, 2000));
+              const delayMs = delayInSeconds * 1000;
+              console.log(`⏱️ Waiting ${delayInSeconds} seconds before next batch...`);
+              await new Promise(resolve => setTimeout(resolve, delayMs));
             }
           }
 
@@ -285,21 +297,21 @@ functions.http('sendEmailCampaign', async (req, res) => {
           }
 
         } else if (accountType === 'apps-script') {
-          // Enhanced Apps Script handling with rotation
+          // Enhanced Apps Script handling with rotation and custom rate limiting
           const scriptUrl = accountConfig.exec_url || accountConfig.script_url;
 
           if (!scriptUrl) {
             throw new Error(`Apps Script URL missing for ${accountInfo.email}`);
           }
 
-          const batchSize = 5;
+          const batchSize = Math.max(1, emailsPerSecond);
           const batches = [];
           
           for (let i = 0; i < emails.length; i += batchSize) {
             batches.push(emails.slice(i, i + batchSize));
           }
 
-          console.log(`⚡ ENHANCED Apps Script ${accountInfo.email}: ${batches.length} batches at MAXIMUM SPEED`);
+          console.log(`⚡ ENHANCED Apps Script ${accountInfo.email}: ${batches.length} batches with ${delayInSeconds}s delay`);
 
           for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
             const batch = batches[batchIndex];
@@ -403,8 +415,11 @@ functions.http('sendEmailCampaign', async (req, res) => {
 
             console.log(`⚡ ENHANCED Apps Script batch ${batchIndex + 1}/${batches.length} completed`);
             
+            // Apply custom delay between batches
             if (batchIndex < batches.length - 1) {
-              await new Promise(resolve => setTimeout(resolve, 500));
+              const delayMs = delayInSeconds * 1000;
+              console.log(`⏱️ Waiting ${delayInSeconds} seconds before next batch...`);
+              await new Promise(resolve => setTimeout(resolve, delayMs));
             }
           }
         } else {
@@ -487,12 +502,14 @@ functions.http('sendEmailCampaign', async (req, res) => {
         optimized_batching: true,
         record_time: true,
         rotation_enabled: rotation.useFromNameRotation || rotation.useSubjectRotation,
-        test_after_enabled: testAfterConfig.useTestAfter
+        test_after_enabled: testAfterConfig.useTestAfter,
+        custom_rate_limit_used: config.useCustomRateLimit
       },
       features: {
         rotation: rotation,
         testAfter: testAfterConfig,
-        testEmailsSent: testEmailsSent
+        testEmailsSent: testEmailsSent,
+        customRateLimit: config.useCustomRateLimit ? customRateLimit : null
       },
       sampleResults: results.slice(0, 5)
     });

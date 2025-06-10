@@ -42,6 +42,7 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
   // Rate limiting state (only for controlled mode)
   const [useCustomRateLimit, setUseCustomRateLimit] = useState(false);
   const [emailsPerSecond, setEmailsPerSecond] = useState<{ [accountId: string]: number }>({});
+  const [delayInSeconds, setDelayInSeconds] = useState<{ [accountId: string]: number }>({});
   const [maxEmailsPerHour, setMaxEmailsPerHour] = useState<{ [accountId: string]: number }>({});
   
   // Rotation state
@@ -115,6 +116,14 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
   const handleEmailsPerSecondChange = (accountId: string, value: string) => {
     const numValue = parseInt(value) || 1;
     setEmailsPerSecond(prev => ({
+      ...prev,
+      [accountId]: numValue
+    }));
+  };
+
+  const handleDelayInSecondsChange = (accountId: string, value: string) => {
+    const numValue = parseInt(value) || 1;
+    setDelayInSeconds(prev => ({
       ...prev,
       [accountId]: numValue
     }));
@@ -239,8 +248,10 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
 
     // Add rate limiting config only for controlled mode
     if (sendingMode === 'controlled' && useCustomRateLimit) {
+      config.useCustomRateLimit = true;
       config.customRateLimit = {
         emailsPerSecond,
+        delayInSeconds,
         maxEmailsPerHour
       };
     }
@@ -435,7 +446,10 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
               {sendingMode === 'controlled' && (
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
-                    <Label>Custom Rate Limiting</Label>
+                    <div>
+                      <Label>Custom Rate Limiting</Label>
+                      <p className="text-sm text-gray-600">Override account default settings with custom rate limits</p>
+                    </div>
                     <Switch
                       checked={useCustomRateLimit}
                       onCheckedChange={setUseCustomRateLimit}
@@ -444,22 +458,34 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
                   
                   {useCustomRateLimit && (
                     <div className="space-y-3">
-                      <Label className="text-sm text-gray-600">Configure rate limits for each account:</Label>
+                      <Label className="text-sm text-gray-600">Configure custom rate limits for each account:</Label>
                       {activeAccounts.map((account) => (
                         <div key={account.id} className="p-4 border rounded-lg space-y-3">
                           <Label className="font-medium">{account.name} ({account.email})</Label>
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                             <div className="flex items-center space-x-3">
                               <Label className="text-sm min-w-0">Emails per second:</Label>
                               <Input
                                 type="number"
-                                value={emailsPerSecond[account.id] || 2}
+                                value={emailsPerSecond[account.id] || 1}
                                 onChange={(e) => handleEmailsPerSecondChange(account.id, e.target.value)}
                                 className="w-20"
                                 min="1"
                                 max="100"
                               />
                               <span className="text-sm text-gray-500">/sec</span>
+                            </div>
+                            <div className="flex items-center space-x-3">
+                              <Label className="text-sm min-w-0">Delay between emails:</Label>
+                              <Input
+                                type="number"
+                                value={delayInSeconds[account.id] || 2}
+                                onChange={(e) => handleDelayInSecondsChange(account.id, e.target.value)}
+                                className="w-20"
+                                min="1"
+                                max="60"
+                              />
+                              <span className="text-sm text-gray-500">seconds</span>
                             </div>
                             <div className="flex items-center space-x-3">
                               <Label className="text-sm min-w-0">Max per hour:</Label>
@@ -475,7 +501,7 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
                             </div>
                           </div>
                           <p className="text-xs text-gray-500">
-                            Example: 2 emails/1 second/2000 per hour
+                            Example: {emailsPerSecond[account.id] || 1} email / {delayInSeconds[account.id] || 2} seconds / {maxEmailsPerHour[account.id] || 2000} per hour
                           </p>
                         </div>
                       ))}
