@@ -23,38 +23,12 @@ function getRotatedSubject(rotation, emailIndex) {
   return rotation.subjects[emailIndex % rotation.subjects.length];
 }
 
-// Enhanced test after email helper - FIXED LOGIC
-function shouldSendTestEmail(globalEmailIndex, testAfterConfig) {
+// Test after email helper
+function shouldSendTestEmail(emailIndex, testAfterConfig) {
   if (!testAfterConfig.useTestAfter || !testAfterConfig.testAfterEmail || !testAfterConfig.testAfterCount) {
     return false;
   }
-  
-  // Send test email every testAfterCount emails (1-based counting)
-  const emailNumber = globalEmailIndex + 1;
-  const shouldSend = emailNumber > 0 && (emailNumber % testAfterConfig.testAfterCount === 0);
-  
-  console.log(`📧 Test After Check: Email ${emailNumber}, Test every ${testAfterConfig.testAfterCount}, Should send: ${shouldSend}`);
-  return shouldSend;
-}
-
-// Enhanced delay calculation based on sending mode
-function calculateDelayMs(config) {
-  const sendingMode = config.sendingMode || 'controlled';
-  
-  switch (sendingMode) {
-    case 'maximum':
-      return 0; // No delay
-    case 'fast':
-      return 100; // 100ms = 10 emails per second
-    case 'controlled':
-      if (config.useCustomDelay) {
-        return Math.max(0, config.customDelayMs || 1000);
-      }
-      const emailsPerSecond = config.emailsPerSecond || 1;
-      return Math.max(0, (1000 / emailsPerSecond));
-    default:
-      return 1000; // 1 second default
-  }
+  return (emailIndex + 1) % testAfterConfig.testAfterCount === 0;
 }
 
 functions.http('sendEmailCampaign', async (req, res) => {
@@ -65,8 +39,9 @@ functions.http('sendEmailCampaign', async (req, res) => {
   }
 
   try {
-    console.log('🚀 Enhanced Google Cloud Function started - FLEXIBLE RATE LIMITING with Test After');
+    console.log('🚀 Google Cloud Function started - MAXIMUM SPEED MODE with Enhanced Features');
     console.log('Request method:', req.method);
+    console.log('Request headers:', req.headers);
     console.log('Raw request body:', JSON.stringify(req.body, null, 2));
 
     const { 
@@ -82,33 +57,29 @@ functions.http('sendEmailCampaign', async (req, res) => {
     // Validate required fields
     if (!campaignId) {
       console.error('Missing campaignId in request');
-      throw new Error('Campaign ID is required');
+      const error = new Error('Campaign ID is required');
+      throw error;
     }
 
     if (!emailsByAccount || Object.keys(emailsByAccount).length === 0) {
       console.error('Missing or empty emailsByAccount in request');
-      throw new Error('Emails by account data is required and cannot be empty');
+      const error = new Error('Emails by account data is required and cannot be empty');
+      throw error;
     }
 
     if (!supabaseUrl || !supabaseKey) {
       console.error('Missing Supabase credentials');
-      throw new Error('Supabase credentials are required');
+      const error = new Error('Supabase credentials are required');
+      throw error;
     }
 
-    console.log(`🚀 STARTING ENHANCED FLEXIBLE RATE CAMPAIGN ${campaignId}`);
-    console.log(`⚡ Processing ${Object.keys(emailsByAccount).length} accounts with advanced features`);
-    console.log('Config:', config);
+    console.log(`🚀 STARTING ENHANCED MAXIMUM SPEED CAMPAIGN ${campaignId}`);
+    console.log(`⚡ Processing ${Object.keys(emailsByAccount).length} accounts with rotation and test-after features`);
     console.log('Rotation config:', rotation);
     console.log('Test after config:', testAfterConfig);
 
     // Initialize Supabase client
     const supabase = createClient(supabaseUrl, supabaseKey);
-
-    // Calculate delay based on configuration
-    const delayMs = calculateDelayMs(config);
-    const sendingMode = config.sendingMode || 'controlled';
-    
-    console.log(`⚡ SENDING MODE: ${sendingMode}, Delay: ${delayMs}ms`);
 
     // Ensure campaign is marked as sending
     try {
@@ -127,10 +98,9 @@ functions.http('sendEmailCampaign', async (req, res) => {
     let totalSent = 0;
     let totalFailed = 0;
     let testEmailsSent = 0;
-    let globalEmailIndex = 0; // Track global email index for test after
     const results = [];
 
-    // Process all accounts based on sending mode
+    // Process all accounts in MAXIMUM PARALLEL for ultra speed
     const accountPromises = Object.entries(emailsByAccount).map(async ([accountId, accountData]) => {
       console.log(`Processing account ${accountId}:`, accountData);
       
@@ -139,7 +109,7 @@ functions.http('sendEmailCampaign', async (req, res) => {
       const emails = accountData.emails || [];
       const accountInfo = accountData.accountInfo || { name: 'Unknown', email: 'unknown@domain.com' };
       
-      console.log(`⚡ FLEXIBLE RATE processing ${accountType} account: ${accountInfo.email} (${emails.length} emails)`);
+      console.log(`⚡ ENHANCED MAXIMUM SPEED processing ${accountType} account: ${accountInfo.email} (${emails.length} emails)`);
       
       try {
         if (accountType === 'smtp') {
@@ -188,15 +158,15 @@ functions.http('sendEmailCampaign', async (req, res) => {
             greetingTimeout: 30000,
             socketTimeout: 60000,
             pool: true,
-            maxConnections: sendingMode === 'maximum' ? 5 : 1,
-            maxMessages: sendingMode === 'maximum' ? 1000 : 100
+            maxConnections: 1,
+            maxMessages: 100
           };
 
           if (!isSecurePort) {
             transporterConfig.requireTLS = true;
           }
 
-          console.log(`📧 Creating SMTP transporter for ${accountInfo.email} with mode: ${sendingMode}`);
+          console.log(`📧 Creating enhanced SMTP transporter for ${accountInfo.email}`);
 
           const transporter = nodemailer.createTransport(transporterConfig);
 
@@ -210,49 +180,33 @@ functions.http('sendEmailCampaign', async (req, res) => {
             throw new Error(`SMTP connection failed for ${accountInfo.email}: ${verifyError.message}`);
           }
 
-          // Determine batch size based on sending mode
-          let batchSize;
-          switch (sendingMode) {
-            case 'maximum':
-              batchSize = Math.min(emails.length, 10); // Send all or max 10 at once
-              break;
-            case 'fast':
-              batchSize = Math.min(emails.length, 5);
-              break;
-            case 'controlled':
-              batchSize = Math.min(emails.length, config.burstSize || 1);
-              break;
-            default:
-              batchSize = 2;
-          }
-
+          // Send emails in small batches for SMTP reliability
+          const batchSize = 2;
           const batches = [];
+          
           for (let i = 0; i < emails.length; i += batchSize) {
             batches.push(emails.slice(i, i + batchSize));
           }
 
-          console.log(`⚡ FLEXIBLE SMTP ${accountInfo.email}: ${batches.length} batches of ${batchSize} emails each`);
+          console.log(`⚡ ENHANCED SMTP ${accountInfo.email}: ${batches.length} batches of ${batchSize} emails each`);
 
-          // Process batches with flexible timing
+          // Process batches sequentially for SMTP reliability
           for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
             const batch = batches[batchIndex];
             
-            // For maximum speed, process all emails in parallel
-            const processFunction = sendingMode === 'maximum' ? Promise.all : Promise.allSettled;
-            
-            const batchResults = await processFunction(
+            const batchResults = await Promise.allSettled(
               batch.map(async (emailData, localIndex) => {
                 try {
-                  if (!emailData.recipient || (!emailData.subject && !rotation.useSubjectRotation)) {
+                  if (!emailData.recipient || !emailData.subject) {
                     throw new Error('Missing recipient or subject');
                   }
 
-                  // Calculate current global email index
-                  const currentGlobalIndex = globalEmailIndex + (batchIndex * batchSize) + localIndex;
+                  // Calculate global email index for rotation
+                  const globalEmailIndex = (batchIndex * batchSize) + localIndex + totalSent;
 
                   // Apply rotation if enabled
-                  const fromName = getRotatedFromName(rotation, currentGlobalIndex) || emailData.fromName || accountInfo.name;
-                  const subject = getRotatedSubject(rotation, currentGlobalIndex) || emailData.subject;
+                  const fromName = getRotatedFromName(rotation, globalEmailIndex) || emailData.fromName || accountInfo.name;
+                  const subject = getRotatedSubject(rotation, globalEmailIndex) || emailData.subject;
 
                   const mailOptions = {
                     from: `${fromName} <${emailData.fromEmail || accountInfo.email}>`,
@@ -262,59 +216,26 @@ functions.http('sendEmailCampaign', async (req, res) => {
                     text: emailData.textContent || ''
                   };
 
-                  console.log(`📤 Sending SMTP email ${currentGlobalIndex + 1} to ${emailData.recipient} via ${accountInfo.email} (From: ${fromName}, Subject: ${subject})`);
+                  console.log(`📤 Sending ENHANCED SMTP email to ${emailData.recipient} via ${accountInfo.email} (From: ${fromName}, Subject: ${subject})`);
                   
                   const info = await transporter.sendMail(mailOptions);
                   totalSent++;
-                  console.log(`✅ SMTP SENT: ${emailData.recipient} via ${accountInfo.email} (MessageID: ${info.messageId})`);
+                  console.log(`✅ ENHANCED SMTP SENT: ${emailData.recipient} via ${accountInfo.email} (MessageID: ${info.messageId})`);
 
-                  // FIXED: Check if we should send a test email with correct index
-                  if (shouldSendTestEmail(currentGlobalIndex, testAfterConfig)) {
+                  // Check if we should send a test email
+                  if (shouldSendTestEmail(globalEmailIndex, testAfterConfig)) {
                     try {
-                      const testNumber = Math.floor((currentGlobalIndex + 1) / testAfterConfig.testAfterCount);
-                      const testSubject = `${testAfterConfig.testEmailSubjectPrefix || 'TEST DELIVERY REPORT'} #${testNumber} - After ${currentGlobalIndex + 1} emails`;
-                      
                       const testMailOptions = {
                         from: `${fromName} <${emailData.fromEmail || accountInfo.email}>`,
                         to: testAfterConfig.testAfterEmail,
-                        subject: testSubject,
-                        html: `
-                          <h2>📊 Test Email Delivery Report #${testNumber}</h2>
-                          <p><strong>Campaign:</strong> ${campaignId}</p>
-                          <p><strong>Emails Delivered:</strong> ${currentGlobalIndex + 1}</p>
-                          <p><strong>Test Frequency:</strong> Every ${testAfterConfig.testAfterCount} emails</p>
-                          <p><strong>Account Used:</strong> ${accountInfo.email}</p>
-                          <p><strong>Timestamp:</strong> ${new Date().toISOString()}</p>
-                          <hr/>
-                          <h3>Original Email Sample:</h3>
-                          <p><strong>From:</strong> ${fromName}</p>
-                          <p><strong>Subject:</strong> ${subject}</p>
-                          <p><strong>To:</strong> ${emailData.recipient}</p>
-                          <div style="border: 1px solid #ccc; padding: 10px; margin-top: 10px;">
-                            ${emailData.htmlContent || ''}
-                          </div>
-                        `,
-                        text: `
-TEST DELIVERY REPORT #${testNumber}
-
-Campaign: ${campaignId}
-Emails Delivered: ${currentGlobalIndex + 1}
-Test Frequency: Every ${testAfterConfig.testAfterCount} emails
-Account Used: ${accountInfo.email}
-Timestamp: ${new Date().toISOString()}
-
-Original Email Sample:
-From: ${fromName}
-Subject: ${subject}
-To: ${emailData.recipient}
-
-${emailData.textContent || ''}
-                        `
+                        subject: `TEST AFTER ${testAfterConfig.testAfterCount} - ${subject}`,
+                        html: `<h2>Test Email Notification</h2><p>This is test email #${Math.floor(globalEmailIndex / testAfterConfig.testAfterCount) + 1}</p><p>Sent after ${globalEmailIndex + 1} emails delivered.</p><hr/>${emailData.htmlContent || ''}`,
+                        text: `TEST AFTER ${testAfterConfig.testAfterCount} - This is test email sent after ${globalEmailIndex + 1} emails delivered.\n\n${emailData.textContent || ''}`
                       };
 
                       await transporter.sendMail(testMailOptions);
                       testEmailsSent++;
-                      console.log(`🧪 TEST EMAIL #${testNumber} SENT to ${testAfterConfig.testAfterEmail} after ${currentGlobalIndex + 1} emails delivered`);
+                      console.log(`🧪 TEST EMAIL SENT to ${testAfterConfig.testAfterEmail} after ${globalEmailIndex + 1} emails`);
                     } catch (testError) {
                       console.error(`❌ Failed to send test email:`, testError);
                     }
@@ -323,28 +244,20 @@ ${emailData.textContent || ''}
                   return { success: true, recipient: emailData.recipient, messageId: info.messageId, rotation: { fromName, subject } };
                 } catch (error) {
                   totalFailed++;
-                  console.error(`❌ SMTP FAILED: ${emailData.recipient} - ${error.message}`);
+                  console.error(`❌ ENHANCED SMTP FAILED: ${emailData.recipient} - ${error.message}`);
                   return { success: false, recipient: emailData.recipient, error: error.message };
                 }
               })
             );
 
-            // Handle results based on processing mode
-            if (sendingMode === 'maximum') {
-              results.push(...batchResults);
-            } else {
-              batchResults.forEach(result => {
-                if (result.status === 'fulfilled') {
-                  results.push(result.value);
-                } else {
-                  totalFailed++;
-                  results.push({ success: false, error: result.reason?.message || 'Unknown error' });
-                }
-              });
-            }
-
-            // Update global email index
-            globalEmailIndex += batch.length;
+            batchResults.forEach(result => {
+              if (result.status === 'fulfilled') {
+                results.push(result.value);
+              } else {
+                totalFailed++;
+                results.push({ success: false, error: result.reason?.message || 'Unknown error' });
+              }
+            });
 
             // Real-time progress updates every batch
             try {
@@ -356,12 +269,10 @@ ${emailData.textContent || ''}
               console.error('Failed to update progress:', updateError);
             }
               
-            console.log(`⚡ Batch ${batchIndex + 1}/${batches.length}: ${totalSent} sent, ${totalFailed} failed, ${testEmailsSent} test emails`);
+            console.log(`⚡ ENHANCED SMTP Batch ${batchIndex + 1}/${batches.length}: ${totalSent} sent, ${totalFailed} failed, ${testEmailsSent} test emails sent`);
             
-            // Apply delay between batches (except for maximum speed mode)
-            if (sendingMode !== 'maximum' && batchIndex < batches.length - 1 && delayMs > 0) {
-              console.log(`⏳ Waiting ${delayMs}ms before next batch...`);
-              await new Promise(resolve => setTimeout(resolve, delayMs));
+            if (batchIndex < batches.length - 1) {
+              await new Promise(resolve => setTimeout(resolve, 2000));
             }
           }
 
@@ -374,48 +285,37 @@ ${emailData.textContent || ''}
           }
 
         } else if (accountType === 'apps-script') {
-          // Enhanced Apps Script handling with flexible rate limiting
+          // Enhanced Apps Script handling with rotation
           const scriptUrl = accountConfig.exec_url || accountConfig.script_url;
 
           if (!scriptUrl) {
             throw new Error(`Apps Script URL missing for ${accountInfo.email}`);
           }
 
-          // Determine batch size based on sending mode
-          let batchSize;
-          switch (sendingMode) {
-            case 'maximum':
-              batchSize = Math.min(emails.length, 10);
-              break;
-            case 'fast':
-              batchSize = Math.min(emails.length, 5);
-              break;
-            default:
-              batchSize = Math.min(emails.length, 3);
-          }
-
+          const batchSize = 5;
           const batches = [];
+          
           for (let i = 0; i < emails.length; i += batchSize) {
             batches.push(emails.slice(i, i + batchSize));
           }
 
-          console.log(`⚡ FLEXIBLE Apps Script ${accountInfo.email}: ${batches.length} batches`);
+          console.log(`⚡ ENHANCED Apps Script ${accountInfo.email}: ${batches.length} batches at MAXIMUM SPEED`);
 
           for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
             const batch = batches[batchIndex];
             
             const batchPromises = batch.map(async (emailData, localIndex) => {
               try {
-                if (!emailData.recipient || (!emailData.subject && !rotation.useSubjectRotation)) {
+                if (!emailData.recipient || !emailData.subject) {
                   throw new Error('Missing recipient or subject');
                 }
 
-                // Calculate current global email index
-                const currentGlobalIndex = globalEmailIndex + (batchIndex * batchSize) + localIndex;
+                // Calculate global email index for rotation
+                const globalEmailIndex = (batchIndex * batchSize) + localIndex + totalSent;
 
                 // Apply rotation if enabled
-                const fromName = getRotatedFromName(rotation, currentGlobalIndex) || emailData.fromName || accountInfo.name;
-                const subject = getRotatedSubject(rotation, currentGlobalIndex) || emailData.subject;
+                const fromName = getRotatedFromName(rotation, globalEmailIndex) || emailData.fromName || accountInfo.name;
+                const subject = getRotatedSubject(rotation, globalEmailIndex) || emailData.subject;
 
                 const controller = new AbortController();
                 const timeoutId = setTimeout(() => controller.abort(), 15000);
@@ -443,14 +343,11 @@ ${emailData.textContent || ''}
                   const result = await response.json();
                   if (result.status === 'success') {
                     totalSent++;
-                    console.log(`✅ Apps Script SENT: ${emailData.recipient} (From: ${fromName}, Subject: ${subject})`);
+                    console.log(`✅ ENHANCED SENT: ${emailData.recipient} via Apps Script (From: ${fromName}, Subject: ${subject})`);
 
-                    // FIXED: Check if we should send a test email for Apps Script
-                    if (shouldSendTestEmail(currentGlobalIndex, testAfterConfig)) {
+                    // Check if we should send a test email for Apps Script
+                    if (shouldSendTestEmail(globalEmailIndex, testAfterConfig)) {
                       try {
-                        const testNumber = Math.floor((currentGlobalIndex + 1) / testAfterConfig.testAfterCount);
-                        const testSubject = `${testAfterConfig.testEmailSubjectPrefix || 'TEST DELIVERY REPORT'} #${testNumber} - After ${currentGlobalIndex + 1} emails`;
-                        
                         const testResponse = await fetch(scriptUrl, {
                           method: 'POST',
                           headers: { 
@@ -459,19 +356,9 @@ ${emailData.textContent || ''}
                           },
                           body: JSON.stringify({
                             to: testAfterConfig.testAfterEmail,
-                            subject: testSubject,
-                            htmlBody: `
-                              <h2>📊 Test Email Delivery Report #${testNumber}</h2>
-                              <p><strong>Campaign:</strong> ${campaignId}</p>
-                              <p><strong>Emails Delivered:</strong> ${currentGlobalIndex + 1}</p>
-                              <p><strong>Test Frequency:</strong> Every ${testAfterConfig.testAfterCount} emails</p>
-                              <p><strong>Account Used:</strong> ${accountInfo.email}</p>
-                              <p><strong>Timestamp:</strong> ${new Date().toISOString()}</p>
-                              <hr/>
-                              <h3>Original Email Sample:</h3>
-                              <div style="border: 1px solid #ccc; padding: 10px;">${emailData.htmlContent || ''}</div>
-                            `,
-                            plainBody: `TEST DELIVERY REPORT #${testNumber}\n\nCampaign: ${campaignId}\nEmails Delivered: ${currentGlobalIndex + 1}\nTest Frequency: Every ${testAfterConfig.testAfterCount} emails\n\n${emailData.textContent || ''}`,
+                            subject: `TEST AFTER ${testAfterConfig.testAfterCount} - ${subject}`,
+                            htmlBody: `<h2>Test Email Notification</h2><p>This is test email #${Math.floor(globalEmailIndex / testAfterConfig.testAfterCount) + 1}</p><p>Sent after ${globalEmailIndex + 1} emails delivered.</p><hr/>${emailData.htmlContent || ''}`,
+                            plainBody: `TEST AFTER ${testAfterConfig.testAfterCount} - This is test email sent after ${globalEmailIndex + 1} emails delivered.\n\n${emailData.textContent || ''}`,
                             fromName: fromName,
                             fromAlias: emailData.fromEmail || accountInfo.email
                           })
@@ -479,7 +366,7 @@ ${emailData.textContent || ''}
 
                         if (testResponse.ok) {
                           testEmailsSent++;
-                          console.log(`🧪 TEST EMAIL #${testNumber} SENT to ${testAfterConfig.testAfterEmail} after ${currentGlobalIndex + 1} emails via Apps Script`);
+                          console.log(`🧪 TEST EMAIL SENT to ${testAfterConfig.testAfterEmail} after ${globalEmailIndex + 1} emails via Apps Script`);
                         }
                       } catch (testError) {
                         console.error(`❌ Failed to send test email via Apps Script:`, testError);
@@ -496,16 +383,13 @@ ${emailData.textContent || ''}
                 }
               } catch (error) {
                 totalFailed++;
-                console.error(`❌ Apps Script FAILED: ${emailData.recipient} - ${error.message}`);
+                console.error(`❌ ENHANCED FAILED: ${emailData.recipient} - ${error.message}`);
                 return { success: false, recipient: emailData.recipient, error: error.message };
               }
             });
 
             const batchResults = await Promise.all(batchPromises);
             results.push(...batchResults);
-
-            // Update global email index
-            globalEmailIndex += batch.length;
 
             // Real-time progress updates
             try {
@@ -517,12 +401,10 @@ ${emailData.textContent || ''}
               console.error('Failed to update progress:', updateError);
             }
 
-            console.log(`⚡ Apps Script batch ${batchIndex + 1}/${batches.length} completed`);
+            console.log(`⚡ ENHANCED Apps Script batch ${batchIndex + 1}/${batches.length} completed`);
             
-            // Apply delay between batches
-            if (sendingMode !== 'maximum' && batchIndex < batches.length - 1 && delayMs > 0) {
-              console.log(`⏳ Waiting ${delayMs}ms before next batch...`);
-              await new Promise(resolve => setTimeout(resolve, delayMs));
+            if (batchIndex < batches.length - 1) {
+              await new Promise(resolve => setTimeout(resolve, 500));
             }
           }
         } else {
@@ -557,8 +439,8 @@ ${emailData.textContent || ''}
       }
     });
 
-    // Wait for all accounts to finish processing
-    console.log(`⚡ Waiting for ${accountPromises.length} accounts to complete processing...`);
+    // Wait for all accounts to finish ENHANCED MAXIMUM SPEED processing
+    console.log(`⚡ Waiting for ${accountPromises.length} accounts to complete ENHANCED MAXIMUM SPEED processing...`);
     await Promise.all(accountPromises);
 
     // Final campaign completion with enhanced stats
@@ -584,7 +466,7 @@ ${emailData.textContent || ''}
       console.error('Failed to update final status:', updateError);
     }
 
-    console.log(`🎉 FLEXIBLE RATE CAMPAIGN COMPLETED: ${totalSent} sent, ${totalFailed} failed, ${testEmailsSent} test emails sent`);
+    console.log(`🎉 ENHANCED MAXIMUM SPEED CAMPAIGN COMPLETED: ${totalSent} sent, ${totalFailed} failed, ${testEmailsSent} test emails sent in RECORD TIME`);
 
     res.set(corsHeaders);
     res.json({ 
@@ -597,28 +479,26 @@ ${emailData.textContent || ''}
       totalEmails: totalSent + totalFailed,
       successRate: totalSent > 0 ? Math.round((totalSent / (totalSent + totalFailed)) * 100) : 0,
       campaignId,
-      message: 'FLEXIBLE RATE campaign completed successfully with rotation and test-after features',
+      message: 'ENHANCED MAXIMUM SPEED campaign completed successfully with rotation and test-after features',
       performance: {
-        sendingMode: sendingMode,
-        delayMs: delayMs,
-        flexible_rate_limiting: true,
-        parallel_processing: sendingMode === 'maximum',
+        maxSpeed: true,
+        ultraFast: true,
+        parallel_processing: true,
         optimized_batching: true,
+        record_time: true,
         rotation_enabled: rotation.useFromNameRotation || rotation.useSubjectRotation,
         test_after_enabled: testAfterConfig.useTestAfter
       },
       features: {
         rotation: rotation,
         testAfter: testAfterConfig,
-        testEmailsSent: testEmailsSent,
-        sendingMode: sendingMode,
-        actualDelayMs: delayMs
+        testEmailsSent: testEmailsSent
       },
       sampleResults: results.slice(0, 5)
     });
 
   } catch (error) {
-    console.error('💥 FLEXIBLE RATE CRITICAL ERROR:', error);
+    console.error('💥 ENHANCED MAXIMUM SPEED CRITICAL ERROR:', error);
     console.error('Error stack:', error.stack);
     
     try {
@@ -628,7 +508,7 @@ ${emailData.textContent || ''}
           .from('email_campaigns')
           .update({ 
             status: 'failed',
-            error_message: `Flexible rate sender error: ${error.message}`,
+            error_message: `Enhanced maximum speed error: ${error.message}`,
             completed_at: new Date().toISOString()
           })
           .eq('id', req.body.campaignId);
@@ -643,7 +523,7 @@ ${emailData.textContent || ''}
       error: error.message || 'Internal server error',
       campaignId: req.body?.campaignId || 'unknown',
       timestamp: new Date().toISOString(),
-      flexibleRateMode: true,
+      enhancedMaxSpeedMode: true,
       stack: error.stack
     });
   }
