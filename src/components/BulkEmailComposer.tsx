@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -6,7 +7,8 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { AlertCircle, Mail, Send, Upload, RefreshCw } from 'lucide-react';
+import { Switch } from "@/components/ui/switch";
+import { AlertCircle, Mail, Send, Upload, RefreshCw, Plus, Trash2 } from 'lucide-react';
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { toast } from '@/hooks/use-toast';
 import { useEmailAccounts } from '@/hooks/useEmailAccounts';
@@ -31,23 +33,32 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
     config: {
       delay_between_emails: 1,
       max_emails_per_hour: 100,
-      selectedAccounts: [] as string[]
+      selectedAccounts: [] as string[],
+      // Rotation settings
+      useFromNameRotation: false,
+      fromNames: [] as string[],
+      useSubjectRotation: false,
+      subjects: [] as string[],
+      // Test after settings
+      useTestAfter: false,
+      testAfterEmail: '',
+      testAfterCount: 100
     }
   });
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [recipientCount, setRecipientCount] = useState(0);
+  const [newFromName, setNewFromName] = useState('');
+  const [newSubject, setNewSubject] = useState('');
 
-  // Update recipient count when recipients change - FIXED PARSING
+  // Update recipient count when recipients change
   useEffect(() => {
     if (formData.recipients.trim()) {
-      // Split by newlines and commas, then filter valid emails
       const emails = formData.recipients
         .split(/[\n,]/)
         .map(email => email.trim())
         .filter(email => email && email.includes('@') && email.length > 3);
       
-      console.log('Parsed emails:', emails);
       setRecipientCount(emails.length);
     } else {
       setRecipientCount(0);
@@ -57,7 +68,6 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
   // Force refresh accounts when component mounts or organization changes
   useEffect(() => {
     if (currentOrganization?.id) {
-      console.log('BulkEmailComposer: Organization changed, refreshing accounts for:', currentOrganization.id);
       refetch();
     }
   }, [currentOrganization?.id, refetch]);
@@ -83,10 +93,54 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
       return;
     }
 
-    if (formData.config.selectedAccounts.length === 0) {
+    // Validation for rotation settings
+    if (formData.config.useFromNameRotation && formData.config.fromNames.length === 0) {
       toast({
         title: "Error",
-        description: "Please select at least one email account",
+        description: "Please add at least one from name for rotation",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    if (formData.config.useSubjectRotation && formData.config.subjects.length === 0) {
+      toast({
+        title: "Error",
+        description: "Please add at least one subject for rotation",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    // Validation for test after settings
+    if (formData.config.useTestAfter) {
+      if (!formData.config.testAfterEmail || !formData.config.testAfterEmail.includes('@')) {
+        toast({
+          title: "Error",
+          description: "Please provide a valid test email address",
+          variant: "destructive"
+        });
+        return;
+      }
+      if (formData.config.testAfterCount <= 0) {
+        toast({
+          title: "Error",
+          description: "Test after count must be greater than 0",
+          variant: "destructive"
+        });
+        return;
+      }
+    }
+
+    // Use all accounts when no specific selection or use selected accounts
+    const accountsToUse = formData.config.selectedAccounts.length > 0 
+      ? formData.config.selectedAccounts 
+      : accounts.map(acc => acc.id);
+
+    if (accountsToUse.length === 0) {
+      toast({
+        title: "Error",
+        description: "No email accounts available",
         variant: "destructive"
       });
       return;
@@ -95,27 +149,34 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
     setIsSubmitting(true);
 
     try {
-      // Properly format recipients as comma-separated for database storage
       const emailList = formData.recipients
         .split(/[\n,]/)
         .map(email => email.trim())
         .filter(email => email && email.includes('@') && email.length > 3);
 
       const campaignData = {
-        ...formData,
-        recipients: emailList.join(','), // Store as comma-separated string
+        from_name: formData.from_name || '', // Can be empty if using rotation
+        subject: formData.subject || '', // Can be empty if using rotation
+        recipients: emailList.join(','),
+        html_content: formData.html_content,
+        text_content: formData.text_content,
+        send_method: formData.send_method,
         total_recipients: recipientCount,
         organization_id: currentOrganization.id,
         config: {
           ...formData.config,
-          selectedAccounts: formData.config.selectedAccounts.length > 0 
-            ? formData.config.selectedAccounts 
-            : formData.email_account_id ? [formData.email_account_id] : []
+          selectedAccounts: accountsToUse,
+          // Ensure rotation data is included
+          useFromNameRotation: formData.config.useFromNameRotation,
+          fromNames: formData.config.fromNames,
+          useSubjectRotation: formData.config.useSubjectRotation,
+          subjects: formData.config.subjects,
+          // Test after configuration
+          useTestAfter: formData.config.useTestAfter,
+          testAfterEmail: formData.config.testAfterEmail,
+          testAfterCount: formData.config.testAfterCount
         }
       };
-
-      console.log('Creating campaign with:', recipientCount, 'recipients');
-      console.log('Email list:', emailList);
 
       await onSend(campaignData);
       
@@ -131,7 +192,14 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
         config: {
           delay_between_emails: 1,
           max_emails_per_hour: 100,
-          selectedAccounts: []
+          selectedAccounts: [],
+          useFromNameRotation: false,
+          fromNames: [],
+          useSubjectRotation: false,
+          subjects: [],
+          useTestAfter: false,
+          testAfterEmail: '',
+          testAfterCount: 100
         }
       });
 
@@ -175,7 +243,6 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
   };
 
   const handleRefreshAccounts = () => {
-    console.log('Manual account refresh triggered');
     refetch();
     toast({
       title: "Refreshing",
@@ -183,7 +250,6 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
     });
   };
 
-  // Handle account selection for multi-account campaigns
   const handleAccountSelection = (accountId: string) => {
     setFormData(prev => ({
       ...prev,
@@ -192,6 +258,52 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
         selectedAccounts: prev.config.selectedAccounts.includes(accountId)
           ? prev.config.selectedAccounts.filter(id => id !== accountId)
           : [...prev.config.selectedAccounts, accountId]
+      }
+    }));
+  };
+
+  const addFromName = () => {
+    if (newFromName.trim()) {
+      setFormData(prev => ({
+        ...prev,
+        config: {
+          ...prev.config,
+          fromNames: [...prev.config.fromNames, newFromName.trim()]
+        }
+      }));
+      setNewFromName('');
+    }
+  };
+
+  const removeFromName = (index: number) => {
+    setFormData(prev => ({
+      ...prev,
+      config: {
+        ...prev.config,
+        fromNames: prev.config.fromNames.filter((_, i) => i !== index)
+      }
+    }));
+  };
+
+  const addSubject = () => {
+    if (newSubject.trim()) {
+      setFormData(prev => ({
+        ...prev,
+        config: {
+          ...prev.config,
+          subjects: [...prev.config.subjects, newSubject.trim()]
+        }
+      }));
+      setNewSubject('');
+    }
+  };
+
+  const removeSubject = (index: number) => {
+    setFormData(prev => ({
+      ...prev,
+      config: {
+        ...prev.config,
+        subjects: prev.config.subjects.filter((_, i) => i !== index)
       }
     }));
   };
@@ -207,27 +319,22 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
     );
   }
 
-  // Check if button should be disabled and why
-  const isButtonDisabled = isSubmitting || recipientCount === 0 || formData.config.selectedAccounts.length === 0;
+  const isButtonDisabled = isSubmitting || recipientCount === 0;
   const getDisabledReason = () => {
     if (isSubmitting) return "Creating campaign...";
     if (recipientCount === 0) return "Add email recipients";
-    if (formData.config.selectedAccounts.length === 0) return "Select email account(s)";
     return "";
   };
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
-      {/* Email Account Selection - MADE MORE PROMINENT */}
-      <Card className={formData.config.selectedAccounts.length === 0 ? 'border-red-500 border-2' : ''}>
+      {/* Email Account Selection */}
+      <Card>
         <CardHeader>
           <CardTitle className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Mail className="w-5 h-5" />
               Email Accounts 
-              {formData.config.selectedAccounts.length === 0 && (
-                <Badge variant="destructive" className="ml-2">Required</Badge>
-              )}
             </div>
             <Button 
               type="button"
@@ -241,10 +348,7 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
             </Button>
           </CardTitle>
           <CardDescription>
-            Select email accounts for sending. Total accounts: {accounts.length}
-            {formData.config.selectedAccounts.length === 0 && (
-              <span className="text-red-500 font-medium"> - You must select at least one account!</span>
-            )}
+            Select specific accounts or leave empty to use all available accounts ({accounts.length} total)
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -262,10 +366,14 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
             </Alert>
           ) : (
             <div className="space-y-4">
-              {/* Multi-account selection */}
               <div>
-                <Label className="text-sm font-medium">Select Accounts for Campaign</Label>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-2">
+                <Label className="text-sm font-medium">Account Selection (Optional)</Label>
+                <p className="text-xs text-slate-500 mb-2">
+                  {formData.config.selectedAccounts.length === 0 
+                    ? `All ${accounts.length} accounts will be used for rotation` 
+                    : `${formData.config.selectedAccounts.length} selected accounts will be used`}
+                </p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                   {accounts.map((account) => (
                     <div 
                       key={account.id}
@@ -295,56 +403,183 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
                     </div>
                   ))}
                 </div>
-                
-                {formData.config.selectedAccounts.length > 0 && (
-                  <div className="mt-2 text-sm text-green-600">
-                    ✓ {formData.config.selectedAccounts.length} account(s) selected for rotation
-                  </div>
-                )}
-              </div>
-
-              {/* Debug info */}
-              <div className="text-xs text-slate-400 bg-slate-50 p-2 rounded">
-                Debug: Organization ID: {currentOrganization.id} | Accounts found: {accounts.length}
               </div>
             </div>
           )}
         </CardContent>
       </Card>
 
-      {/* Campaign Details */}
+      {/* Campaign Details with Rotation Options */}
       <Card>
         <CardHeader>
           <CardTitle>Campaign Details</CardTitle>
           <CardDescription>
-            Configure your email campaign settings
+            Configure your email campaign settings and rotation options
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <Label htmlFor="from_name">From Name</Label>
-              <Input
-                id="from_name"
-                value={formData.from_name}
-                onChange={(e) => setFormData(prev => ({ ...prev, from_name: e.target.value }))}
-                placeholder="Your Company"
-                required
+        <CardContent className="space-y-6">
+          {/* From Name Section */}
+          <div className="space-y-4">
+            <div className="flex items-center space-x-2">
+              <Switch
+                checked={formData.config.useFromNameRotation}
+                onCheckedChange={(checked) => setFormData(prev => ({
+                  ...prev,
+                  config: { ...prev.config, useFromNameRotation: checked }
+                }))}
               />
+              <Label>Use From Name Rotation</Label>
             </div>
             
-            <div>
-              <Label htmlFor="subject">Subject Line</Label>
-              <Input
-                id="subject"
-                value={formData.subject}
-                onChange={(e) => setFormData(prev => ({ ...prev, subject: e.target.value }))}
-                placeholder="Your email subject"
-                required
-              />
-            </div>
+            {formData.config.useFromNameRotation ? (
+              <div className="space-y-2">
+                <Label>From Names for Rotation</Label>
+                <div className="flex gap-2">
+                  <Input
+                    value={newFromName}
+                    onChange={(e) => setNewFromName(e.target.value)}
+                    placeholder="Enter from name"
+                    onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), addFromName())}
+                  />
+                  <Button type="button" onClick={addFromName} size="sm">
+                    <Plus className="w-4 h-4" />
+                  </Button>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {formData.config.fromNames.map((name, index) => (
+                    <Badge key={index} variant="secondary" className="flex items-center gap-1">
+                      {name}
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-4 w-4 p-0"
+                        onClick={() => removeFromName(index)}
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </Button>
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div>
+                <Label htmlFor="from_name">From Name</Label>
+                <Input
+                  id="from_name"
+                  value={formData.from_name}
+                  onChange={(e) => setFormData(prev => ({ ...prev, from_name: e.target.value }))}
+                  placeholder="Your Company"
+                />
+              </div>
+            )}
           </div>
 
+          {/* Subject Section */}
+          <div className="space-y-4">
+            <div className="flex items-center space-x-2">
+              <Switch
+                checked={formData.config.useSubjectRotation}
+                onCheckedChange={(checked) => setFormData(prev => ({
+                  ...prev,
+                  config: { ...prev.config, useSubjectRotation: checked }
+                }))}
+              />
+              <Label>Use Subject Rotation</Label>
+            </div>
+            
+            {formData.config.useSubjectRotation ? (
+              <div className="space-y-2">
+                <Label>Subjects for Rotation</Label>
+                <div className="flex gap-2">
+                  <Input
+                    value={newSubject}
+                    onChange={(e) => setNewSubject(e.target.value)}
+                    placeholder="Enter subject line"
+                    onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), addSubject())}
+                  />
+                  <Button type="button" onClick={addSubject} size="sm">
+                    <Plus className="w-4 h-4" />
+                  </Button>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {formData.config.subjects.map((subject, index) => (
+                    <Badge key={index} variant="secondary" className="flex items-center gap-1">
+                      {subject}
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-4 w-4 p-0"
+                        onClick={() => removeSubject(index)}
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </Button>
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div>
+                <Label htmlFor="subject">Subject Line</Label>
+                <Input
+                  id="subject"
+                  value={formData.subject}
+                  onChange={(e) => setFormData(prev => ({ ...prev, subject: e.target.value }))}
+                  placeholder="Your email subject"
+                />
+              </div>
+            )}
+          </div>
+
+          {/* Test After Section */}
+          <div className="space-y-4">
+            <div className="flex items-center space-x-2">
+              <Switch
+                checked={formData.config.useTestAfter}
+                onCheckedChange={(checked) => setFormData(prev => ({
+                  ...prev,
+                  config: { ...prev.config, useTestAfter: checked }
+                }))}
+              />
+              <Label>Enable Test After</Label>
+            </div>
+            
+            {formData.config.useTestAfter && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="testAfterEmail">Test Email Address</Label>
+                  <Input
+                    id="testAfterEmail"
+                    type="email"
+                    value={formData.config.testAfterEmail}
+                    onChange={(e) => setFormData(prev => ({
+                      ...prev,
+                      config: { ...prev.config, testAfterEmail: e.target.value }
+                    }))}
+                    placeholder="test@gmail.com"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="testAfterCount">Send Test After Every</Label>
+                  <Input
+                    id="testAfterCount"
+                    type="number"
+                    min="1"
+                    value={formData.config.testAfterCount}
+                    onChange={(e) => setFormData(prev => ({
+                      ...prev,
+                      config: { ...prev.config, testAfterCount: parseInt(e.target.value) || 100 }
+                    }))}
+                    placeholder="500"
+                  />
+                  <p className="text-xs text-slate-500 mt-1">emails sent</p>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Rate Limiting */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <Label htmlFor="delay">Delay Between Emails (seconds)</Label>
@@ -454,7 +689,7 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
         </CardContent>
       </Card>
 
-      {/* Submit Button - ENHANCED WITH BETTER FEEDBACK */}
+      {/* Submit Button */}
       <div className="flex justify-end">
         <div className="space-y-2">
           {isButtonDisabled && (

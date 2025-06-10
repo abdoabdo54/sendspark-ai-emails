@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
@@ -243,14 +242,22 @@ export const useCampaigns = (organizationId?: string) => {
 
   const prepareCampaign = async (campaignId: string) => {
     try {
-      console.log('Preparing campaign with advanced system:', campaignId);
+      console.log('Preparing campaign with enhanced rotation and test-after features:', campaignId);
 
-      // Get all active email accounts for this organization
-      const { data: accounts, error: accountsError } = await supabase
+      // Get campaign details to check configuration
+      const campaign = campaigns.find(c => c.id === campaignId);
+      if (!campaign) {
+        throw new Error('Campaign not found');
+      }
+
+      // Get accounts based on campaign configuration
+      let accountQuery = supabase
         .from('email_accounts')
         .select('*')
         .eq('organization_id', organizationId)
         .eq('is_active', true);
+
+      const { data: accounts, error: accountsError } = await accountQuery;
 
       if (accountsError) {
         console.error('Error fetching accounts:', accountsError);
@@ -261,10 +268,18 @@ export const useCampaigns = (organizationId?: string) => {
         throw new Error('No active email accounts found. Please add and activate at least one email account in Settings.');
       }
 
-      // Use all available accounts
-      const selectedAccounts = accounts.map(account => account.id);
+      // Use selected accounts or all accounts if none selected
+      const campaignConfig = campaign.config || {};
+      const selectedAccountIds = campaignConfig.selectedAccounts || [];
+      const accountsToUse = selectedAccountIds.length > 0 
+        ? accounts.filter(acc => selectedAccountIds.includes(acc.id))
+        : accounts; // Use all accounts if none specifically selected
 
-      // Get Google Cloud Functions configuration from localStorage
+      if (accountsToUse.length === 0) {
+        throw new Error('No valid accounts found for campaign preparation');
+      }
+
+      // Get Google Cloud Functions configuration
       let googleCloudConfig = null;
       try {
         const savedSettings = localStorage.getItem('emailCampaignSettings');
@@ -283,38 +298,47 @@ export const useCampaigns = (organizationId?: string) => {
         console.error('Error parsing saved settings:', error);
       }
 
-      // Default configuration for campaign preparation
+      // Enhanced rotation configuration
       const rotation = {
-        useFromNameRotation: false,
-        fromNames: [],
-        useSubjectRotation: false,
-        subjects: []
+        useFromNameRotation: campaignConfig.useFromNameRotation || false,
+        fromNames: campaignConfig.fromNames || [],
+        useSubjectRotation: campaignConfig.useSubjectRotation || false,
+        subjects: campaignConfig.subjects || []
       };
 
-      // Default rate limits (emails per hour converted to emails per second for the function)
+      // Test after configuration
+      const testAfterConfig = {
+        useTestAfter: campaignConfig.useTestAfter || false,
+        testAfterEmail: campaignConfig.testAfterEmail || '',
+        testAfterCount: campaignConfig.testAfterCount || 100
+      };
+
+      // Rate limits for accounts
       const rateLimit = {};
-      accounts.forEach(account => {
-        const accountConfig = account.config as any; // Safely cast the config
+      accountsToUse.forEach(account => {
+        const accountConfig = account.config as any;
         const emailsPerHour = accountConfig?.emails_per_hour || 3600;
-        rateLimit[account.id] = emailsPerHour; // Keep as emails per hour, function will convert
+        rateLimit[account.id] = emailsPerHour;
       });
 
-      console.log('Preparing campaign with:', {
+      console.log('Enhanced campaign preparation with:', {
         campaignId,
-        selectedAccounts,
+        selectedAccounts: accountsToUse.map(acc => acc.id),
         rotation,
+        testAfterConfig,
         rateLimit,
         googleCloudConfig
       });
 
-      // Call the advanced prepare function with all required parameters
+      // Call the enhanced prepare function
       const { data, error } = await supabase.functions.invoke('prepare-campaign-advanced', {
         body: { 
           campaignId,
-          selectedAccounts,
+          selectedAccounts: accountsToUse.map(acc => acc.id),
           rotation,
           rateLimit,
-          googleCloudConfig
+          googleCloudConfig,
+          testAfterConfig
         }
       });
 
@@ -323,14 +347,13 @@ export const useCampaigns = (organizationId?: string) => {
         throw error;
       }
 
-      console.log('Advanced campaign preparation result:', data);
+      console.log('Enhanced campaign preparation result:', data);
 
       toast({
         title: "Success",
-        description: `Campaign prepared successfully! ${data.totalEmails} emails ready across ${data.accountsUsed} accounts.`
+        description: `Campaign prepared successfully! ${data.totalEmails} emails ready across ${data.accountsUsed} accounts with rotation and test-after features enabled.`
       });
 
-      // Refresh campaigns to get updated status
       await fetchCampaigns();
       
       return data;
@@ -358,14 +381,12 @@ export const useCampaigns = (organizationId?: string) => {
         throw new Error('Campaign is already being sent');
       }
 
-      // Update status to sending immediately for immediate UI feedback
       await updateCampaign(campaignId, { 
         status: 'sending',
         sent_at: new Date().toISOString(),
         error_message: null
       });
 
-      // Call the ULTRA-HIGH-SPEED Google Cloud sender
       const { data, error } = await supabase.functions.invoke('send-via-google-cloud-advanced', {
         body: { campaignId, resumeFromIndex }
       });
@@ -373,7 +394,6 @@ export const useCampaigns = (organizationId?: string) => {
       if (error) {
         console.error('❌ Google Cloud sender error:', error);
         
-        // Revert status on error
         await updateCampaign(campaignId, { 
           status: 'prepared',
           error_message: `Google Cloud error: ${error.message}`
@@ -387,10 +407,9 @@ export const useCampaigns = (organizationId?: string) => {
       if (data.success) {
         toast({
           title: "🚀 MAXIMUM SPEED Campaign Started!",
-          description: `Processing ${data.configuration?.total_emails || 0} emails at MAXIMUM SPEED via Google Cloud Functions. Real-time updates every 3 seconds.`
+          description: `Processing ${data.configuration?.total_emails || 0} emails at MAXIMUM SPEED via Google Cloud Functions with rotation and test-after features. Real-time updates every 3 seconds.`
         });
 
-        // Start aggressive polling for real-time updates
         startPolling();
       } else {
         throw new Error(data.error || 'Failed to start high-speed campaign sending');
@@ -424,7 +443,6 @@ export const useCampaigns = (organizationId?: string) => {
         throw new Error('Campaign not found');
       }
 
-      // Always use Google Cloud Functions for maximum speed
       return await sendCampaignViaGoogleCloud(campaignId);
     } catch (error) {
       console.error('Error sending campaign:', error);
@@ -453,11 +471,9 @@ export const useCampaigns = (organizationId?: string) => {
       }
 
       if (campaign.status === 'paused') {
-        // Resume from where we left off
         const sentCount = campaign.sent_count || 0;
         await sendCampaignViaGoogleCloud(campaignId, sentCount);
       } else if (campaign.status === 'prepared') {
-        // Start sending from the beginning
         await sendCampaignViaGoogleCloud(campaignId, 0);
       } else {
         throw new Error('Campaign must be prepared or paused to resume');
@@ -470,7 +486,6 @@ export const useCampaigns = (organizationId?: string) => {
 
   const duplicateCampaign = async (campaignId: string) => {
     try {
-      // Get the original campaign
       const { data: originalCampaign, error: fetchError } = await supabase
         .from('email_campaigns')
         .select('*')
@@ -479,7 +494,6 @@ export const useCampaigns = (organizationId?: string) => {
 
       if (fetchError) throw fetchError;
 
-      // Create a duplicate with modified name
       const duplicateData = {
         from_name: originalCampaign.from_name,
         subject: `Copy of ${originalCampaign.subject}`,
@@ -540,7 +554,7 @@ export const useCampaigns = (organizationId?: string) => {
     createCampaign,
     updateCampaign,
     prepareCampaign,
-    sendCampaign: sendCampaignViaGoogleCloud, // Always use Google Cloud for maximum speed
+    sendCampaign: sendCampaignViaGoogleCloud,
     sendCampaignViaGoogleCloud,
     pauseCampaign,
     resumeCampaign,

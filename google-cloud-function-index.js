@@ -1,3 +1,4 @@
+
 const functions = require('@google-cloud/functions-framework');
 const { createClient } = require('@supabase/supabase-js');
 const nodemailer = require('nodemailer');
@@ -7,9 +8,30 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Make sure the function name matches your deployed function
+// Enhanced rotation helpers
+function getRotatedFromName(rotation, emailIndex) {
+  if (!rotation.useFromNameRotation || !rotation.fromNames || rotation.fromNames.length === 0) {
+    return null;
+  }
+  return rotation.fromNames[emailIndex % rotation.fromNames.length];
+}
+
+function getRotatedSubject(rotation, emailIndex) {
+  if (!rotation.useSubjectRotation || !rotation.subjects || rotation.subjects.length === 0) {
+    return null;
+  }
+  return rotation.subjects[emailIndex % rotation.subjects.length];
+}
+
+// Test after email helper
+function shouldSendTestEmail(emailIndex, testAfterConfig) {
+  if (!testAfterConfig.useTestAfter || !testAfterConfig.testAfterEmail || !testAfterConfig.testAfterCount) {
+    return false;
+  }
+  return (emailIndex + 1) % testAfterConfig.testAfterCount === 0;
+}
+
 functions.http('sendEmailCampaign', async (req, res) => {
-  // Handle CORS
   if (req.method === 'OPTIONS') {
     res.set(corsHeaders);
     res.status(200).send('');
@@ -17,7 +39,7 @@ functions.http('sendEmailCampaign', async (req, res) => {
   }
 
   try {
-    console.log('🚀 Google Cloud Function started - MAXIMUM SPEED MODE');
+    console.log('🚀 Google Cloud Function started - MAXIMUM SPEED MODE with Enhanced Features');
     console.log('Request method:', req.method);
     console.log('Request headers:', req.headers);
     console.log('Raw request body:', JSON.stringify(req.body, null, 2));
@@ -27,7 +49,9 @@ functions.http('sendEmailCampaign', async (req, res) => {
       emailsByAccount, 
       supabaseUrl, 
       supabaseKey,
-      config = {}
+      config = {},
+      rotation = {},
+      testAfterConfig = {}
     } = req.body || {};
     
     // Validate required fields
@@ -49,8 +73,10 @@ functions.http('sendEmailCampaign', async (req, res) => {
       throw error;
     }
 
-    console.log(`🚀 STARTING MAXIMUM SPEED CAMPAIGN ${campaignId}`);
-    console.log(`⚡ Processing ${Object.keys(emailsByAccount).length} accounts at MAXIMUM SPEED`);
+    console.log(`🚀 STARTING ENHANCED MAXIMUM SPEED CAMPAIGN ${campaignId}`);
+    console.log(`⚡ Processing ${Object.keys(emailsByAccount).length} accounts with rotation and test-after features`);
+    console.log('Rotation config:', rotation);
+    console.log('Test after config:', testAfterConfig);
 
     // Initialize Supabase client
     const supabase = createClient(supabaseUrl, supabaseKey);
@@ -71,19 +97,19 @@ functions.http('sendEmailCampaign', async (req, res) => {
 
     let totalSent = 0;
     let totalFailed = 0;
+    let testEmailsSent = 0;
     const results = [];
 
     // Process all accounts in MAXIMUM PARALLEL for ultra speed
     const accountPromises = Object.entries(emailsByAccount).map(async ([accountId, accountData]) => {
       console.log(`Processing account ${accountId}:`, accountData);
       
-      // Safely extract account data with fallbacks
       const accountType = accountData.type || 'smtp';
       const accountConfig = accountData.config || {};
       const emails = accountData.emails || [];
       const accountInfo = accountData.accountInfo || { name: 'Unknown', email: 'unknown@domain.com' };
       
-      console.log(`⚡ MAXIMUM SPEED processing ${accountType} account: ${accountInfo.email} (${emails.length} emails)`);
+      console.log(`⚡ ENHANCED MAXIMUM SPEED processing ${accountType} account: ${accountInfo.email} (${emails.length} emails)`);
       
       try {
         if (accountType === 'smtp') {
@@ -115,7 +141,7 @@ functions.http('sendEmailCampaign', async (req, res) => {
             }`);
           }
 
-          // Create enhanced SMTP transporter configuration - FIXED: using createTransport instead of createTransporter
+          // Create enhanced SMTP transporter configuration
           const port = parseInt(smtpPort);
           const isSecurePort = port === 465;
           const isSTARTTLSPort = port === 587 || port === 25;
@@ -123,31 +149,26 @@ functions.http('sendEmailCampaign', async (req, res) => {
           const transporterConfig = {
             host: smtpHost,
             port: port,
-            secure: isSecurePort, // true for 465, false for other ports
+            secure: isSecurePort,
             auth: {
               user: smtpUser,
               pass: smtpPass
             },
-            // Enhanced TLS configuration
             tls: {
-              rejectUnauthorized: false, // Accept self-signed certificates
+              rejectUnauthorized: false,
               ciphers: 'SSLv3'
             },
-            // Connection settings
-            connectionTimeout: 60000, // 60 seconds
-            greetingTimeout: 30000,   // 30 seconds
-            socketTimeout: 60000,     // 60 seconds
-            // Pool settings for better performance
+            connectionTimeout: 60000,
+            greetingTimeout: 30000,
+            socketTimeout: 60000,
             pool: true,
-            maxConnections: 1, // Single connection for reliability
+            maxConnections: 1,
             maxMessages: 100,
             rateLimit: false,
-            // Logging for debugging
             logger: true,
             debug: true
           };
 
-          // Add STARTTLS if not using secure port
           if (isSTARTTLSPort) {
             transporterConfig.requireTLS = true;
           }
@@ -160,10 +181,9 @@ functions.http('sendEmailCampaign', async (req, res) => {
             user: smtpUser
           });
 
-          // CRITICAL FIX: Use createTransport instead of createTransporter
           const transporter = nodemailer.createTransport(transporterConfig);
 
-          // Enhanced connection verification with detailed error handling
+          // Enhanced connection verification
           try {
             console.log(`🔍 Verifying SMTP connection for ${accountInfo.email}...`);
             await new Promise((resolve, reject) => {
@@ -188,38 +208,43 @@ functions.http('sendEmailCampaign', async (req, res) => {
           }
 
           // Send emails in small batches for SMTP reliability
-          const batchSize = 2; // Very small batches for SMTP
+          const batchSize = 2;
           const batches = [];
           
           for (let i = 0; i < emails.length; i += batchSize) {
             batches.push(emails.slice(i, i + batchSize));
           }
 
-          console.log(`⚡ SMTP ${accountInfo.email}: ${batches.length} batches of ${batchSize} emails each`);
+          console.log(`⚡ ENHANCED SMTP ${accountInfo.email}: ${batches.length} batches of ${batchSize} emails each`);
 
           // Process batches sequentially for SMTP reliability
           for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
             const batch = batches[batchIndex];
             
             const batchResults = await Promise.allSettled(
-              batch.map(async (emailData) => {
+              batch.map(async (emailData, localIndex) => {
                 try {
-                  // Validate email data
                   if (!emailData.recipient || !emailData.subject) {
                     throw new Error('Missing recipient or subject');
                   }
 
+                  // Calculate global email index for rotation
+                  const globalEmailIndex = (batchIndex * batchSize) + localIndex + totalSent;
+
+                  // Apply rotation if enabled
+                  const fromName = getRotatedFromName(rotation, globalEmailIndex) || emailData.fromName || accountInfo.name;
+                  const subject = getRotatedSubject(rotation, globalEmailIndex) || emailData.subject;
+
                   const mailOptions = {
-                    from: `${emailData.fromName || accountInfo.name} <${emailData.fromEmail || accountInfo.email}>`,
+                    from: `${fromName} <${emailData.fromEmail || accountInfo.email}>`,
                     to: emailData.recipient,
-                    subject: emailData.subject,
+                    subject: subject,
                     html: emailData.htmlContent || '',
                     text: emailData.textContent || ''
                   };
 
-                  console.log(`📤 Sending SMTP email to ${emailData.recipient} via ${accountInfo.email}`);
+                  console.log(`📤 Sending ENHANCED SMTP email to ${emailData.recipient} via ${accountInfo.email} (From: ${fromName}, Subject: ${subject})`);
                   
-                  // Enhanced sendMail with timeout and retry
                   const sendWithTimeout = (options, timeoutMs = 45000) => {
                     return new Promise((resolve, reject) => {
                       const timeout = setTimeout(() => {
@@ -242,12 +267,31 @@ functions.http('sendEmailCampaign', async (req, res) => {
                   const info = await sendWithTimeout(mailOptions);
 
                   totalSent++;
-                  console.log(`✅ SMTP SENT: ${emailData.recipient} via ${accountInfo.email} (MessageID: ${info.messageId})`);
+                  console.log(`✅ ENHANCED SMTP SENT: ${emailData.recipient} via ${accountInfo.email} (MessageID: ${info.messageId})`);
+
+                  // Check if we should send a test email
+                  if (shouldSendTestEmail(globalEmailIndex, testAfterConfig)) {
+                    try {
+                      const testMailOptions = {
+                        from: `${fromName} <${emailData.fromEmail || accountInfo.email}>`,
+                        to: testAfterConfig.testAfterEmail,
+                        subject: `TEST AFTER ${testAfterConfig.testAfterCount} - ${subject}`,
+                        html: `<h2>Test Email Notification</h2><p>This is test email #${Math.floor(globalEmailIndex / testAfterConfig.testAfterCount) + 1}</p><p>Sent after ${globalEmailIndex + 1} emails delivered.</p><hr/>${emailData.htmlContent || ''}`,
+                        text: `TEST AFTER ${testAfterConfig.testAfterCount} - This is test email sent after ${globalEmailIndex + 1} emails delivered.\n\n${emailData.textContent || ''}`
+                      };
+
+                      await sendWithTimeout(testMailOptions);
+                      testEmailsSent++;
+                      console.log(`🧪 TEST EMAIL SENT to ${testAfterConfig.testAfterEmail} after ${globalEmailIndex + 1} emails`);
+                    } catch (testError) {
+                      console.error(`❌ Failed to send test email:`, testError);
+                    }
+                  }
                   
-                  return { success: true, recipient: emailData.recipient, messageId: info.messageId };
+                  return { success: true, recipient: emailData.recipient, messageId: info.messageId, rotation: { fromName, subject } };
                 } catch (error) {
                   totalFailed++;
-                  console.error(`❌ SMTP FAILED: ${emailData.recipient} - ${error.message}`);
+                  console.error(`❌ ENHANCED SMTP FAILED: ${emailData.recipient} - ${error.message}`);
                   return { success: false, recipient: emailData.recipient, error: error.message };
                 }
               })
@@ -272,11 +316,10 @@ functions.http('sendEmailCampaign', async (req, res) => {
               console.error('Failed to update progress:', updateError);
             }
               
-            console.log(`⚡ SMTP Batch ${batchIndex + 1}/${batches.length}: ${totalSent} sent, ${totalFailed} failed`);
+            console.log(`⚡ ENHANCED SMTP Batch ${batchIndex + 1}/${batches.length}: ${totalSent} sent, ${totalFailed} failed, ${testEmailsSent} test emails sent`);
             
-            // Small delay between batches for SMTP servers
             if (batchIndex < batches.length - 1) {
-              await new Promise(resolve => setTimeout(resolve, 2000)); // 2 second delay between batches
+              await new Promise(resolve => setTimeout(resolve, 2000));
             }
           }
 
@@ -289,10 +332,7 @@ functions.http('sendEmailCampaign', async (req, res) => {
           }
 
         } else if (accountType === 'apps-script') {
-          // Apps Script handling remains the same
-          // ... keep existing code (Apps Script processing logic)
-          
-          // Validate Apps Script configuration
+          // Enhanced Apps Script handling with rotation
           if (!accountConfig.exec_url && !accountConfig.script_url) {
             throw new Error(`Apps Script URL missing for ${accountInfo.email}`);
           }
@@ -303,28 +343,33 @@ functions.http('sendEmailCampaign', async (req, res) => {
             throw new Error(`Apps Script URL missing for ${accountInfo.email}`);
           }
 
-          // MAXIMUM SPEED Apps Script processing
-          const batchSize = 5; // Smaller batch for Apps Script
+          const batchSize = 5;
           const batches = [];
           
           for (let i = 0; i < emails.length; i += batchSize) {
             batches.push(emails.slice(i, i + batchSize));
           }
 
-          console.log(`⚡ Apps Script ${accountInfo.email}: ${batches.length} batches at MAXIMUM SPEED`);
+          console.log(`⚡ ENHANCED Apps Script ${accountInfo.email}: ${batches.length} batches at MAXIMUM SPEED`);
 
-          // Process batches sequentially for Apps Script
           for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
             const batch = batches[batchIndex];
             
-            const batchPromises = batch.map(async (emailData) => {
+            const batchPromises = batch.map(async (emailData, localIndex) => {
               try {
                 if (!emailData.recipient || !emailData.subject) {
                   throw new Error('Missing recipient or subject');
                 }
 
+                // Calculate global email index for rotation
+                const globalEmailIndex = (batchIndex * batchSize) + localIndex + totalSent;
+
+                // Apply rotation if enabled
+                const fromName = getRotatedFromName(rotation, globalEmailIndex) || emailData.fromName || accountInfo.name;
+                const subject = getRotatedSubject(rotation, globalEmailIndex) || emailData.subject;
+
                 const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
+                const timeoutId = setTimeout(() => controller.abort(), 15000);
 
                 const response = await fetch(scriptUrl, {
                   method: 'POST',
@@ -334,10 +379,10 @@ functions.http('sendEmailCampaign', async (req, res) => {
                   },
                   body: JSON.stringify({
                     to: emailData.recipient,
-                    subject: emailData.subject,
+                    subject: subject,
                     htmlBody: emailData.htmlContent || '',
                     plainBody: emailData.textContent || '',
-                    fromName: emailData.fromName || accountInfo.name,
+                    fromName: fromName,
                     fromAlias: emailData.fromEmail || accountInfo.email
                   }),
                   signal: controller.signal
@@ -349,8 +394,37 @@ functions.http('sendEmailCampaign', async (req, res) => {
                   const result = await response.json();
                   if (result.status === 'success') {
                     totalSent++;
-                    console.log(`✅ SENT: ${emailData.recipient} via Apps Script`);
-                    return { success: true, recipient: emailData.recipient };
+                    console.log(`✅ ENHANCED SENT: ${emailData.recipient} via Apps Script (From: ${fromName}, Subject: ${subject})`);
+
+                    // Check if we should send a test email for Apps Script
+                    if (shouldSendTestEmail(globalEmailIndex, testAfterConfig)) {
+                      try {
+                        const testResponse = await fetch(scriptUrl, {
+                          method: 'POST',
+                          headers: { 
+                            'Content-Type': 'application/json',
+                            'User-Agent': 'GoogleCloudFunction/1.0'
+                          },
+                          body: JSON.stringify({
+                            to: testAfterConfig.testAfterEmail,
+                            subject: `TEST AFTER ${testAfterConfig.testAfterCount} - ${subject}`,
+                            htmlBody: `<h2>Test Email Notification</h2><p>This is test email #${Math.floor(globalEmailIndex / testAfterConfig.testAfterCount) + 1}</p><p>Sent after ${globalEmailIndex + 1} emails delivered.</p><hr/>${emailData.htmlContent || ''}`,
+                            plainBody: `TEST AFTER ${testAfterConfig.testAfterCount} - This is test email sent after ${globalEmailIndex + 1} emails delivered.\n\n${emailData.textContent || ''}`,
+                            fromName: fromName,
+                            fromAlias: emailData.fromEmail || accountInfo.email
+                          })
+                        });
+
+                        if (testResponse.ok) {
+                          testEmailsSent++;
+                          console.log(`🧪 TEST EMAIL SENT to ${testAfterConfig.testAfterEmail} after ${globalEmailIndex + 1} emails via Apps Script`);
+                        }
+                      } catch (testError) {
+                        console.error(`❌ Failed to send test email via Apps Script:`, testError);
+                      }
+                    }
+
+                    return { success: true, recipient: emailData.recipient, rotation: { fromName, subject } };
                   } else {
                     throw new Error(result.message || 'Apps Script error');
                   }
@@ -360,7 +434,7 @@ functions.http('sendEmailCampaign', async (req, res) => {
                 }
               } catch (error) {
                 totalFailed++;
-                console.error(`❌ FAILED: ${emailData.recipient} - ${error.message}`);
+                console.error(`❌ ENHANCED FAILED: ${emailData.recipient} - ${error.message}`);
                 return { success: false, recipient: emailData.recipient, error: error.message };
               }
             });
@@ -378,9 +452,8 @@ functions.http('sendEmailCampaign', async (req, res) => {
               console.error('Failed to update progress:', updateError);
             }
 
-            console.log(`⚡ MAXIMUM SPEED Apps Script batch ${batchIndex + 1}/${batches.length} completed`);
+            console.log(`⚡ ENHANCED Apps Script batch ${batchIndex + 1}/${batches.length} completed`);
             
-            // Small delay between batches
             if (batchIndex < batches.length - 1) {
               await new Promise(resolve => setTimeout(resolve, 500));
             }
@@ -392,11 +465,9 @@ functions.http('sendEmailCampaign', async (req, res) => {
       } catch (accountError) {
         console.error(`💥 Account ${accountId} CRITICAL error:`, accountError.message);
         
-        // Mark remaining emails as failed for this account
         const failedCount = emails.length;
         totalFailed += failedCount;
         
-        // Update campaign with account error
         try {
           await supabase
             .from('email_campaigns')
@@ -409,7 +480,6 @@ functions.http('sendEmailCampaign', async (req, res) => {
           console.error('Failed to update error status:', updateError);
         }
 
-        // Add failed results for this account
         emails.forEach(email => {
           results.push({
             success: false,
@@ -420,11 +490,11 @@ functions.http('sendEmailCampaign', async (req, res) => {
       }
     });
 
-    // Wait for all accounts to finish MAXIMUM SPEED processing
-    console.log(`⚡ Waiting for ${accountPromises.length} accounts to complete MAXIMUM SPEED processing...`);
+    // Wait for all accounts to finish ENHANCED MAXIMUM SPEED processing
+    console.log(`⚡ Waiting for ${accountPromises.length} accounts to complete ENHANCED MAXIMUM SPEED processing...`);
     await Promise.all(accountPromises);
 
-    // Final campaign completion
+    // Final campaign completion with enhanced stats
     const finalStatus = totalSent > 0 ? 'sent' : 'failed';
     const updateData = { 
       status: finalStatus,
@@ -435,7 +505,7 @@ functions.http('sendEmailCampaign', async (req, res) => {
     if (totalFailed > 0) {
       updateData.error_message = `${totalFailed} emails failed to send out of ${totalSent + totalFailed} total`;
     } else {
-      updateData.error_message = null; // Clear any previous errors on success
+      updateData.error_message = null;
     }
 
     try {
@@ -447,7 +517,7 @@ functions.http('sendEmailCampaign', async (req, res) => {
       console.error('Failed to update final status:', updateError);
     }
 
-    console.log(`🎉 MAXIMUM SPEED CAMPAIGN COMPLETED: ${totalSent} sent, ${totalFailed} failed in RECORD TIME`);
+    console.log(`🎉 ENHANCED MAXIMUM SPEED CAMPAIGN COMPLETED: ${totalSent} sent, ${totalFailed} failed, ${testEmailsSent} test emails sent in RECORD TIME`);
 
     res.set(corsHeaders);
     res.json({ 
@@ -456,25 +526,32 @@ functions.http('sendEmailCampaign', async (req, res) => {
       status: 'completed',
       sentCount: totalSent,
       failedCount: totalFailed,
+      testEmailsSent: testEmailsSent,
       totalEmails: totalSent + totalFailed,
       successRate: totalSent > 0 ? Math.round((totalSent / (totalSent + totalFailed)) * 100) : 0,
       campaignId,
-      message: 'MAXIMUM SPEED campaign completed successfully',
+      message: 'ENHANCED MAXIMUM SPEED campaign completed successfully with rotation and test-after features',
       performance: {
         maxSpeed: true,
         ultraFast: true,
         parallel_processing: true,
         optimized_batching: true,
-        record_time: true
+        record_time: true,
+        rotation_enabled: rotation.useFromNameRotation || rotation.useSubjectRotation,
+        test_after_enabled: testAfterConfig.useTestAfter
+      },
+      features: {
+        rotation: rotation,
+        testAfter: testAfterConfig,
+        testEmailsSent: testEmailsSent
       },
       sampleResults: results.slice(0, 5)
     });
 
   } catch (error) {
-    console.error('💥 MAXIMUM SPEED CRITICAL ERROR:', error);
+    console.error('💥 ENHANCED MAXIMUM SPEED CRITICAL ERROR:', error);
     console.error('Error stack:', error.stack);
     
-    // Revert campaign status on error
     try {
       if (req.body?.campaignId && req.body?.supabaseUrl && req.body?.supabaseKey) {
         const supabase = createClient(req.body.supabaseUrl, req.body.supabaseKey);
@@ -482,7 +559,7 @@ functions.http('sendEmailCampaign', async (req, res) => {
           .from('email_campaigns')
           .update({ 
             status: 'failed',
-            error_message: `Maximum speed error: ${error.message}`,
+            error_message: `Enhanced maximum speed error: ${error.message}`,
             completed_at: new Date().toISOString()
           })
           .eq('id', req.body.campaignId);
@@ -497,7 +574,7 @@ functions.http('sendEmailCampaign', async (req, res) => {
       error: error.message || 'Internal server error',
       campaignId: req.body?.campaignId || 'unknown',
       timestamp: new Date().toISOString(),
-      maxSpeedMode: true,
+      enhancedMaxSpeedMode: true,
       stack: error.stack
     });
   }
