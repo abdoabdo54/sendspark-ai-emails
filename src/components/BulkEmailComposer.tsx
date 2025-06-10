@@ -9,7 +9,8 @@ import { Switch } from '@/components/ui/switch';
 import { Separator } from '@/components/ui/separator';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Badge } from '@/components/ui/badge';
-import { Clock, Zap, Settings } from 'lucide-react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Clock, Zap, Settings, AlertTriangle, Rocket } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { useEmailAccounts } from '@/hooks/useEmailAccounts';
 import { useSimpleOrganizations } from '@/contexts/SimpleOrganizationContext';
@@ -32,8 +33,8 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
   const [htmlContent, setHtmlContent] = useState('');
   const [textContent, setTextContent] = useState('');
   
-  // Sending mode state
-  const [sendingMode, setSendingMode] = useState<'controlled' | 'fast'>('controlled');
+  // Sending mode state - updated with new zero delay mode
+  const [sendingMode, setSendingMode] = useState<'controlled' | 'fast' | 'zero-delay'>('controlled');
   
   // Account selection state
   const [useAccountSelection, setUseAccountSelection] = useState(false);
@@ -219,10 +220,10 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
       return false;
     }
 
-    if (sendingMode === 'fast' && useGoogleCloudFunctions && !googleCloudFunctionUrl.trim()) {
+    if ((sendingMode === 'fast' || sendingMode === 'zero-delay') && useGoogleCloudFunctions && !googleCloudFunctionUrl.trim()) {
       toast({
         title: "Validation Error",
-        description: "Google Cloud Function URL is required for Fast Bulk Send Mode",
+        description: "Google Cloud Function URL is required for Fast Bulk Send Mode and Zero Delay Mode",
         variant: "destructive"
       });
       return false;
@@ -246,8 +247,29 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
       subjects: useSubjectRotation ? subjects.filter(subj => subj.trim()) : []
     };
 
+    // Zero Delay Mode configuration
+    if (sendingMode === 'zero-delay') {
+      config.forceFastSend = true;
+      config.useCustomRateLimit = true;
+      config.zeroDelayMode = true;
+      
+      // Set maximum speed settings for all accounts
+      const zeroDelaySettings = {
+        emailsPerSecond: {},
+        delayInSeconds: {},
+        maxEmailsPerHour: {}
+      };
+      
+      activeAccounts.forEach(account => {
+        zeroDelaySettings.emailsPerSecond[account.id] = 50; // Maximum speed
+        zeroDelaySettings.delayInSeconds[account.id] = 0;   // No delay
+        zeroDelaySettings.maxEmailsPerHour[account.id] = 10000; // High limit
+      });
+      
+      config.customRateLimit = zeroDelaySettings;
+    }
     // Add rate limiting config only for controlled mode
-    if (sendingMode === 'controlled' && useCustomRateLimit) {
+    else if (sendingMode === 'controlled' && useCustomRateLimit) {
       config.useCustomRateLimit = true;
       config.customRateLimit = {
         emailsPerSecond,
@@ -256,12 +278,13 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
       };
     }
 
-    // Add Google Cloud Functions config for fast mode
-    if (sendingMode === 'fast' && useGoogleCloudFunctions) {
+    // Add Google Cloud Functions config for fast modes
+    if ((sendingMode === 'fast' || sendingMode === 'zero-delay') && useGoogleCloudFunctions) {
       config.googleCloudFunctions = {
         enabled: true,
         functionUrl: googleCloudFunctionUrl,
-        fastMode: true
+        fastMode: sendingMode === 'fast',
+        zeroDelayMode: sendingMode === 'zero-delay'
       };
     }
 
@@ -292,13 +315,13 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-6">
-            {/* Sending Mode Selection */}
+            {/* Sending Mode Selection - Updated with Zero Delay Mode */}
             <div className="space-y-4">
               <Label className="text-base font-medium">Sending Mode</Label>
               <RadioGroup 
                 value={sendingMode} 
-                onValueChange={(value: 'controlled' | 'fast') => setSendingMode(value)}
-                className="grid grid-cols-1 md:grid-cols-2 gap-4"
+                onValueChange={(value: 'controlled' | 'fast' | 'zero-delay') => setSendingMode(value)}
+                className="grid grid-cols-1 md:grid-cols-3 gap-4"
               >
                 <div className="flex items-center space-x-2 p-4 border rounded-lg hover:bg-gray-50">
                   <RadioGroupItem value="controlled" id="controlled" />
@@ -320,11 +343,35 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
                       <Label htmlFor="fast" className="font-medium">Fast Bulk Send Mode</Label>
                     </div>
                     <p className="text-sm text-gray-600 mt-1">
-                      Maximum speed sending with no delays (requires Google Cloud)
+                      High speed sending with minimal delays
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center space-x-2 p-4 border rounded-lg hover:bg-gray-50">
+                  <RadioGroupItem value="zero-delay" id="zero-delay" />
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2">
+                      <Rocket className="w-4 h-4 text-red-600" />
+                      <Label htmlFor="zero-delay" className="font-medium">Zero Delay Mode</Label>
+                    </div>
+                    <p className="text-sm text-gray-600 mt-1">
+                      Maximum speed with no delays (1000+ emails in seconds)
                     </p>
                   </div>
                 </div>
               </RadioGroup>
+
+              {/* Zero Delay Mode Warning */}
+              {sendingMode === 'zero-delay' && (
+                <Alert className="border-red-200 bg-red-50">
+                  <AlertTriangle className="h-4 w-4 text-red-600" />
+                  <AlertDescription className="text-red-800">
+                    <strong>Warning:</strong> Zero Delay Mode sends emails at maximum speed with no throttling. 
+                    Only use with reliable SMTP servers and ensure your accounts can handle high-volume sending 
+                    to avoid being flagged as spam.
+                  </AlertDescription>
+                </Alert>
+              )}
             </div>
 
             <Separator />
@@ -360,9 +407,16 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <Label htmlFor="recipients">Recipients *</Label>
-                <Badge variant="secondary">
-                  {recipientCount} recipient{recipientCount !== 1 ? 's' : ''}
-                </Badge>
+                <div className="flex items-center gap-2">
+                  <Badge variant="secondary">
+                    {recipientCount} recipient{recipientCount !== 1 ? 's' : ''}
+                  </Badge>
+                  {sendingMode === 'zero-delay' && recipientCount > 0 && (
+                    <Badge variant="outline" className="text-red-600 border-red-200">
+                      Est. time: ~{Math.ceil(recipientCount / 1000)} seconds
+                    </Badge>
+                  )}
+                </div>
               </div>
               <Textarea
                 id="recipients"
@@ -510,11 +564,19 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
                 </div>
               )}
 
-              {/* Google Cloud Functions - Only for Fast Mode */}
-              {sendingMode === 'fast' && (
+              {/* Google Cloud Functions - For Fast and Zero Delay Modes */}
+              {(sendingMode === 'fast' || sendingMode === 'zero-delay') && (
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
-                    <Label>Google Cloud Functions (Required for Fast Mode)</Label>
+                    <div>
+                      <Label>Google Cloud Functions (Required for Fast Modes)</Label>
+                      <p className="text-sm text-gray-600">
+                        {sendingMode === 'zero-delay' 
+                          ? 'Zero Delay Mode requires Google Cloud Functions for maximum parallel processing'
+                          : 'Fast Bulk Send Mode requires Google Cloud Functions for high performance'
+                        }
+                      </p>
+                    </div>
                     <Switch
                       checked={useGoogleCloudFunctions}
                       onCheckedChange={setUseGoogleCloudFunctions}
@@ -529,17 +591,36 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
                         value={googleCloudFunctionUrl}
                         onChange={(e) => setGoogleCloudFunctionUrl(e.target.value)}
                         placeholder="https://your-region-your-project.cloudfunctions.net/sendEmailCampaign"
-                        required={sendingMode === 'fast'}
+                        required={sendingMode === 'fast' || sendingMode === 'zero-delay'}
                       />
                       <p className="text-sm text-gray-600">
-                        Fast Bulk Send Mode requires a Google Cloud Function for maximum performance
+                        {sendingMode === 'zero-delay' 
+                          ? 'Zero Delay Mode uses maximum parallel processing for ultra-fast sending'
+                          : 'Fast Bulk Send Mode requires a Google Cloud Function for maximum performance'
+                        }
                       </p>
                     </div>
                   )}
                 </div>
               )}
 
-              {/* Rotation Features */}
+              {/* Zero Delay Mode displays fixed settings */}
+              {sendingMode === 'zero-delay' && (
+                <div className="space-y-4">
+                  <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
+                    <Label className="font-medium text-red-800">Zero Delay Mode Settings (Auto-configured)</Label>
+                    <div className="mt-2 space-y-2 text-sm text-red-700">
+                      <p>• Emails per second: 50 (maximum)</p>
+                      <p>• Delay between emails: 0 seconds</p>
+                      <p>• Max emails per hour: 10,000</p>
+                      <p>• Parallel processing: Full parallel mode</p>
+                      <p>• Batching: Disabled for maximum speed</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Rotation Features - Available for all modes */}
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
                   <Label>From Name Rotation</Label>
@@ -615,7 +696,12 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
               size="lg"
               disabled={accountsLoading}
             >
-              {sendingMode === 'fast' ? (
+              {sendingMode === 'zero-delay' ? (
+                <>
+                  <Rocket className="w-4 h-4 mr-2" />
+                  Create Zero Delay Campaign
+                </>
+              ) : sendingMode === 'fast' ? (
                 <>
                   <Zap className="w-4 h-4 mr-2" />
                   Create Fast Bulk Campaign
