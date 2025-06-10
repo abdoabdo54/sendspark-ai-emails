@@ -18,13 +18,10 @@ serve(async (req) => {
       selectedAccounts, 
       rotation = {}, 
       rateLimit = {},
-      testAfter = {},
-      sendingMode,
       googleCloudConfig = null
     } = await req.json()
 
     console.log(`Preparing campaign ${campaignId} with ${selectedAccounts?.length || 0} accounts`);
-    console.log('Request payload:', { campaignId, selectedAccounts, rotation, testAfter, sendingMode });
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
@@ -41,19 +38,11 @@ serve(async (req) => {
       throw new Error('Campaign not found')
     }
 
-    // Make sure we have selected accounts
-    const accountIds = selectedAccounts || campaign.config?.selectedAccounts || []
-    if (!accountIds || accountIds.length === 0) {
-      throw new Error('No accounts selected for campaign')
-    }
-
-    console.log(`Using account IDs:`, accountIds);
-
     // Get selected accounts
     const { data: accounts, error: accountsError } = await supabase
       .from('email_accounts')
       .select('*')
-      .in('id', accountIds)
+      .in('id', selectedAccounts || [])
       .eq('is_active', true)
 
     if (accountsError) throw accountsError
@@ -131,11 +120,9 @@ serve(async (req) => {
 
     // Update campaign with prepared emails and configuration
     const campaignConfig = {
-      selectedAccounts: accountIds,
+      selectedAccounts,
       rotation,
       rateLimit,
-      testAfter,
-      sendingMode: sendingMode || 'controlled',
       totalCapacity,
       preparedAt: new Date().toISOString(),
       // Include Google Cloud Functions config if provided
