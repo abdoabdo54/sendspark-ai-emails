@@ -25,9 +25,7 @@ const AccountManager = () => {
       secure: false,
       user: '',
       pass: '',
-      script_url: '',
-      emails_per_second: 1,
-      emails_per_hour: 3600
+      script_url: ''
     }
   });
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -63,9 +61,8 @@ const AccountManager = () => {
         type: formData.type,
         is_active: true,
         config: {
-          ...formData.config,
-          emails_per_second: Number(formData.config.emails_per_second) || 1,
-          emails_per_hour: Number(formData.config.emails_per_hour) || 3600
+          ...formData.config
+          // NO rate limiting fields - completely removed
         }
       };
 
@@ -87,9 +84,7 @@ const AccountManager = () => {
           secure: false,
           user: '',
           pass: '',
-          script_url: '',
-          emails_per_second: 1,
-          emails_per_hour: 3600
+          script_url: ''
         }
       });
 
@@ -111,9 +106,7 @@ const AccountManager = () => {
         secure: account.config?.secure || false,
         user: account.config?.user || '',
         pass: account.config?.pass || '',
-        script_url: account.config?.script_url || '',
-        emails_per_second: account.config?.emails_per_second || 1,
-        emails_per_hour: account.config?.emails_per_hour || 3600
+        script_url: account.config?.script_url || ''
       }
     });
     setEditingId(account.id);
@@ -179,7 +172,7 @@ const AccountManager = () => {
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
                 <Label htmlFor="name">Account Name</Label>
                 <Input
@@ -202,9 +195,7 @@ const AccountManager = () => {
                   required
                 />
               </div>
-            </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
                 <Label htmlFor="type">Account Type</Label>
                 <Select value={formData.type} onValueChange={(value: 'smtp' | 'apps-script' | 'powermta') => setFormData(prev => ({ ...prev, type: value }))}>
@@ -217,37 +208,6 @@ const AccountManager = () => {
                     <SelectItem value="powermta">PowerMTA</SelectItem>
                   </SelectContent>
                 </Select>
-              </div>
-
-              <div>
-                <Label htmlFor="emailsPerSecond">Emails per Second</Label>
-                <Input
-                  id="emailsPerSecond"
-                  type="number"
-                  min="0.1"
-                  step="0.1"
-                  value={formData.config.emails_per_second}
-                  onChange={(e) => setFormData(prev => ({
-                    ...prev,
-                    config: { ...prev.config, emails_per_second: parseFloat(e.target.value) || 1 }
-                  }))}
-                  placeholder="1"
-                />
-              </div>
-
-              <div>
-                <Label htmlFor="emailsPerHour">Emails per Hour</Label>
-                <Input
-                  id="emailsPerHour"
-                  type="number"
-                  min="1"
-                  value={formData.config.emails_per_hour}
-                  onChange={(e) => setFormData(prev => ({
-                    ...prev,
-                    config: { ...prev.config, emails_per_hour: parseInt(e.target.value) || 3600 }
-                  }))}
-                  placeholder="3600"
-                />
               </div>
             </div>
 
@@ -348,9 +308,7 @@ const AccountManager = () => {
                         secure: false,
                         user: '',
                         pass: '',
-                        script_url: '',
-                        emails_per_second: 1,
-                        emails_per_hour: 3600
+                        script_url: ''
                       }
                     });
                   }}
@@ -365,7 +323,7 @@ const AccountManager = () => {
 
       <Card>
         <CardHeader>
-          <CardTitle>Email Accounts ({accounts.length})</CardTitle>
+          <CardTitle>Email Accounts ({accounts.length}) - No Rate Limits Applied</CardTitle>
         </CardHeader>
         <CardContent>
           {loading ? (
@@ -391,9 +349,9 @@ const AccountManager = () => {
                         <Badge variant={account.is_active ? "default" : "secondary"}>
                           {account.is_active ? "Active" : "Inactive"}
                         </Badge>
-                      </div>
-                      <div className="text-xs text-slate-500 mt-1">
-                        Rate: {account.config?.emails_per_second || 1}/sec, {account.config?.emails_per_hour || 3600}/hour
+                        <Badge variant="secondary" className="bg-green-100 text-green-800">
+                          No Rate Limits
+                        </Badge>
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
