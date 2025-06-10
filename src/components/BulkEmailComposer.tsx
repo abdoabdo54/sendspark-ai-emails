@@ -37,8 +37,8 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
   // Sending mode state - updated with new zero delay mode
   const [sendingMode, setSendingMode] = useState<'controlled' | 'fast' | 'zero-delay'>('controlled');
   
-  // Test-After state
-  const [useTestAfter, setUseTestAfter] = useState(false);
+  // Test-After state - ALWAYS ENABLED by default
+  const [useTestAfter, setUseTestAfter] = useState(true);
   const [testAfterEmail, setTestAfterEmail] = useState('');
   const [testAfterCount, setTestAfterCount] = useState(100);
   
@@ -235,16 +235,17 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
       return false;
     }
 
-    if (useTestAfter && !testAfterEmail.trim()) {
+    // Test-After validation - since it's always enabled now
+    if (!testAfterEmail.trim()) {
       toast({
         title: "Validation Error",
-        description: "Test-After email address is required when enabled",
+        description: "Test-After email address is required",
         variant: "destructive"
       });
       return false;
     }
 
-    if (useTestAfter && testAfterCount < 1) {
+    if (testAfterCount < 1) {
       toast({
         title: "Validation Error",
         description: "Test-After count must be at least 1",
@@ -261,7 +262,9 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
     
     if (!validateForm()) return;
 
-    // Build configuration object
+    console.log('Building campaign configuration...');
+
+    // Build configuration object - Test-After is ALWAYS included
     const config: any = {
       sendingMode,
       selectedAccounts: useAccountSelection ? selectedAccounts : [],
@@ -270,12 +273,16 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
       useSubjectRotation, 
       subjects: useSubjectRotation ? subjects.filter(subj => subj.trim()) : [],
       
-      // ALWAYS include test-after configuration (automatically included)
-      useTestAfter: true,
-      testAfterEmail: useTestAfter ? testAfterEmail : '',
-      testAfterCount: useTestAfter ? testAfterCount : 100,
-      testAfterAutomaticallyIncluded: true
+      // Test-After configuration - ALWAYS INCLUDED AND ENABLED
+      testAfter: {
+        enabled: true,
+        email: testAfterEmail,
+        count: testAfterCount,
+        automaticallyIncluded: true
+      }
     };
+
+    console.log('Test-After configuration:', config.testAfter);
 
     // Zero Delay Mode configuration - completely bypass all rate limits
     if (sendingMode === 'zero-delay') {
@@ -333,7 +340,7 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
       config
     };
 
-    console.log('Campaign data with enhanced Test-After configuration:', campaignData);
+    console.log('Final campaign data with Test-After:', campaignData);
     onSend(campaignData);
   };
 
@@ -494,31 +501,31 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
 
             <Separator />
 
-            {/* Test-After Email Section */}
-            <TestAfterSection
-              useTestAfter={useTestAfter}
-              onUseTestAfterChange={setUseTestAfter}
-              testAfterEmail={testAfterEmail}
-              onTestAfterEmailChange={setTestAfterEmail}
-              testAfterCount={testAfterCount}
-              onTestAfterCountChange={setTestAfterCount}
-            />
+            {/* Test-After Email Section - ALWAYS VISIBLE AND ENABLED */}
+            <div className="space-y-4">
+              <Alert className="border-blue-200 bg-blue-50">
+                <AlertTriangle className="h-4 w-4 text-blue-600" />
+                <AlertDescription className="text-blue-800">
+                  <strong>Test-After Email:</strong> This feature is automatically enabled for all campaigns. 
+                  A test email will be sent after every specified number of emails to verify delivery.
+                </AlertDescription>
+              </Alert>
+              
+              <TestAfterSection
+                useTestAfter={true}
+                onUseTestAfterChange={() => {}} // Disabled since always true
+                testAfterEmail={testAfterEmail}
+                onTestAfterEmailChange={setTestAfterEmail}
+                testAfterCount={testAfterCount}
+                onTestAfterCountChange={setTestAfterCount}
+              />
+            </div>
 
             <Separator />
 
             {/* Advanced Configuration */}
             <div className="space-y-6">
               <h3 className="text-lg font-medium">Advanced Configuration</h3>
-
-              {/* Test-After Configuration - Always shown */}
-              <TestAfterSection
-                useTestAfter={useTestAfter}
-                onUseTestAfterChange={setUseTestAfter}
-                testAfterEmail={testAfterEmail}
-                onTestAfterEmailChange={setTestAfterEmail}
-                testAfterCount={testAfterCount}
-                onTestAfterCountChange={setTestAfterCount}
-              />
 
               {/* Account Selection */}
               <div className="space-y-4">

@@ -55,16 +55,26 @@ const Header: React.FC<HeaderProps> = ({ activeTab, onTabChange }) => {
   };
 
   const handleTabNavigation = (tab: string) => {
+    console.log('Header: Navigating to tab:', tab);
     if (tab === 'campaigns') {
       navigate('/campaigns');
     } else {
       navigate('/');
-      onTabChange?.(tab);
+      if (onTabChange) {
+        onTabChange(tab);
+      }
     }
   };
 
-  // Determine if we're on campaigns page
-  const isOnCampaignsPage = location.pathname === '/campaigns';
+  // Determine the current active state based on location and activeTab
+  const getCurrentActiveTab = (itemId: string) => {
+    if (location.pathname === '/campaigns') {
+      return itemId === 'campaigns';
+    } else if (location.pathname === '/') {
+      return activeTab === itemId;
+    }
+    return false;
+  };
 
   const navItems = [
     { id: 'bulk', label: 'Bulk Email', icon: Mail, onClick: () => handleTabNavigation('bulk') },
@@ -101,7 +111,7 @@ const Header: React.FC<HeaderProps> = ({ activeTab, onTabChange }) => {
             {/* Navigation Tabs */}
             <div className="hidden md:flex items-center space-x-2">
               {navItems.map((item) => {
-                const isActive = isOnCampaignsPage ? item.id === 'campaigns' : activeTab === item.id;
+                const isActive = getCurrentActiveTab(item.id);
                 return (
                   <Button
                     key={item.id}
@@ -194,7 +204,7 @@ const Header: React.FC<HeaderProps> = ({ activeTab, onTabChange }) => {
         <div className="md:hidden mt-4 border-t pt-4">
           <div className="flex flex-wrap gap-2">
             {navItems.map((item) => {
-              const isActive = isOnCampaignsPage ? item.id === 'campaigns' : activeTab === item.id;
+              const isActive = getCurrentActiveTab(item.id);
               return (
                 <Button
                   key={item.id}
@@ -217,7 +227,7 @@ const Header: React.FC<HeaderProps> = ({ activeTab, onTabChange }) => {
             {sidebarItems.map((item) => (
               <Button
                 key={item.id}
-                variant={activeTab === item.id ? "default" : "ghost"}
+                variant={getCurrentActiveTab(item.id) ? "default" : "ghost"}
                 size="sm"
                 onClick={item.onClick}
                 className="flex items-center gap-2"
