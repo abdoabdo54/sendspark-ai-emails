@@ -1,8 +1,8 @@
 
 {
-  "name": "send-email-batch-parallel",
-  "version": "4.0.0",
-  "description": "Gen2-Compatible Google Cloud Function for ultra-fast parallel email campaigns with dynamic account rotation",
+  "name": "send-email-batch-parallel-advanced",
+  "version": "5.0.0",
+  "description": "Advanced Gen2 Google Cloud Function for ultra-fast parallel email campaigns with rotation, tracking, and test-after features",
   "main": "index.js",
   "type": "commonjs",
   "dependencies": {
@@ -15,9 +15,9 @@
   },
   "scripts": {
     "start": "functions-framework --target=sendBatch",
-    "deploy": "gcloud functions deploy sendBatch --gen2 --runtime nodejs20 --trigger-http --allow-unauthenticated --memory=1GB --timeout=540s --max-instances=10 --region=us-central1",
-    "deploy-fast": "gcloud functions deploy sendBatchFast --gen2 --runtime nodejs20 --trigger-http --allow-unauthenticated --memory=2GB --timeout=540s --max-instances=20 --region=us-central1",
-    "deploy-zero": "gcloud functions deploy sendBatchZero --gen2 --runtime nodejs20 --trigger-http --allow-unauthenticated --memory=4GB --timeout=540s --max-instances=50 --region=us-central1"
+    "deploy": "gcloud functions deploy sendBatch --gen2 --runtime nodejs20 --trigger-http --allow-unauthenticated --memory=2GB --timeout=540s --max-instances=20 --region=us-central1 --set-env-vars SUPABASE_URL=YOUR_SUPABASE_URL,SUPABASE_SERVICE_ROLE_KEY=YOUR_SERVICE_ROLE_KEY",
+    "deploy-fast": "gcloud functions deploy sendBatchFast --gen2 --runtime nodejs20 --trigger-http --allow-unauthenticated --memory=4GB --timeout=540s --max-instances=50 --region=us-central1 --set-env-vars SUPABASE_URL=YOUR_SUPABASE_URL,SUPABASE_SERVICE_ROLE_KEY=YOUR_SERVICE_ROLE_KEY",
+    "deploy-zero": "gcloud functions deploy sendBatchZero --gen2 --runtime nodejs20 --trigger-http --allow-unauthenticated --memory=8GB --timeout=540s --max-instances=100 --region=us-central1 --set-env-vars SUPABASE_URL=YOUR_SUPABASE_URL,SUPABASE_SERVICE_ROLE_KEY=YOUR_SERVICE_ROLE_KEY"
   },
   "keywords": [
     "email",
@@ -26,6 +26,9 @@
     "google-cloud-functions",
     "gen2",
     "nodemailer",
-    "supabase"
+    "supabase",
+    "rotation",
+    "tracking",
+    "advanced"
   ]
 }

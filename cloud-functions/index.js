@@ -20,12 +20,12 @@ function createTransporter(accountConfig) {
         pass: accountConfig.pass
       },
       pool: true,
-      maxConnections: 10,
-      maxMessages: 100
+      maxConnections: 20,
+      maxMessages: 200,
+      rateLimit: 10 // emails per second
     });
   }
   
-  // For other types, we'll handle them differently
   return null;
 }
 
@@ -80,12 +80,12 @@ async function sendViaSMTP(transporter, emailData) {
 function addTracking(htmlContent, campaignId, recipient, trackingConfig) {
   let trackedContent = htmlContent;
   
-  if (trackingConfig.trackOpens) {
+  if (trackingConfig?.trackOpens) {
     const trackingPixel = `<img src="${supabaseUrl}/functions/v1/track-open?campaign=${campaignId}&email=${encodeURIComponent(recipient)}" width="1" height="1" style="display:none;" />`;
     trackedContent += trackingPixel;
   }
   
-  if (trackingConfig.trackClicks) {
+  if (trackingConfig?.trackClicks) {
     // Replace links with tracking URLs
     trackedContent = trackedContent.replace(
       /href="([^"]+)"/g,
@@ -96,12 +96,54 @@ function addTracking(htmlContent, campaignId, recipient, trackingConfig) {
   return trackedContent;
 }
 
+// Rotation helpers
+function rotateFromName(baseName, index, rotationEnabled) {
+  if (!rotationEnabled) return baseName;
+  
+  const variations = [
+    baseName,
+    `${baseName} Team`,
+    `${baseName} Support`,
+    `${baseName} Marketing`
+  ];
+  
+  return variations[index % variations.length];
+}
+
+function rotateSubject(baseSubject, index, rotationEnabled) {
+  if (!rotationEnabled) return baseSubject;
+  
+  const prefixes = ['', '🚀 ', '✨ ', '💡 '];
+  const suffixes = ['', ' - Limited Time', ' - Don\'t Miss Out', ' - Act Now'];
+  
+  const prefix = prefixes[index % prefixes.length];
+  const suffix = suffixes[Math.floor(index / prefixes.length) % suffixes.length];
+  
+  return `${prefix}${baseSubject}${suffix}`;
+}
+
+// Apply sending mode delays
+async function applySendingDelay(sendingMode) {
+  switch (sendingMode) {
+    case 'controlled':
+      await new Promise(resolve => setTimeout(resolve, 2000)); // 2 seconds
+      break;
+    case 'fast':
+      await new Promise(resolve => setTimeout(resolve, 500)); // 0.5 seconds
+      break;
+    case 'zero-delay':
+    default:
+      // No delay
+      break;
+  }
+}
+
 // Main function
 functions.http('sendBatch', async (req, res) => {
   // Enable CORS
   res.set('Access-Control-Allow-Origin', '*');
-  res.set('Access-Control-Allow-Methods', 'GET, POST');
-  res.set('Access-Control-Allow-Headers', 'Content-Type');
+  res.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
   if (req.method === 'OPTIONS') {
     res.status(204).send('');
@@ -122,6 +164,13 @@ functions.http('sendBatch', async (req, res) => {
     const results = [];
     let accountIndex = 0;
 
+    // Get configuration
+    const config = campaignData.config || {};
+    const sendingMode = config.sendingMode || 'controlled';
+    const rotationConfig = config.rotation || {};
+    const trackingConfig = config.tracking || {};
+    const testAfterConfig = config.testAfter || {};
+
     // Process each recipient in the slice
     for (let i = 0; i < slice.recipients.length; i++) {
       const recipient = slice.recipients[i];
@@ -131,21 +180,34 @@ functions.http('sendBatch', async (req, res) => {
       accountIndex++;
 
       try {
+        // Apply rotation to from name and subject
+        const fromName = rotateFromName(
+          campaignData.from_name, 
+          i, 
+          rotationConfig.fromName
+        );
+        
+        const subject = rotateSubject(
+          campaignData.subject, 
+          i, 
+          rotationConfig.subject
+        );
+
         // Prepare email content
         let htmlContent = campaignData.html_content;
         let textContent = campaignData.text_content;
 
         // Add tracking if enabled
-        if (campaignData.config?.tracking?.enabled) {
-          htmlContent = addTracking(htmlContent, campaignId, recipient, campaignData.config.tracking);
+        if (trackingConfig.enabled) {
+          htmlContent = addTracking(htmlContent, campaignId, recipient, trackingConfig);
         }
 
         const emailData = {
           to: recipient,
-          subject: campaignData.subject,
+          subject: subject,
           html: htmlContent,
           text: textContent,
-          fromName: campaignData.from_name,
+          fromName: fromName,
           fromEmail: account.email
         };
 
@@ -156,6 +218,7 @@ functions.http('sendBatch', async (req, res) => {
           const transporter = createTransporter(account.config);
           if (transporter) {
             result = await sendViaSMTP(transporter, emailData);
+            transporter.close(); // Close connection after use
           } else {
             result = { success: false, error: 'Failed to create SMTP transporter' };
           }
@@ -166,13 +229,15 @@ functions.http('sendBatch', async (req, res) => {
         }
 
         if (result.success) {
-          console.log(`✅ Sent to ${recipient} via ${account.type}`);
+          console.log(`✅ Sent to ${recipient} via ${account.type} (${account.name})`);
           results.push({
             recipient,
             status: 'sent',
             accountType: account.type,
             accountName: account.name,
-            messageId: result.messageId
+            messageId: result.messageId,
+            fromName: fromName,
+            subject: subject
           });
         } else {
           console.log(`❌ Failed to ${recipient}: ${result.error}`);
@@ -186,40 +251,46 @@ functions.http('sendBatch', async (req, res) => {
         }
 
         // Test-After functionality
-        if (campaignData.config?.testAfter?.enabled) {
-          const testAfterCount = campaignData.config.testAfter.count;
-          const testAfterEmail = campaignData.config.testAfter.email;
+        if (testAfterConfig.enabled && testAfterConfig.email) {
+          const testAfterCount = testAfterConfig.count || 500;
           
           if ((i + 1) % testAfterCount === 0) {
             console.log(`📧 Sending test-after email for batch ${Math.floor((i + 1) / testAfterCount)}`);
             
             const testEmailData = {
-              to: testAfterEmail,
+              to: testAfterConfig.email,
               subject: `Test-After: ${campaignData.subject} - Batch ${Math.floor((i + 1) / testAfterCount)}`,
-              html: `<h3>Test-After Report</h3><p>Successfully sent ${i + 1} emails.</p><p>Campaign: ${campaignData.subject}</p>`,
-              text: `Test-After Report: Successfully sent ${i + 1} emails. Campaign: ${campaignData.subject}`,
-              fromName: campaignData.from_name,
+              html: `
+                <h3>Test-After Report</h3>
+                <p><strong>Campaign:</strong> ${campaignData.subject}</p>
+                <p><strong>Emails Sent:</strong> ${i + 1}</p>
+                <p><strong>Last Account Used:</strong> ${account.name} (${account.email})</p>
+                <p><strong>Sending Mode:</strong> ${sendingMode}</p>
+                <p><strong>Timestamp:</strong> ${new Date().toISOString()}</p>
+              `,
+              text: `Test-After Report: Successfully sent ${i + 1} emails. Campaign: ${campaignData.subject}. Mode: ${sendingMode}`,
+              fromName: fromName,
               fromEmail: account.email
             };
 
-            if (account.type === 'smtp') {
-              const transporter = createTransporter(account.config);
-              if (transporter) {
-                await sendViaSMTP(transporter, testEmailData);
+            try {
+              if (account.type === 'smtp') {
+                const transporter = createTransporter(account.config);
+                if (transporter) {
+                  await sendViaSMTP(transporter, testEmailData);
+                  transporter.close();
+                }
+              } else if (account.type === 'apps-script') {
+                await sendViaAppsScript(account.config, testEmailData);
               }
-            } else if (account.type === 'apps-script') {
-              await sendViaAppsScript(account.config, testEmailData);
+            } catch (testError) {
+              console.log(`⚠️ Test-after email failed: ${testError.message}`);
             }
           }
         }
 
         // Apply sending mode delays
-        if (campaignData.config?.sendingMode === 'controlled') {
-          await new Promise(resolve => setTimeout(resolve, 2000)); // 2 second delay
-        } else if (campaignData.config?.sendingMode === 'fast') {
-          await new Promise(resolve => setTimeout(resolve, 500)); // 0.5 second delay
-        }
-        // zero-delay mode: no delay
+        await applySendingDelay(sendingMode);
 
       } catch (error) {
         console.error(`❌ Error processing ${recipient}:`, error);
@@ -236,14 +307,21 @@ functions.http('sendBatch', async (req, res) => {
     const failedCount = results.filter(r => r.status === 'failed').length;
 
     try {
-      await supabase
+      const { error: updateError } = await supabase
         .from('email_campaigns')
         .update({
-          sent_count: supabase.rpc('increment_sent_count', { campaign_id: campaignId, increment_by: sentCount })
+          sent_count: supabase.rpc('increment_sent_count', { 
+            campaign_id: campaignId, 
+            increment_by: sentCount 
+          })
         })
         .eq('id', campaignId);
+
+      if (updateError) {
+        console.error('Failed to update campaign stats:', updateError);
+      }
     } catch (dbError) {
-      console.error('Failed to update campaign stats:', dbError);
+      console.error('Database update failed:', dbError);
     }
 
     console.log(`✅ Slice completed: ${sentCount} sent, ${failedCount} failed`);
@@ -253,6 +331,7 @@ functions.http('sendBatch', async (req, res) => {
       processed: slice.recipients.length,
       sent: sentCount,
       failed: failedCount,
+      sendingMode: sendingMode,
       results: results
     });
 
@@ -260,7 +339,8 @@ functions.http('sendBatch', async (req, res) => {
     console.error('❌ Function error:', error);
     res.status(500).json({
       success: false,
-      error: error.message
+      error: error.message,
+      stack: error.stack
     });
   }
 });

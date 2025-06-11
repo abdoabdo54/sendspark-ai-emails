@@ -5,22 +5,20 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Switch } from '@/components/ui/switch';
 import { Separator } from '@/components/ui/separator';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Clock, Zap, Settings, AlertTriangle, Rocket, ExternalLink, Calculator } from 'lucide-react';
+import { Rocket, ExternalLink, Calculator, Mail } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { useSimpleOrganizations } from '@/contexts/SimpleOrganizationContext';
 import { useCampaignSender } from '@/hooks/useCampaignSender';
 import { useEmailAccounts } from '@/hooks/useEmailAccounts';
+import { useNavigate } from 'react-router-dom';
 import CSVDataImporter from './CSVDataImporter';
 import GoogleSheetsImport from './GoogleSheetsImport';
 import AISubjectGenerator from './AISubjectGenerator';
-import TestAfterSection from './TestAfterSection';
-import AccountSelector from './AccountSelector';
-import { useNavigate } from 'react-router-dom';
+import CompactAccountSelector from './CompactAccountSelector';
+import AdvancedConfigurationPanel from './AdvancedConfigurationPanel';
 
 interface BulkEmailComposerProps {
   onSend: (data: any) => void;
@@ -42,16 +40,14 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
   // Account selection state
   const [selectedAccounts, setSelectedAccounts] = useState<string[]>([]);
   
-  // Sending mode state
+  // Configuration states
   const [sendingMode, setSendingMode] = useState<'controlled' | 'fast' | 'zero-delay'>('controlled');
-  
-  // Test-After state
   const [useTestAfter, setUseTestAfter] = useState(true);
   const [testAfterEmail, setTestAfterEmail] = useState('');
   const [testAfterCount, setTestAfterCount] = useState(500);
-  
-  // Tracking state
   const [trackingEnabled, setTrackingEnabled] = useState(false);
+  const [useFromRotation, setUseFromRotation] = useState(false);
+  const [useSubjectRotation, setUseSubjectRotation] = useState(false);
 
   // SmartConfig state
   const [smartConfig, setSmartConfig] = useState<any>(null);
@@ -85,9 +81,19 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
   useEffect(() => {
     if (recipientCount > 0 && functions.length > 0) {
       const emailsPerFunction = Math.ceil(recipientCount / functions.length);
-      const estimatedSeconds = sendingMode === 'zero-delay' 
-        ? Math.ceil(emailsPerFunction / 1000) 
-        : Math.ceil(emailsPerFunction / 200);
+      let estimatedSeconds;
+      
+      switch (sendingMode) {
+        case 'zero-delay':
+          estimatedSeconds = Math.ceil(emailsPerFunction / 1000);
+          break;
+        case 'fast':
+          estimatedSeconds = Math.ceil(emailsPerFunction / 200);
+          break;
+        default:
+          estimatedSeconds = Math.ceil(emailsPerFunction / 50);
+      }
+      
       setEstimatedTime(`~${estimatedSeconds} seconds`);
     } else {
       setEstimatedTime('');
@@ -212,6 +218,10 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
         trackOpens: trackingEnabled,
         trackClicks: trackingEnabled
       },
+      rotation: {
+        fromName: useFromRotation,
+        subject: useSubjectRotation
+      },
       smartConfig
     };
 
@@ -246,53 +256,56 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
   };
 
   return (
-    <div className="max-w-4xl mx-auto p-6 space-y-6">
+    <div className="max-w-5xl mx-auto p-4 space-y-6">
       <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Settings className="w-5 h-5" />
-            Parallel Email Campaign Engine
+        <CardHeader className="pb-4">
+          <CardTitle className="flex items-center gap-2 text-lg">
+            <Mail className="w-5 h-5" />
+            Advanced Parallel Email Campaign
           </CardTitle>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-6">
-            {/* Navigation Links */}
-            <div className="flex gap-2 mb-4">
+            {/* Quick Navigation */}
+            <div className="flex gap-2 flex-wrap">
               <Button 
                 variant="outline" 
+                size="sm"
                 onClick={() => navigate('/function-manager')}
                 type="button"
               >
-                <ExternalLink className="w-4 h-4 mr-1" />
-                Function Manager
+                <ExternalLink className="w-3 h-3 mr-1" />
+                Functions ({functions.length})
               </Button>
               <Button 
                 variant="outline" 
+                size="sm"
                 onClick={() => navigate('/settings')}
                 type="button"
               >
-                <ExternalLink className="w-4 h-4 mr-1" />
-                Email Accounts
+                <ExternalLink className="w-3 h-3 mr-1" />
+                Accounts ({activeAccounts.length})
               </Button>
               <Button 
                 variant="outline" 
+                size="sm"
                 onClick={() => navigate('/smart-config')}
                 type="button"
               >
-                <Calculator className="w-4 h-4 mr-1" />
+                <Calculator className="w-3 h-3 mr-1" />
                 SmartConfig
               </Button>
             </div>
 
-            {/* SmartConfig Integration */}
+            {/* SmartConfig Status */}
             {smartConfig && (
               <Alert className="border-blue-200 bg-blue-50">
                 <Calculator className="h-4 w-4" />
                 <AlertDescription>
-                  <div className="text-blue-800">
+                  <div className="text-blue-800 text-sm">
                     <strong>SmartConfig Active:</strong> Optimized for {smartConfig.emailVolume?.toLocaleString()} emails
                     <br />
-                    <span className="text-sm">
+                    <span className="text-xs">
                       Recommended: {smartConfig.recommendedFunctions} functions, {smartConfig.recommendedAccounts} accounts
                       • Est. time: {smartConfig.estimatedTime}
                     </span>
@@ -301,192 +314,121 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
               </Alert>
             )}
 
-            {/* Resource Status */}
-            <Alert className={hasFunctions && hasAccounts ? "border-green-200 bg-green-50" : "border-yellow-200 bg-yellow-50"}>
-              <Settings className="h-4 w-4" />
-              <AlertDescription>
-                {hasFunctions && hasAccounts ? (
-                  <span className="text-green-800">
-                    <strong>✅ Ready:</strong> {functions.length} functions, {selectedAccounts.length} accounts selected
-                    {estimatedTime && ` • ${estimatedTime} estimated`}
-                  </span>
-                ) : (
-                  <div className="text-yellow-800">
-                    <strong>⚠️ Setup Required:</strong>
-                    {!hasFunctions && " Add Cloud Functions"}
-                    {!hasFunctions && !hasAccounts && " • "}
-                    {!hasAccounts && " Select Email Accounts"}
-                  </div>
-                )}
-              </AlertDescription>
-            </Alert>
-
             {/* Account Selection */}
-            <AccountSelector
+            <CompactAccountSelector
               selectedAccounts={selectedAccounts}
               onAccountsChange={setSelectedAccounts}
               onSelectAll={handleSelectAllAccounts}
               onDeselectAll={handleDeselectAllAccounts}
             />
 
-            {/* Sending Mode Selection */}
-            <div className="space-y-4">
-              <Label className="text-base font-medium">Sending Mode</Label>
-              <RadioGroup 
-                value={sendingMode} 
-                onValueChange={(value: 'controlled' | 'fast' | 'zero-delay') => setSendingMode(value)}
-                className="grid grid-cols-1 md:grid-cols-3 gap-4"
-              >
-                <div className="flex items-center space-x-2 p-4 border rounded-lg hover:bg-gray-50">
-                  <RadioGroupItem value="controlled" id="controlled" />
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2">
-                      <Clock className="w-4 h-4 text-blue-600" />
-                      <Label htmlFor="controlled" className="font-medium">Controlled Send</Label>
-                    </div>
-                    <p className="text-sm text-gray-600 mt-1">
-                      Standard rate limits
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-center space-x-2 p-4 border rounded-lg hover:bg-gray-50">
-                  <RadioGroupItem value="fast" id="fast" />
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2">
-                      <Zap className="w-4 h-4 text-orange-600" />
-                      <Label htmlFor="fast" className="font-medium">Fast Parallel</Label>
-                    </div>
-                    <p className="text-sm text-gray-600 mt-1">
-                      High-speed parallel dispatch
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-center space-x-2 p-4 border rounded-lg hover:bg-gray-50">
-                  <RadioGroupItem value="zero-delay" id="zero-delay" />
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2">
-                      <Rocket className="w-4 h-4 text-red-600" />
-                      <Label htmlFor="zero-delay" className="font-medium">Zero Delay</Label>
-                    </div>
-                    <p className="text-sm text-gray-600 mt-1">
-                      Maximum speed
-                    </p>
-                  </div>
-                </div>
-              </RadioGroup>
-
-              {sendingMode === 'zero-delay' && (
-                <Alert className="border-red-200 bg-red-50">
-                  <AlertTriangle className="h-4 w-4 text-red-600" />
-                  <AlertDescription className="text-red-800">
-                    <strong>Zero Delay Mode:</strong> Maximum speed parallel dispatch across all functions.
-                  </AlertDescription>
-                </Alert>
-              )}
-            </div>
-
-            <Separator />
-
             {/* Basic Campaign Information */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <Label htmlFor="fromName">From Name *</Label>
-                <Input
-                  id="fromName"
-                  value={fromName}
-                  onChange={(e) => setFromName(e.target.value)}
-                  placeholder="Your Name"
-                  required
-                />
-              </div>
-              <div>
-                <Label htmlFor="subject">Subject *</Label>
-                <Input
-                  id="subject"
-                  value={subject}
-                  onChange={(e) => setSubject(e.target.value)}
-                  placeholder="Email Subject"
-                  required
-                />
-              </div>
-            </div>
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm">Campaign Details</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <Label htmlFor="fromName" className="text-sm">From Name *</Label>
+                    <Input
+                      id="fromName"
+                      value={fromName}
+                      onChange={(e) => setFromName(e.target.value)}
+                      placeholder="Your Name"
+                      className="mt-1"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="subject" className="text-sm">Subject *</Label>
+                    <Input
+                      id="subject"
+                      value={subject}
+                      onChange={(e) => setSubject(e.target.value)}
+                      placeholder="Email Subject"
+                      className="mt-1"
+                      required
+                    />
+                  </div>
+                </div>
 
-            <AISubjectGenerator onSubjectSelect={setSubject} />
+                <AISubjectGenerator onSubjectSelect={setSubject} />
 
-            {/* Recipients */}
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="recipients">Recipients *</Label>
-                <Badge variant="secondary">
-                  {recipientCount} recipient{recipientCount !== 1 ? 's' : ''}
-                </Badge>
-              </div>
-              <Textarea
-                id="recipients"
-                value={recipients}
-                onChange={(e) => setRecipients(e.target.value)}
-                placeholder="email1@example.com, email2@example.com, ..."
-                rows={4}
-                required
-              />
-              
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <CSVDataImporter onImport={handleCSVImport} />
-                <GoogleSheetsImport onImport={handleGoogleSheetsImport} />
-              </div>
-            </div>
+                {/* Recipients */}
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="recipients" className="text-sm">Recipients *</Label>
+                    <Badge variant="secondary" className="text-xs">
+                      {recipientCount} recipient{recipientCount !== 1 ? 's' : ''}
+                    </Badge>
+                  </div>
+                  <Textarea
+                    id="recipients"
+                    value={recipients}
+                    onChange={(e) => setRecipients(e.target.value)}
+                    placeholder="email1@example.com, email2@example.com, ..."
+                    rows={3}
+                    className="text-sm"
+                    required
+                  />
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <CSVDataImporter onImport={handleCSVImport} />
+                    <GoogleSheetsImport onImport={handleGoogleSheetsImport} />
+                  </div>
+                </div>
 
-            {/* Email Content */}
-            <div className="space-y-4">
-              <Label htmlFor="htmlContent">HTML Content *</Label>
-              <Textarea
-                id="htmlContent"
-                value={htmlContent}
-                onChange={(e) => setHtmlContent(e.target.value)}
-                placeholder="<h1>Your HTML content here...</h1>"
-                rows={6}
-                required
-              />
-            </div>
+                {/* Email Content */}
+                <div className="space-y-3">
+                  <Label htmlFor="htmlContent" className="text-sm">HTML Content *</Label>
+                  <Textarea
+                    id="htmlContent"
+                    value={htmlContent}
+                    onChange={(e) => setHtmlContent(e.target.value)}
+                    placeholder="<h1>Your HTML content here...</h1>"
+                    rows={5}
+                    className="text-sm font-mono"
+                    required
+                  />
+                </div>
 
-            <div className="space-y-4">
-              <Label htmlFor="textContent">Plain Text Content</Label>
-              <Textarea
-                id="textContent"
-                value={textContent}
-                onChange={(e) => setTextContent(e.target.value)}
-                placeholder="Your plain text content here..."
-                rows={4}
-              />
-            </div>
+                <div className="space-y-3">
+                  <Label htmlFor="textContent" className="text-sm">Plain Text Content</Label>
+                  <Textarea
+                    id="textContent"
+                    value={textContent}
+                    onChange={(e) => setTextContent(e.target.value)}
+                    placeholder="Your plain text content here..."
+                    rows={3}
+                    className="text-sm"
+                  />
+                </div>
+              </CardContent>
+            </Card>
 
-            <Separator />
-
-            {/* Test-After Configuration */}
-            <TestAfterSection
+            {/* Advanced Configuration */}
+            <AdvancedConfigurationPanel
+              sendingMode={sendingMode}
+              onSendingModeChange={setSendingMode}
               useTestAfter={useTestAfter}
               onUseTestAfterChange={setUseTestAfter}
               testAfterEmail={testAfterEmail}
               onTestAfterEmailChange={setTestAfterEmail}
               testAfterCount={testAfterCount}
               onTestAfterCountChange={setTestAfterCount}
+              trackingEnabled={trackingEnabled}
+              onTrackingEnabledChange={setTrackingEnabled}
+              useFromRotation={useFromRotation}
+              onUseFromRotationChange={setUseFromRotation}
+              useSubjectRotation={useSubjectRotation}
+              onUseSubjectRotationChange={setUseSubjectRotation}
+              hasAccounts={hasAccounts}
+              hasFunctions={hasFunctions}
+              estimatedTime={estimatedTime}
             />
 
-            {/* Tracking Configuration */}
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <Label>Email Tracking</Label>
-                  <p className="text-sm text-gray-600">
-                    Track email opens and link clicks
-                  </p>
-                </div>
-                <Switch
-                  checked={trackingEnabled}
-                  onCheckedChange={setTrackingEnabled}
-                />
-              </div>
-            </div>
+            <Separator />
 
             <Button 
               type="submit" 
@@ -496,6 +438,11 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
             >
               <Rocket className="w-4 h-4 mr-2" />
               Launch Parallel Campaign
+              {estimatedTime && (
+                <Badge variant="secondary" className="ml-2 text-xs">
+                  {estimatedTime}
+                </Badge>
+              )}
             </Button>
           </form>
         </CardContent>
