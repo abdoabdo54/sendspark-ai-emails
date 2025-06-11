@@ -3,284 +3,264 @@ const functions = require('@google-cloud/functions-framework');
 const { createClient } = require('@supabase/supabase-js');
 const nodemailer = require('nodemailer');
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type'
-};
+// Initialize Supabase client
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const supabase = createClient(supabaseUrl, supabaseKey);
 
-functions.http('sendBatch', async (req, res) => {
-  if (req.method === 'OPTIONS') {
-    res.set(corsHeaders).status(200).send('');
-    return;
+// Configure nodemailer transporter based on account type
+function createTransporter(accountConfig) {
+  if (accountConfig.type === 'smtp') {
+    return nodemailer.createTransporter({
+      host: accountConfig.host,
+      port: accountConfig.port,
+      secure: accountConfig.secure || false,
+      auth: {
+        user: accountConfig.user,
+        pass: accountConfig.pass
+      },
+      pool: true,
+      maxConnections: 10,
+      maxMessages: 100
+    });
   }
-  res.set(corsHeaders);
+  
+  // For other types, we'll handle them differently
+  return null;
+}
 
-  const { 
-    campaignId, 
-    skip = 0, 
-    limit = 0, 
-    zeroDelay = false,
-    useTestAfter = false,
-    testAfterEmail = '',
-    testAfterCount = 500,
-    useTracking = false,
-    subjectRotation = {},
-    fromNameRotation = {},
-    selectedAccounts = []
-  } = req.body || {};
-
-  console.log(`📥 Received batch request: campaignId=${campaignId}, skip=${skip}, limit=${limit}, zeroDelay=${zeroDelay}`);
-
-  if (!campaignId) {
-    res.status(400).json({ error: 'campaignId required' });
-    return;
-  }
-
-  const supabase = createClient(
-    process.env.SUPABASE_URL, 
-    process.env.SUPABASE_SERVICE_ROLE_KEY
-  );
-
+// Send email via Apps Script
+async function sendViaAppsScript(accountConfig, emailData) {
   try {
-    // Fetch campaign data
-    const { data: campaign, error: campaignError } = await supabase
-      .from('email_campaigns')
-      .select('*')
-      .eq('id', campaignId)
-      .single();
-      
-    if (campaignError || !campaign) {
-      console.error('Campaign fetch error:', campaignError);
-      res.status(400).json({ error: 'Campaign not found' });
-      return;
-    }
-
-    console.log(`📧 Campaign found: ${campaign.subject}`);
-
-    // Parse and slice recipients
-    const allRecipients = (campaign.recipients || '')
-      .split(',')
-      .map(email => email.trim())
-      .filter(Boolean);
-
-    const recipients = allRecipients.slice(skip, skip + limit);
-    
-    console.log(`📋 Processing ${recipients.length} recipients (${skip} to ${skip + limit})`);
-
-    if (recipients.length === 0) {
-      res.json({ success: true, sent: 0, message: 'No recipients in this range' });
-      return;
-    }
-
-    // Fetch email accounts
-    let accountQuery = supabase
-      .from('email_accounts')
-      .select('*')
-      .eq('organization_id', campaign.organization_id)
-      .eq('is_active', true);
-
-    const { data: allAccounts, error: accError } = await accountQuery;
-
-    if (accError || !allAccounts || allAccounts.length === 0) {
-      console.error('Accounts fetch error:', accError);
-      res.status(400).json({ error: 'No active sending accounts' });
-      return;
-    }
-
-    // Filter accounts based on selection
-    const accounts = selectedAccounts && selectedAccounts.length > 0 
-      ? allAccounts.filter(acc => selectedAccounts.includes(acc.id))
-      : allAccounts;
-
-    if (accounts.length === 0) {
-      console.error('No valid accounts after filtering');
-      res.status(400).json({ error: 'No valid sending accounts available' });
-      return;
-    }
-
-    console.log(`👥 Found ${accounts.length} active accounts`);
-
-    // Prepare subject and from name variations
-    const subjectVariations = subjectRotation.enabled && subjectRotation.variations 
-      ? subjectRotation.variations 
-      : [campaign.subject];
-    
-    const fromNameVariations = fromNameRotation.enabled && fromNameRotation.variations 
-      ? fromNameRotation.variations 
-      : [campaign.from_name];
-
-    // Add tracking to HTML content if enabled
-    let htmlContent = campaign.html_content || '';
-    if (useTracking && htmlContent) {
-      // Add tracking pixel
-      const trackingPixel = `<img src="${process.env.SUPABASE_URL}/functions/v1/track-open?campaign={{campaign_id}}&email={{email}}" width="1" height="1" style="display:none;" />`;
-      
-      // Add click tracking to links
-      htmlContent = htmlContent.replace(
-        /<a\s+([^>]*href=["'])([^"']+)(["'][^>]*)>/gi,
-        `<a $1${process.env.SUPABASE_URL}/functions/v1/track-click?campaign={{campaign_id}}&email={{email}}&url=$2$3>`
-      );
-      
-      // Add tracking pixel
-      if (htmlContent.includes('</body>')) {
-        htmlContent = htmlContent.replace('</body>', `${trackingPixel}</body>`);
-      } else {
-        htmlContent += trackingPixel;
-      }
-    }
-
-    // Insert test-after emails if enabled
-    let finalRecipients = [...recipients];
-    if (useTestAfter && testAfterEmail) {
-      const testEmails = [];
-      for (let i = testAfterCount; i < finalRecipients.length; i += testAfterCount) {
-        testEmails.push({ index: i, email: testAfterEmail });
-      }
-      
-      // Insert test emails at specified intervals
-      testEmails.reverse().forEach(({ index, email }) => {
-        finalRecipients.splice(index, 0, email);
-      });
-      
-      // Add test email at the end
-      finalRecipients.push(testAfterEmail);
-      
-      console.log(`✅ Added ${testEmails.length + 1} test emails`);
-    }
-
-    // Send emails function
-    const sendEmail = async (email, idx) => {
-      const account = accounts[idx % accounts.length];
-      
-      // Select subject and from name based on rotation
-      const currentSubject = subjectVariations[idx % subjectVariations.length];
-      const currentFromName = fromNameVariations[idx % fromNameVariations.length];
-      
-      try {
-        const transporter = nodemailer.createTransporter({
-          host: account.config.host,
-          port: account.config.port,
-          secure: account.config.secure || false,
-          auth: {
-            user: account.config.user || account.config.username,
-            pass: account.config.pass || account.config.password
-          },
-          pool: zeroDelay, // Use connection pooling for zero delay mode
-          maxConnections: zeroDelay ? 20 : 5,
-          maxMessages: zeroDelay ? 100 : 10
-        });
-
-        // Replace placeholders in content
-        const personalizedHtml = htmlContent
-          .replace(/{{campaign_id}}/g, campaignId)
-          .replace(/{{email}}/g, encodeURIComponent(email));
-          
-        const personalizedText = (campaign.text_content || '')
-          .replace(/{{campaign_id}}/g, campaignId)
-          .replace(/{{email}}/g, email);
-
-        const info = await transporter.sendMail({
-          from: `${currentFromName} <${account.email}>`,
-          to: email,
-          subject: currentSubject,
-          html: personalizedHtml,
-          text: personalizedText
-        });
-
-        // Log successful send
-        await supabase.from('email_logs').insert({
-          campaign_id: campaignId,
-          recipient: email,
-          account_id: account.id,
-          message_id: info.messageId,
-          status: 'sent',
-          sent_at: new Date().toISOString(),
-          subject_used: currentSubject,
-          from_name_used: currentFromName
-        });
-
-        return { success: true, email, messageId: info.messageId, subject: currentSubject, fromName: currentFromName };
-      } catch (error) {
-        console.error(`❌ Failed to send to ${email}:`, error.message);
-        
-        // Log failed send
-        await supabase.from('email_logs').insert({
-          campaign_id: campaignId,
-          recipient: email,
-          account_id: account.id,
-          status: 'failed',
-          error_message: error.message,
-          sent_at: new Date().toISOString(),
-          subject_used: currentSubject,
-          from_name_used: currentFromName
-        });
-
-        return { success: false, email, error: error.message };
-      }
-    };
-
-    console.log(`🚀 Starting email send (zeroDelay: ${zeroDelay})`);
-    
-    let results = [];
-    const sendPromises = finalRecipients.map((email, idx) => sendEmail(email, idx));
-
-    if (zeroDelay) {
-      // Zero delay mode: send all emails in parallel
-      console.log('⚡ Zero delay mode: sending all emails in parallel');
-      results = await Promise.allSettled(sendPromises);
-    } else {
-      // Sequential sending with small delays
-      console.log('🕐 Sequential mode: sending with delays');
-      for (const promise of sendPromises) {
-        const result = await promise;
-        results.push({ status: 'fulfilled', value: result });
-        
-        // Small delay between sends in non-zero-delay mode
-        if (!zeroDelay) {
-          await new Promise(resolve => setTimeout(resolve, 100));
-        }
-      }
-    }
-
-    // Count successful sends
-    const successful = results.filter(result => 
-      result.status === 'fulfilled' && result.value?.success
-    ).length;
-    
-    const failed = results.length - successful;
-
-    console.log(`✅ Completed: ${successful} sent, ${failed} failed`);
-
-    // Update campaign sent count
-    const { error: updateError } = await supabase
-      .from('email_campaigns')
-      .update({ 
-        sent_count: campaign.sent_count + successful,
-        updated_at: new Date().toISOString()
+    const response = await fetch(accountConfig.script_url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        to: emailData.to,
+        subject: emailData.subject,
+        htmlBody: emailData.html,
+        plainBody: emailData.text || '',
+        fromName: emailData.fromName,
+        fromAlias: emailData.fromEmail
       })
-      .eq('id', campaignId);
-
-    if (updateError) {
-      console.error('Error updating campaign count:', updateError);
-    }
-
-    res.json({ 
-      success: true, 
-      sent: successful,
-      failed: failed,
-      total: results.length,
-      processed_range: `${skip}-${skip + limit}`,
-      zero_delay_mode: zeroDelay,
-      subjects_used: subjectVariations.length,
-      from_names_used: fromNameVariations.length,
-      accounts_used: accounts.length
     });
 
-  } catch (err) {
-    console.error('💥 Send batch error:', err);
-    res.status(500).json({ 
-      error: err.message,
-      details: 'Check function logs for more information'
+    const result = await response.json();
+    
+    if (response.ok && result.status === 'success') {
+      return { success: true, messageId: result.messageId };
+    } else {
+      return { success: false, error: result.message || 'Apps Script error' };
+    }
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+}
+
+// Send email via SMTP
+async function sendViaSMTP(transporter, emailData) {
+  try {
+    const info = await transporter.sendMail({
+      from: `"${emailData.fromName}" <${emailData.fromEmail}>`,
+      to: emailData.to,
+      subject: emailData.subject,
+      html: emailData.html,
+      text: emailData.text
+    });
+
+    return { success: true, messageId: info.messageId };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+}
+
+// Add tracking pixels and links
+function addTracking(htmlContent, campaignId, recipient, trackingConfig) {
+  let trackedContent = htmlContent;
+  
+  if (trackingConfig.trackOpens) {
+    const trackingPixel = `<img src="${supabaseUrl}/functions/v1/track-open?campaign=${campaignId}&email=${encodeURIComponent(recipient)}" width="1" height="1" style="display:none;" />`;
+    trackedContent += trackingPixel;
+  }
+  
+  if (trackingConfig.trackClicks) {
+    // Replace links with tracking URLs
+    trackedContent = trackedContent.replace(
+      /href="([^"]+)"/g,
+      `href="${supabaseUrl}/functions/v1/track-click?campaign=${campaignId}&email=${encodeURIComponent(recipient)}&url=$1"`
+    );
+  }
+  
+  return trackedContent;
+}
+
+// Main function
+functions.http('sendBatch', async (req, res) => {
+  // Enable CORS
+  res.set('Access-Control-Allow-Origin', '*');
+  res.set('Access-Control-Allow-Methods', 'GET, POST');
+  res.set('Access-Control-Allow-Headers', 'Content-Type');
+
+  if (req.method === 'OPTIONS') {
+    res.status(204).send('');
+    return;
+  }
+
+  try {
+    const { 
+      campaignId, 
+      slice, 
+      campaignData, 
+      accounts, 
+      organizationId 
+    } = req.body;
+
+    console.log(`🚀 Processing slice: ${slice.recipients.length} emails for campaign ${campaignId}`);
+
+    const results = [];
+    let accountIndex = 0;
+
+    // Process each recipient in the slice
+    for (let i = 0; i < slice.recipients.length; i++) {
+      const recipient = slice.recipients[i];
+      
+      // Rotate through available accounts
+      const account = accounts[accountIndex % accounts.length];
+      accountIndex++;
+
+      try {
+        // Prepare email content
+        let htmlContent = campaignData.html_content;
+        let textContent = campaignData.text_content;
+
+        // Add tracking if enabled
+        if (campaignData.config?.tracking?.enabled) {
+          htmlContent = addTracking(htmlContent, campaignId, recipient, campaignData.config.tracking);
+        }
+
+        const emailData = {
+          to: recipient,
+          subject: campaignData.subject,
+          html: htmlContent,
+          text: textContent,
+          fromName: campaignData.from_name,
+          fromEmail: account.email
+        };
+
+        let result;
+
+        // Send based on account type
+        if (account.type === 'smtp') {
+          const transporter = createTransporter(account.config);
+          if (transporter) {
+            result = await sendViaSMTP(transporter, emailData);
+          } else {
+            result = { success: false, error: 'Failed to create SMTP transporter' };
+          }
+        } else if (account.type === 'apps-script') {
+          result = await sendViaAppsScript(account.config, emailData);
+        } else {
+          result = { success: false, error: `Unsupported account type: ${account.type}` };
+        }
+
+        if (result.success) {
+          console.log(`✅ Sent to ${recipient} via ${account.type}`);
+          results.push({
+            recipient,
+            status: 'sent',
+            accountType: account.type,
+            accountName: account.name,
+            messageId: result.messageId
+          });
+        } else {
+          console.log(`❌ Failed to ${recipient}: ${result.error}`);
+          results.push({
+            recipient,
+            status: 'failed',
+            error: result.error,
+            accountType: account.type,
+            accountName: account.name
+          });
+        }
+
+        // Test-After functionality
+        if (campaignData.config?.testAfter?.enabled) {
+          const testAfterCount = campaignData.config.testAfter.count;
+          const testAfterEmail = campaignData.config.testAfter.email;
+          
+          if ((i + 1) % testAfterCount === 0) {
+            console.log(`📧 Sending test-after email for batch ${Math.floor((i + 1) / testAfterCount)}`);
+            
+            const testEmailData = {
+              to: testAfterEmail,
+              subject: `Test-After: ${campaignData.subject} - Batch ${Math.floor((i + 1) / testAfterCount)}`,
+              html: `<h3>Test-After Report</h3><p>Successfully sent ${i + 1} emails.</p><p>Campaign: ${campaignData.subject}</p>`,
+              text: `Test-After Report: Successfully sent ${i + 1} emails. Campaign: ${campaignData.subject}`,
+              fromName: campaignData.from_name,
+              fromEmail: account.email
+            };
+
+            if (account.type === 'smtp') {
+              const transporter = createTransporter(account.config);
+              if (transporter) {
+                await sendViaSMTP(transporter, testEmailData);
+              }
+            } else if (account.type === 'apps-script') {
+              await sendViaAppsScript(account.config, testEmailData);
+            }
+          }
+        }
+
+        // Apply sending mode delays
+        if (campaignData.config?.sendingMode === 'controlled') {
+          await new Promise(resolve => setTimeout(resolve, 2000)); // 2 second delay
+        } else if (campaignData.config?.sendingMode === 'fast') {
+          await new Promise(resolve => setTimeout(resolve, 500)); // 0.5 second delay
+        }
+        // zero-delay mode: no delay
+
+      } catch (error) {
+        console.error(`❌ Error processing ${recipient}:`, error);
+        results.push({
+          recipient,
+          status: 'failed',
+          error: error.message
+        });
+      }
+    }
+
+    // Update campaign statistics in Supabase
+    const sentCount = results.filter(r => r.status === 'sent').length;
+    const failedCount = results.filter(r => r.status === 'failed').length;
+
+    try {
+      await supabase
+        .from('email_campaigns')
+        .update({
+          sent_count: supabase.rpc('increment_sent_count', { campaign_id: campaignId, increment_by: sentCount })
+        })
+        .eq('id', campaignId);
+    } catch (dbError) {
+      console.error('Failed to update campaign stats:', dbError);
+    }
+
+    console.log(`✅ Slice completed: ${sentCount} sent, ${failedCount} failed`);
+
+    res.status(200).json({
+      success: true,
+      processed: slice.recipients.length,
+      sent: sentCount,
+      failed: failedCount,
+      results: results
+    });
+
+  } catch (error) {
+    console.error('❌ Function error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
     });
   }
 });

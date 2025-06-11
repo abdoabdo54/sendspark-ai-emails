@@ -14,10 +14,12 @@ import { Clock, Zap, Settings, AlertTriangle, Rocket, ExternalLink, Calculator }
 import { toast } from '@/hooks/use-toast';
 import { useSimpleOrganizations } from '@/contexts/SimpleOrganizationContext';
 import { useCampaignSender } from '@/hooks/useCampaignSender';
+import { useEmailAccounts } from '@/hooks/useEmailAccounts';
 import CSVDataImporter from './CSVDataImporter';
 import GoogleSheetsImport from './GoogleSheetsImport';
 import AISubjectGenerator from './AISubjectGenerator';
 import TestAfterSection from './TestAfterSection';
+import AccountSelector from './AccountSelector';
 import { useNavigate } from 'react-router-dom';
 
 interface BulkEmailComposerProps {
@@ -27,7 +29,8 @@ interface BulkEmailComposerProps {
 const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
   const navigate = useNavigate();
   const { currentOrganization } = useSimpleOrganizations();
-  const { functions, accounts, hasFunctions, hasAccounts, sendCampaign } = useCampaignSender(currentOrganization?.id);
+  const { functions, hasFunctions, sendCampaign } = useCampaignSender(currentOrganization?.id);
+  const { accounts } = useEmailAccounts(currentOrganization?.id);
   
   // Form state
   const [fromName, setFromName] = useState('');
@@ -35,6 +38,9 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
   const [recipients, setRecipients] = useState('');
   const [htmlContent, setHtmlContent] = useState('');
   const [textContent, setTextContent] = useState('');
+  
+  // Account selection state
+  const [selectedAccounts, setSelectedAccounts] = useState<string[]>([]);
   
   // Sending mode state
   const [sendingMode, setSendingMode] = useState<'controlled' | 'fast' | 'zero-delay'>('controlled');
@@ -52,6 +58,15 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
   const [estimatedTime, setEstimatedTime] = useState('');
 
   const recipientCount = recipients.split(',').filter(email => email.trim()).length;
+  const activeAccounts = accounts.filter(account => account.is_active);
+  const hasAccounts = selectedAccounts.length > 0;
+
+  // Auto-select all accounts when they load
+  useEffect(() => {
+    if (activeAccounts.length > 0 && selectedAccounts.length === 0) {
+      setSelectedAccounts(activeAccounts.map(account => account.id));
+    }
+  }, [activeAccounts]);
 
   // Load SmartConfig on mount
   useEffect(() => {
@@ -104,6 +119,14 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
     });
   };
 
+  const handleSelectAllAccounts = () => {
+    setSelectedAccounts(activeAccounts.map(account => account.id));
+  };
+
+  const handleDeselectAllAccounts = () => {
+    setSelectedAccounts([]);
+  };
+
   const validateForm = () => {
     if (!fromName.trim()) {
       toast({
@@ -153,7 +176,7 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
     if (!hasAccounts) {
       toast({
         title: "Validation Error",
-        description: "No email accounts available. Please add accounts in Settings.",
+        description: "Please select at least one email account.",
         variant: "destructive"
       });
       return false;
@@ -178,6 +201,7 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
 
     const config = {
       sendingMode,
+      selectedAccounts,
       testAfter: {
         enabled: useTestAfter,
         email: testAfterEmail,
@@ -232,6 +256,34 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-6">
+            {/* Navigation Links */}
+            <div className="flex gap-2 mb-4">
+              <Button 
+                variant="outline" 
+                onClick={() => navigate('/function-manager')}
+                type="button"
+              >
+                <ExternalLink className="w-4 h-4 mr-1" />
+                Function Manager
+              </Button>
+              <Button 
+                variant="outline" 
+                onClick={() => navigate('/settings')}
+                type="button"
+              >
+                <ExternalLink className="w-4 h-4 mr-1" />
+                Email Accounts
+              </Button>
+              <Button 
+                variant="outline" 
+                onClick={() => navigate('/smart-config')}
+                type="button"
+              >
+                <Calculator className="w-4 h-4 mr-1" />
+                SmartConfig
+              </Button>
+            </div>
+
             {/* SmartConfig Integration */}
             {smartConfig && (
               <Alert className="border-blue-200 bg-blue-50">
@@ -255,7 +307,7 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
               <AlertDescription>
                 {hasFunctions && hasAccounts ? (
                   <span className="text-green-800">
-                    <strong>✅ Ready:</strong> {functions.length} functions, {accounts.length} accounts available
+                    <strong>✅ Ready:</strong> {functions.length} functions, {selectedAccounts.length} accounts selected
                     {estimatedTime && ` • ${estimatedTime} estimated`}
                   </span>
                 ) : (
@@ -263,38 +315,19 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
                     <strong>⚠️ Setup Required:</strong>
                     {!hasFunctions && " Add Cloud Functions"}
                     {!hasFunctions && !hasAccounts && " • "}
-                    {!hasAccounts && " Add Email Accounts"}
-                    <br />
-                    <div className="flex gap-2 mt-2">
-                      <Button 
-                        variant="link" 
-                        className="p-0 h-auto text-yellow-800 underline"
-                        onClick={() => navigate('/function-manager')}
-                      >
-                        <ExternalLink className="w-3 h-3 mr-1" />
-                        Function Manager
-                      </Button>
-                      <Button 
-                        variant="link" 
-                        className="p-0 h-auto text-yellow-800 underline"
-                        onClick={() => navigate('/settings')}
-                      >
-                        <ExternalLink className="w-3 h-3 mr-1" />
-                        Email Accounts
-                      </Button>
-                      <Button 
-                        variant="link" 
-                        className="p-0 h-auto text-yellow-800 underline"
-                        onClick={() => navigate('/smart-config')}
-                      >
-                        <Calculator className="w-3 h-3 mr-1" />
-                        SmartConfig
-                      </Button>
-                    </div>
+                    {!hasAccounts && " Select Email Accounts"}
                   </div>
                 )}
               </AlertDescription>
             </Alert>
+
+            {/* Account Selection */}
+            <AccountSelector
+              selectedAccounts={selectedAccounts}
+              onAccountsChange={setSelectedAccounts}
+              onSelectAll={handleSelectAllAccounts}
+              onDeselectAll={handleDeselectAllAccounts}
+            />
 
             {/* Sending Mode Selection */}
             <div className="space-y-4">

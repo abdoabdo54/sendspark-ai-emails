@@ -1,8 +1,8 @@
 
 {
   "name": "send-email-batch-parallel",
-  "version": "3.0.0",
-  "description": "Parallel email batch sender with rotation and manual account selection for dynamic multi-function dispatch",
+  "version": "4.0.0",
+  "description": "Gen2-Compatible Google Cloud Function for ultra-fast parallel email campaigns with dynamic account rotation",
   "main": "index.js",
   "type": "commonjs",
   "dependencies": {
@@ -15,8 +15,17 @@
   },
   "scripts": {
     "start": "functions-framework --target=sendBatch",
-    "deploy": "gcloud functions deploy sendBatch --runtime nodejs20 --trigger-http --allow-unauthenticated --memory=1GB --timeout=540s --max-instances=10",
-    "deploy-fast": "gcloud functions deploy sendBatchFast --runtime nodejs20 --trigger-http --allow-unauthenticated --memory=2GB --timeout=540s --max-instances=20",
-    "deploy-zero": "gcloud functions deploy sendBatchZero --runtime nodejs20 --trigger-http --allow-unauthenticated --memory=4GB --timeout=540s --max-instances=50"
-  }
+    "deploy": "gcloud functions deploy sendBatch --gen2 --runtime nodejs20 --trigger-http --allow-unauthenticated --memory=1GB --timeout=540s --max-instances=10 --region=us-central1",
+    "deploy-fast": "gcloud functions deploy sendBatchFast --gen2 --runtime nodejs20 --trigger-http --allow-unauthenticated --memory=2GB --timeout=540s --max-instances=20 --region=us-central1",
+    "deploy-zero": "gcloud functions deploy sendBatchZero --gen2 --runtime nodejs20 --trigger-http --allow-unauthenticated --memory=4GB --timeout=540s --max-instances=50 --region=us-central1"
+  },
+  "keywords": [
+    "email",
+    "campaign",
+    "parallel",
+    "google-cloud-functions",
+    "gen2",
+    "nodemailer",
+    "supabase"
+  ]
 }
