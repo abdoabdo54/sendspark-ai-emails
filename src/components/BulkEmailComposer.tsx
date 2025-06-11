@@ -675,5 +675,3 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
 };
 
 export default BulkEmailComposer;
-
-</edits_to_apply>
