@@ -23,7 +23,10 @@ functions.http('sendBatch', async (req, res) => {
     useTestAfter = false,
     testAfterEmail = '',
     testAfterCount = 500,
-    useTracking = false
+    useTracking = false,
+    subjectRotation = {},
+    fromNameRotation = {},
+    selectedAccounts = []
   } = req.body || {};
 
   console.log(`📥 Received batch request: campaignId=${campaignId}, skip=${skip}, limit=${limit}, zeroDelay=${zeroDelay}`);
@@ -69,20 +72,42 @@ functions.http('sendBatch', async (req, res) => {
       return;
     }
 
-    // Fetch active email accounts
-    const { data: accounts, error: accError } = await supabase
+    // Fetch email accounts
+    let accountQuery = supabase
       .from('email_accounts')
       .select('*')
       .eq('organization_id', campaign.organization_id)
       .eq('is_active', true);
 
-    if (accError || !accounts || accounts.length === 0) {
+    const { data: allAccounts, error: accError } = await accountQuery;
+
+    if (accError || !allAccounts || allAccounts.length === 0) {
       console.error('Accounts fetch error:', accError);
       res.status(400).json({ error: 'No active sending accounts' });
       return;
     }
 
+    // Filter accounts based on selection
+    const accounts = selectedAccounts && selectedAccounts.length > 0 
+      ? allAccounts.filter(acc => selectedAccounts.includes(acc.id))
+      : allAccounts;
+
+    if (accounts.length === 0) {
+      console.error('No valid accounts after filtering');
+      res.status(400).json({ error: 'No valid sending accounts available' });
+      return;
+    }
+
     console.log(`👥 Found ${accounts.length} active accounts`);
+
+    // Prepare subject and from name variations
+    const subjectVariations = subjectRotation.enabled && subjectRotation.variations 
+      ? subjectRotation.variations 
+      : [campaign.subject];
+    
+    const fromNameVariations = fromNameRotation.enabled && fromNameRotation.variations 
+      ? fromNameRotation.variations 
+      : [campaign.from_name];
 
     // Add tracking to HTML content if enabled
     let htmlContent = campaign.html_content || '';
@@ -127,6 +152,10 @@ functions.http('sendBatch', async (req, res) => {
     const sendEmail = async (email, idx) => {
       const account = accounts[idx % accounts.length];
       
+      // Select subject and from name based on rotation
+      const currentSubject = subjectVariations[idx % subjectVariations.length];
+      const currentFromName = fromNameVariations[idx % fromNameVariations.length];
+      
       try {
         const transporter = nodemailer.createTransporter({
           host: account.config.host,
@@ -151,9 +180,9 @@ functions.http('sendBatch', async (req, res) => {
           .replace(/{{email}}/g, email);
 
         const info = await transporter.sendMail({
-          from: `${campaign.from_name} <${account.email}>`,
+          from: `${currentFromName} <${account.email}>`,
           to: email,
-          subject: campaign.subject,
+          subject: currentSubject,
           html: personalizedHtml,
           text: personalizedText
         });
@@ -165,10 +194,12 @@ functions.http('sendBatch', async (req, res) => {
           account_id: account.id,
           message_id: info.messageId,
           status: 'sent',
-          sent_at: new Date().toISOString()
+          sent_at: new Date().toISOString(),
+          subject_used: currentSubject,
+          from_name_used: currentFromName
         });
 
-        return { success: true, email, messageId: info.messageId };
+        return { success: true, email, messageId: info.messageId, subject: currentSubject, fromName: currentFromName };
       } catch (error) {
         console.error(`❌ Failed to send to ${email}:`, error.message);
         
@@ -179,7 +210,9 @@ functions.http('sendBatch', async (req, res) => {
           account_id: account.id,
           status: 'failed',
           error_message: error.message,
-          sent_at: new Date().toISOString()
+          sent_at: new Date().toISOString(),
+          subject_used: currentSubject,
+          from_name_used: currentFromName
         });
 
         return { success: false, email, error: error.message };
@@ -237,7 +270,10 @@ functions.http('sendBatch', async (req, res) => {
       failed: failed,
       total: results.length,
       processed_range: `${skip}-${skip + limit}`,
-      zero_delay_mode: zeroDelay
+      zero_delay_mode: zeroDelay,
+      subjects_used: subjectVariations.length,
+      from_names_used: fromNameVariations.length,
+      accounts_used: accounts.length
     });
 
   } catch (err) {

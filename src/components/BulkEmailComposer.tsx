@@ -55,6 +55,12 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
   // Tracking state
   const [trackingEnabled, setTrackingEnabled] = useState(false);
 
+  // Subject and From rotation
+  const [rotateSubjects, setRotateSubjects] = useState(false);
+  const [subjectVariations, setSubjectVariations] = useState('');
+  const [rotateFromNames, setRotateFromNames] = useState(false);
+  const [fromNameVariations, setFromNameVariations] = useState('');
+
   // Smart config
   const [estimatedTime, setEstimatedTime] = useState('');
 
@@ -199,6 +205,18 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
       sendingMode,
       selectedAccounts: useAccountSelection ? selectedAccounts : [],
       numAccountsToUse,
+      
+      // Subject rotation
+      subjectRotation: {
+        enabled: rotateSubjects,
+        variations: rotateSubjects ? subjectVariations.split('\n').filter(s => s.trim()) : []
+      },
+      
+      // From name rotation
+      fromNameRotation: {
+        enabled: rotateFromNames,
+        variations: rotateFromNames ? fromNameVariations.split('\n').filter(s => s.trim()) : []
+      },
       
       // Test-After configuration
       testAfter: {
@@ -366,6 +384,62 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
               </div>
             </div>
 
+            {/* From Name Rotation */}
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label>Rotate From Names</Label>
+                  <p className="text-sm text-gray-600">
+                    Use different from names to improve deliverability
+                  </p>
+                </div>
+                <Switch
+                  checked={rotateFromNames}
+                  onCheckedChange={setRotateFromNames}
+                />
+              </div>
+              {rotateFromNames && (
+                <div>
+                  <Label htmlFor="fromNameVariations">From Name Variations (one per line)</Label>
+                  <Textarea
+                    id="fromNameVariations"
+                    value={fromNameVariations}
+                    onChange={(e) => setFromNameVariations(e.target.value)}
+                    placeholder="John Smith&#10;Jane Doe&#10;Mike Johnson"
+                    rows={3}
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* Subject Rotation */}
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label>Rotate Subjects</Label>
+                  <p className="text-sm text-gray-600">
+                    Use different subject lines to improve engagement
+                  </p>
+                </div>
+                <Switch
+                  checked={rotateSubjects}
+                  onCheckedChange={setRotateSubjects}
+                />
+              </div>
+              {rotateSubjects && (
+                <div>
+                  <Label htmlFor="subjectVariations">Subject Variations (one per line)</Label>
+                  <Textarea
+                    id="subjectVariations"
+                    value={subjectVariations}
+                    onChange={(e) => setSubjectVariations(e.target.value)}
+                    placeholder="Great offer for you!&#10;Don't miss this deal&#10;Special promotion inside"
+                    rows={3}
+                  />
+                </div>
+              )}
+            </div>
+
             {estimatedTime && enabledFunctions.length > 0 && (
               <Alert className="border-blue-200 bg-blue-50">
                 <AlertTriangle className="h-4 w-4 text-blue-600" />
@@ -426,61 +500,102 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
 
             <Separator />
 
-            {/* Parallel Configuration */}
-            <div className="space-y-6">
-              <h3 className="text-lg font-medium">Parallel Sending Configuration</h3>
-
-              {/* Function and Account Summary */}
-              <div className="grid grid-cols-2 gap-4">
-                <div className="p-4 border rounded-lg bg-blue-50">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Settings className="w-4 h-4 text-blue-600" />
-                    <span className="font-medium">Cloud Functions</span>
-                  </div>
-                  <div className="text-2xl font-bold text-blue-600 mb-1">
-                    {enabledFunctions.length}
-                  </div>
+            {/* Manual Account Selection */}
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label>Manual Account Selection</Label>
                   <p className="text-sm text-gray-600">
-                    Enabled functions
-                  </p>
-                  {enabledFunctions.length === 0 && (
-                    <Button 
-                      variant="link" 
-                      className="p-0 h-auto text-sm"
-                      onClick={() => navigate('/function-manager')}
-                    >
-                      <ExternalLink className="w-3 h-3 mr-1" />
-                      Configure Functions
-                    </Button>
-                  )}
-                </div>
-                <div className="p-4 border rounded-lg bg-green-50">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Settings className="w-4 h-4 text-green-600" />
-                    <span className="font-medium">Sender Accounts</span>
-                  </div>
-                  <div className="text-2xl font-bold text-green-600 mb-1">
-                    {Math.min(numAccountsToUse, activeAccounts.length)}
-                  </div>
-                  <p className="text-sm text-gray-600">
-                    Will be used
+                    Choose specific sender accounts instead of automatic rotation
                   </p>
                 </div>
+                <Switch
+                  checked={useAccountSelection}
+                  onCheckedChange={setUseAccountSelection}
+                />
               </div>
 
-              {/* Account Count */}
-              <div>
-                <Label htmlFor="numAccounts">Number of Sender Accounts</Label>
-                <Input
-                  id="numAccounts"
-                  type="number"
-                  min={1}
-                  max={activeAccounts.length}
-                  value={numAccountsToUse}
-                  onChange={(e) => setNumAccountsToUse(parseInt(e.target.value) || 1)}
-                />
-                <p className="text-sm text-gray-600 mt-1">
-                  Rotates through available accounts (max: {activeAccounts.length})
+              {useAccountSelection && (
+                <div className="space-y-4">
+                  <Label>Select Sender Accounts</Label>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-48 overflow-y-auto border rounded-lg p-4">
+                    {activeAccounts.map((account) => (
+                      <div key={account.id} className="flex items-center space-x-2">
+                        <input
+                          type="checkbox"
+                          id={account.id}
+                          checked={selectedAccounts.includes(account.id)}
+                          onChange={() => handleAccountToggle(account.id)}
+                          className="rounded"
+                        />
+                        <Label htmlFor={account.id} className="text-sm flex-1">
+                          {account.email} ({account.provider})
+                        </Label>
+                      </div>
+                    ))}
+                  </div>
+                  {selectedAccounts.length > 0 && (
+                    <p className="text-sm text-green-600">
+                      {selectedAccounts.length} accounts selected
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {!useAccountSelection && (
+                <div>
+                  <Label htmlFor="numAccounts">Number of Sender Accounts</Label>
+                  <Input
+                    id="numAccounts"
+                    type="number"
+                    min={1}
+                    max={activeAccounts.length}
+                    value={numAccountsToUse}
+                    onChange={(e) => setNumAccountsToUse(parseInt(e.target.value) || 1)}
+                  />
+                  <p className="text-sm text-gray-600 mt-1">
+                    Rotates through available accounts (max: {activeAccounts.length})
+                  </p>
+                </div>
+              )}
+            </div>
+
+            <Separator />
+
+            {/* Function and Account Summary */}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="p-4 border rounded-lg bg-blue-50">
+                <div className="flex items-center gap-2 mb-2">
+                  <Settings className="w-4 h-4 text-blue-600" />
+                  <span className="font-medium">Cloud Functions</span>
+                </div>
+                <div className="text-2xl font-bold text-blue-600 mb-1">
+                  {enabledFunctions.length}
+                </div>
+                <p className="text-sm text-gray-600">
+                  Enabled functions
+                </p>
+                {enabledFunctions.length === 0 && (
+                  <Button 
+                    variant="link" 
+                    className="p-0 h-auto text-sm"
+                    onClick={() => navigate('/function-manager')}
+                  >
+                    <ExternalLink className="w-3 h-3 mr-1" />
+                    Configure Functions
+                  </Button>
+                )}
+              </div>
+              <div className="p-4 border rounded-lg bg-green-50">
+                <div className="flex items-center gap-2 mb-2">
+                  <Settings className="w-4 h-4 text-green-600" />
+                  <span className="font-medium">Sender Accounts</span>
+                </div>
+                <div className="text-2xl font-bold text-green-600 mb-1">
+                  {useAccountSelection ? selectedAccounts.length : Math.min(numAccountsToUse, activeAccounts.length)}
+                </div>
+                <p className="text-sm text-gray-600">
+                  Will be used
                 </p>
               </div>
             </div>

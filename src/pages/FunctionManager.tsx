@@ -30,6 +30,15 @@ const FunctionManager = () => {
   });
 
   const handleAddFunction = async () => {
+    if (!currentOrganization?.id) {
+      toast({
+        title: "Error",
+        description: "Please select an organization first",
+        variant: "destructive"
+      });
+      return;
+    }
+
     if (!newFunction.name.trim() || !newFunction.url.trim()) {
       toast({
         title: "Validation Error",
@@ -51,26 +60,38 @@ const FunctionManager = () => {
       return;
     }
 
-    const result = await createFunction(newFunction);
-    if (result) {
-      setIsAddDialogOpen(false);
-      setNewFunction({
-        name: '',
-        url: '',
-        enabled: true,
-        region: '',
-        notes: ''
-      });
+    try {
+      const result = await createFunction(newFunction);
+      if (result) {
+        setIsAddDialogOpen(false);
+        setNewFunction({
+          name: '',
+          url: '',
+          enabled: true,
+          region: '',
+          notes: ''
+        });
+      }
+    } catch (error) {
+      console.error('Error adding function:', error);
     }
   };
 
   const handleToggleFunction = async (functionId: string, enabled: boolean) => {
-    await updateFunction(functionId, { enabled });
+    try {
+      await updateFunction(functionId, { enabled });
+    } catch (error) {
+      console.error('Error toggling function:', error);
+    }
   };
 
   const handleDeleteFunction = async (functionId: string, functionName: string) => {
     if (window.confirm(`Are you sure you want to delete "${functionName}"?`)) {
-      await deleteFunction(functionId);
+      try {
+        await deleteFunction(functionId);
+      } catch (error) {
+        console.error('Error deleting function:', error);
+      }
     }
   };
 
@@ -107,6 +128,19 @@ const FunctionManager = () => {
     if (!lastUsed) return 'Never';
     return new Date(lastUsed).toLocaleString();
   };
+
+  if (!currentOrganization) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-purple-50 p-6">
+        <div className="max-w-6xl mx-auto space-y-6">
+          <div className="text-center">
+            <h1 className="text-3xl font-bold text-gray-900">Function Manager</h1>
+            <p className="text-red-600 mt-4">Please select an organization to continue.</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-purple-50 p-6">

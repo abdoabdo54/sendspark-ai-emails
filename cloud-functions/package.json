@@ -1,13 +1,13 @@
 
 {
   "name": "send-email-batch-parallel",
-  "version": "2.0.0",
-  "description": "Parallel email batch sender for dynamic multi-function dispatch",
+  "version": "3.0.0",
+  "description": "Parallel email batch sender with rotation and manual account selection for dynamic multi-function dispatch",
   "main": "index.js",
   "type": "commonjs",
   "dependencies": {
     "@google-cloud/functions-framework": "^3.4.0",
-    "@supabase/supabase-js": "^2.39.3",
+    "@supabase/supabase-js": "^2.49.8",
     "nodemailer": "^6.9.8"
   },
   "engines": {
@@ -15,6 +15,8 @@
   },
   "scripts": {
     "start": "functions-framework --target=sendBatch",
-    "deploy": "gcloud functions deploy sendBatch --runtime nodejs20 --trigger-http --allow-unauthenticated --memory=1GB --timeout=540s --max-instances=10"
+    "deploy": "gcloud functions deploy sendBatch --runtime nodejs20 --trigger-http --allow-unauthenticated --memory=1GB --timeout=540s --max-instances=10",
+    "deploy-fast": "gcloud functions deploy sendBatchFast --runtime nodejs20 --trigger-http --allow-unauthenticated --memory=2GB --timeout=540s --max-instances=20",
+    "deploy-zero": "gcloud functions deploy sendBatchZero --runtime nodejs20 --trigger-http --allow-unauthenticated --memory=4GB --timeout=540s --max-instances=50"
   }
 }
