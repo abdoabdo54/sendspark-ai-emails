@@ -337,10 +337,28 @@ export const useCampaigns = (organizationId?: string) => {
       const googleCloudConfig = cfg.googleCloudFunctions;
       
       if (!googleCloudConfig?.enabled || !googleCloudConfig.functionUrls?.length) {
-        throw new Error('Google Cloud Functions not configured or no function URLs provided');
+        // Fallback: Fetch enabled functions from database
+        const { data: enabledFunctions, error } = await supabase
+          .from('gcf_functions')
+          .select('*')
+          .eq('organization_id', organizationId)
+          .eq('enabled', true);
+
+        if (error || !enabledFunctions || enabledFunctions.length === 0) {
+          throw new Error('No enabled Google Cloud Functions found. Please configure functions in Function Manager.');
+        }
+
+        // Update config with fetched functions
+        googleCloudConfig.enabled = true;
+        googleCloudConfig.functionUrls = enabledFunctions.map(func => func.url);
+        googleCloudConfig.functionIds = enabledFunctions.map(func => func.id);
+        googleCloudConfig.parallelDispatch = true;
+        googleCloudConfig.zeroDelayMode = cfg.sendingMode === 'zero-delay';
       }
 
       const functionUrls = googleCloudConfig.functionUrls.filter((url: string) => url.trim());
+      const functionIds = googleCloudConfig.functionIds || [];
+      
       if (functionUrls.length === 0) {
         throw new Error('No valid function URLs found');
       }
@@ -362,6 +380,7 @@ export const useCampaigns = (organizationId?: string) => {
         
         if (limit > 0) {
           const functionUrl = functionUrls[i];
+          const functionId = functionIds[i];
           
           console.log(`📤 Function ${i + 1}: ${functionUrl} (skip: ${skip}, limit: ${limit})`);
           
@@ -381,6 +400,19 @@ export const useCampaigns = (organizationId?: string) => {
               testAfterCount: cfg.testAfter?.count || 500,
               useTracking: cfg.tracking?.enabled || false
             })
+          }).then(async (response) => {
+            // Update last_used timestamp for this function
+            if (functionId) {
+              try {
+                await supabase
+                  .from('gcf_functions')
+                  .update({ last_used: new Date().toISOString() })
+                  .eq('id', functionId);
+              } catch (error) {
+                console.error('Error updating function last_used:', error);
+              }
+            }
+            return response;
           });
           
           requests.push(requestPromise);

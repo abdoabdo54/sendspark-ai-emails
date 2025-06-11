@@ -455,6 +455,45 @@ export type Database = {
           },
         ]
       }
+      gcf_functions: {
+        Row: {
+          created_at: string
+          enabled: boolean
+          id: string
+          last_used: string | null
+          name: string
+          notes: string | null
+          organization_id: string
+          region: string | null
+          updated_at: string
+          url: string
+        }
+        Insert: {
+          created_at?: string
+          enabled?: boolean
+          id?: string
+          last_used?: string | null
+          name: string
+          notes?: string | null
+          organization_id: string
+          region?: string | null
+          updated_at?: string
+          url: string
+        }
+        Update: {
+          created_at?: string
+          enabled?: boolean
+          id?: string
+          last_used?: string | null
+          name?: string
+          notes?: string | null
+          organization_id?: string
+          region?: string | null
+          updated_at?: string
+          url?: string
+        }
+        Relationships: []
+      }
       list_subscribers: {
         Row: {
           id: string

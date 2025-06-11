@@ -9,6 +9,7 @@ import { SimpleOrganizationProvider } from "@/contexts/SimpleOrganizationContext
 import Index from "./pages/Index";
 import Campaigns from "./pages/Campaigns";
 import SmartConfig from "./pages/SmartConfig";
+import FunctionManager from "./pages/FunctionManager";
 import AuthForm from "./components/AuthForm";
 import { useState } from "react";
 
@@ -38,6 +39,7 @@ const AppContent = () => {
       <Route path="/" element={<Index activeTab={activeTab} onTabChange={setActiveTab} />} />
       <Route path="/campaigns" element={<Campaigns />} />
       <Route path="/smart-config" element={<SmartConfig />} />
+      <Route path="/function-manager" element={<FunctionManager />} />
     </Routes>
   );
 };

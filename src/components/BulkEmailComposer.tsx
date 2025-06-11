@@ -10,23 +10,27 @@ import { Separator } from '@/components/ui/separator';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Clock, Zap, Settings, AlertTriangle, Rocket, Plus, Minus } from 'lucide-react';
+import { Clock, Zap, Settings, AlertTriangle, Rocket, ExternalLink } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { useEmailAccounts } from '@/hooks/useEmailAccounts';
 import { useSimpleOrganizations } from '@/contexts/SimpleOrganizationContext';
+import { useGcfFunctions } from '@/hooks/useGcfFunctions';
 import CSVDataImporter from './CSVDataImporter';
 import GoogleSheetsImport from './GoogleSheetsImport';
 import AISubjectGenerator from './AISubjectGenerator';
 import TestAfterSection from './TestAfterSection';
 import TrackingLinksManager from './TrackingLinksManager';
+import { useNavigate } from 'react-router-dom';
 
 interface BulkEmailComposerProps {
   onSend: (data: any) => void;
 }
 
 const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
+  const navigate = useNavigate();
   const { currentOrganization } = useSimpleOrganizations();
   const { accounts, loading: accountsLoading } = useEmailAccounts(currentOrganization?.id);
+  const { functions, loading: functionsLoading } = useGcfFunctions(currentOrganization?.id);
   
   // Form state
   const [fromName, setFromName] = useState('');
@@ -47,11 +51,6 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
   const [useAccountSelection, setUseAccountSelection] = useState(false);
   const [selectedAccounts, setSelectedAccounts] = useState<string[]>([]);
   const [numAccountsToUse, setNumAccountsToUse] = useState(10);
-  
-  // Google Cloud Functions configuration - support multiple URLs
-  const [useGoogleCloudFunctions, setUseGoogleCloudFunctions] = useState(false);
-  const [googleCloudFunctionUrls, setGoogleCloudFunctionUrls] = useState<string[]>(['']);
-  const [numFunctionsToUse, setNumFunctionsToUse] = useState(5);
 
   // Tracking state
   const [trackingEnabled, setTrackingEnabled] = useState(false);
@@ -65,7 +64,6 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
       const smartConfig = localStorage.getItem('smartConfig');
       if (smartConfig) {
         const config = JSON.parse(smartConfig);
-        if (config.recommendedFunctions) setNumFunctionsToUse(config.recommendedFunctions);
         if (config.recommendedAccounts) setNumAccountsToUse(config.recommendedAccounts);
       }
     } catch (error) {
@@ -74,12 +72,13 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
   }, []);
 
   const activeAccounts = accounts.filter(account => account.is_active);
+  const enabledFunctions = functions.filter(func => func.enabled);
   const recipientCount = recipients.split(',').filter(email => email.trim()).length;
 
   // Calculate estimated time
   useEffect(() => {
-    if (recipientCount > 0 && numFunctionsToUse > 0) {
-      const emailsPerFunction = Math.ceil(recipientCount / numFunctionsToUse);
+    if (recipientCount > 0 && enabledFunctions.length > 0) {
+      const emailsPerFunction = Math.ceil(recipientCount / enabledFunctions.length);
       const estimatedSeconds = sendingMode === 'zero-delay' 
         ? Math.ceil(emailsPerFunction / 1000) // Ultra-fast estimate for zero delay
         : Math.ceil(emailsPerFunction / 200); // Conservative estimate
@@ -87,23 +86,7 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
     } else {
       setEstimatedTime('');
     }
-  }, [recipientCount, numFunctionsToUse, sendingMode]);
-
-  const addFunctionUrl = () => {
-    setGoogleCloudFunctionUrls([...googleCloudFunctionUrls, '']);
-  };
-
-  const removeFunctionUrl = (index: number) => {
-    if (googleCloudFunctionUrls.length > 1) {
-      setGoogleCloudFunctionUrls(googleCloudFunctionUrls.filter((_, i) => i !== index));
-    }
-  };
-
-  const updateFunctionUrl = (index: number, value: string) => {
-    const updated = [...googleCloudFunctionUrls];
-    updated[index] = value;
-    setGoogleCloudFunctionUrls(updated);
-  };
+  }, [recipientCount, enabledFunctions.length, sendingMode]);
 
   const handleAccountToggle = (accountId: string) => {
     setSelectedAccounts(prev => 
@@ -184,16 +167,13 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
       return false;
     }
 
-    if ((sendingMode === 'fast' || sendingMode === 'zero-delay') && useGoogleCloudFunctions) {
-      const validUrls = googleCloudFunctionUrls.filter(url => url.trim());
-      if (validUrls.length === 0) {
-        toast({
-          title: "Validation Error",
-          description: "At least one Google Cloud Function URL is required for Fast and Zero Delay modes",
-          variant: "destructive"
-        });
-        return false;
-      }
+    if ((sendingMode === 'fast' || sendingMode === 'zero-delay') && enabledFunctions.length === 0) {
+      toast({
+        title: "Validation Error",
+        description: "No enabled Cloud Functions found. Please configure at least one function in Function Manager.",
+        variant: "destructive"
+      });
+      return false;
     }
 
     if (useTestAfter && !testAfterEmail.trim()) {
@@ -219,7 +199,6 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
       sendingMode,
       selectedAccounts: useAccountSelection ? selectedAccounts : [],
       numAccountsToUse,
-      numFunctionsToUse,
       
       // Test-After configuration
       testAfter: {
@@ -243,12 +222,12 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
       config.maxParallelSends = true;
     }
 
-    // Google Cloud Functions config for parallel dispatch
-    if ((sendingMode === 'fast' || sendingMode === 'zero-delay') && useGoogleCloudFunctions) {
-      const validUrls = googleCloudFunctionUrls.filter(url => url.trim());
+    // Google Cloud Functions config for parallel dispatch using registered functions
+    if ((sendingMode === 'fast' || sendingMode === 'zero-delay') && enabledFunctions.length > 0) {
       config.googleCloudFunctions = {
         enabled: true,
-        functionUrls: validUrls,
+        functionUrls: enabledFunctions.map(func => func.url),
+        functionIds: enabledFunctions.map(func => func.id), // Store function IDs for last_used updates
         parallelDispatch: true,
         zeroDelayMode: sendingMode === 'zero-delay'
       };
@@ -279,6 +258,31 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-6">
+            {/* Function Status */}
+            {(sendingMode === 'fast' || sendingMode === 'zero-delay') && (
+              <Alert className={enabledFunctions.length > 0 ? "border-green-200 bg-green-50" : "border-red-200 bg-red-50"}>
+                <Settings className="h-4 w-4" />
+                <AlertDescription>
+                  {enabledFunctions.length > 0 ? (
+                    <span className="text-green-800">
+                      <strong>{enabledFunctions.length} Cloud Functions</strong> ready for parallel dispatch
+                    </span>
+                  ) : (
+                    <div className="text-red-800">
+                      <strong>No Cloud Functions configured.</strong>{' '}
+                      <Button 
+                        variant="link" 
+                        className="p-0 h-auto text-red-800 underline"
+                        onClick={() => navigate('/function-manager')}
+                      >
+                        Configure functions here
+                      </Button>
+                    </div>
+                  )}
+                </AlertDescription>
+              </Alert>
+            )}
+
             {/* Sending Mode Selection */}
             <div className="space-y-4">
               <Label className="text-base font-medium">Sending Mode</Label>
@@ -362,11 +366,11 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
               </div>
             </div>
 
-            {estimatedTime && (
+            {estimatedTime && enabledFunctions.length > 0 && (
               <Alert className="border-blue-200 bg-blue-50">
                 <AlertTriangle className="h-4 w-4 text-blue-600" />
                 <AlertDescription className="text-blue-800">
-                  <strong>Estimated Delivery Time:</strong> {estimatedTime} using {numFunctionsToUse} functions and {numAccountsToUse} accounts
+                  <strong>Estimated Delivery Time:</strong> {estimatedTime} using {enabledFunctions.length} functions and {numAccountsToUse} accounts
                 </AlertDescription>
               </Alert>
             )}
@@ -426,87 +430,59 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
             <div className="space-y-6">
               <h3 className="text-lg font-medium">Parallel Sending Configuration</h3>
 
-              {/* Function Count */}
+              {/* Function and Account Summary */}
               <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="numFunctions">Number of Cloud Functions</Label>
-                  <Input
-                    id="numFunctions"
-                    type="number"
-                    min={1}
-                    max={50}
-                    value={numFunctionsToUse}
-                    onChange={(e) => setNumFunctionsToUse(parseInt(e.target.value) || 1)}
-                  />
-                  <p className="text-sm text-gray-600 mt-1">
-                    More functions = faster sending
+                <div className="p-4 border rounded-lg bg-blue-50">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Settings className="w-4 h-4 text-blue-600" />
+                    <span className="font-medium">Cloud Functions</span>
+                  </div>
+                  <div className="text-2xl font-bold text-blue-600 mb-1">
+                    {enabledFunctions.length}
+                  </div>
+                  <p className="text-sm text-gray-600">
+                    Enabled functions
                   </p>
+                  {enabledFunctions.length === 0 && (
+                    <Button 
+                      variant="link" 
+                      className="p-0 h-auto text-sm"
+                      onClick={() => navigate('/function-manager')}
+                    >
+                      <ExternalLink className="w-3 h-3 mr-1" />
+                      Configure Functions
+                    </Button>
+                  )}
                 </div>
-                <div>
-                  <Label htmlFor="numAccounts">Number of Sender Accounts</Label>
-                  <Input
-                    id="numAccounts"
-                    type="number"
-                    min={1}
-                    max={100}
-                    value={numAccountsToUse}
-                    onChange={(e) => setNumAccountsToUse(parseInt(e.target.value) || 1)}
-                  />
-                  <p className="text-sm text-gray-600 mt-1">
-                    Rotates through available accounts
+                <div className="p-4 border rounded-lg bg-green-50">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Settings className="w-4 h-4 text-green-600" />
+                    <span className="font-medium">Sender Accounts</span>
+                  </div>
+                  <div className="text-2xl font-bold text-green-600 mb-1">
+                    {Math.min(numAccountsToUse, activeAccounts.length)}
+                  </div>
+                  <p className="text-sm text-gray-600">
+                    Will be used
                   </p>
                 </div>
               </div>
 
-              {/* Google Cloud Functions URLs */}
-              {(sendingMode === 'fast' || sendingMode === 'zero-delay') && (
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <Label>Google Cloud Function URLs *</Label>
-                    <Switch
-                      checked={useGoogleCloudFunctions}
-                      onCheckedChange={setUseGoogleCloudFunctions}
-                    />
-                  </div>
-                  
-                  {useGoogleCloudFunctions && (
-                    <div className="space-y-3">
-                      <p className="text-sm text-gray-600">
-                        Add URLs for your deployed sendBatch functions (sendBatch1, sendBatch2, etc.)
-                      </p>
-                      {googleCloudFunctionUrls.map((url, index) => (
-                        <div key={index} className="flex items-center space-x-2">
-                          <Input
-                            value={url}
-                            onChange={(e) => updateFunctionUrl(index, e.target.value)}
-                            placeholder={`https://region-project.cloudfunctions.net/sendBatch${index + 1}`}
-                            className="flex-1"
-                          />
-                          {googleCloudFunctionUrls.length > 1 && (
-                            <Button 
-                              type="button" 
-                              variant="outline" 
-                              size="sm" 
-                              onClick={() => removeFunctionUrl(index)}
-                            >
-                              <Minus className="w-4 h-4" />
-                            </Button>
-                          )}
-                        </div>
-                      ))}
-                      <Button 
-                        type="button" 
-                        variant="outline" 
-                        size="sm" 
-                        onClick={addFunctionUrl}
-                      >
-                        <Plus className="w-4 h-4 mr-2" />
-                        Add Function URL
-                      </Button>
-                    </div>
-                  )}
-                </div>
-              )}
+              {/* Account Count */}
+              <div>
+                <Label htmlFor="numAccounts">Number of Sender Accounts</Label>
+                <Input
+                  id="numAccounts"
+                  type="number"
+                  min={1}
+                  max={activeAccounts.length}
+                  value={numAccountsToUse}
+                  onChange={(e) => setNumAccountsToUse(parseInt(e.target.value) || 1)}
+                />
+                <p className="text-sm text-gray-600 mt-1">
+                  Rotates through available accounts (max: {activeAccounts.length})
+                </p>
+              </div>
             </div>
 
             <Separator />
@@ -543,7 +519,7 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
               type="submit" 
               className="w-full" 
               size="lg"
-              disabled={accountsLoading}
+              disabled={accountsLoading || functionsLoading}
             >
               {sendingMode === 'zero-delay' ? (
                 <>
