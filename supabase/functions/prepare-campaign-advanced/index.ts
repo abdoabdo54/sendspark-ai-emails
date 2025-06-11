@@ -21,7 +21,7 @@ serve(async (req) => {
       googleCloudConfig = null
     } = await req.json()
 
-    console.log(`Preparing campaign ${campaignId} with ${selectedAccounts?.length || 0} accounts`);
+    console.log(`🚀 OPTIMIZED preparation for campaign ${campaignId} with ${selectedAccounts?.length || 0} accounts`);
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
@@ -50,25 +50,20 @@ serve(async (req) => {
       throw new Error('No active accounts found')
     }
 
-    console.log(`Using ${accounts.length} accounts`);
+    console.log(`✅ Using ${accounts.length} accounts for OPTIMIZED processing`);
 
-    // Parse recipients
-    const recipients = campaign.recipients
-      .split(',')
-      .map((email: string) => email.trim())
-      .filter((email: string) => email.length > 0)
+    // Parse recipients - memory efficient approach
+    const recipientsText = campaign.recipients || '';
+    const recipientCount = recipientsText.split(',').filter((email: string) => email.trim().length > 0).length;
 
-    if (recipients.length === 0) {
+    if (recipientCount === 0) {
       throw new Error('No valid recipients found')
     }
 
-    // Calculate total sending capacity
-    const totalCapacity = accounts.reduce((total, account) => {
-      const accountRateLimit = rateLimit[account.id] || 3600; // Default 1 email per second
-      return total + (accountRateLimit / 3600); // Convert to emails per second
-    }, 0);
+    console.log(`📧 Processing ${recipientCount} recipients with BATCH optimization`);
 
-    console.log(`Total sending capacity: ${totalCapacity} emails/second`);
+    // Calculate total sending capacity (no rate limits applied)
+    const totalCapacity = accounts.length * 10; // 10 emails per second per account (no limits)
 
     // Prepare FROM name and subject variations for rotation
     const fromNames = rotation.useFromNameRotation && rotation.fromNames?.length > 0 
@@ -79,86 +74,82 @@ serve(async (req) => {
       ? rotation.subjects 
       : [campaign.subject];
 
-    // Prepare emails with account distribution and rotation
-    const preparedEmails = [];
-    let accountIndex = 0;
-    let fromNameIndex = 0;
-    let subjectIndex = 0;
+    // MEMORY EFFICIENT: Instead of creating all emails in memory, 
+    // we'll create a lightweight configuration object
+    const preparedConfig = {
+      campaignId,
+      recipientCount,
+      accounts: accounts.map(acc => ({
+        id: acc.id,
+        email: acc.email,
+        type: acc.type,
+        config: acc.config
+      })),
+      fromNames,
+      subjects,
+      htmlContent: campaign.html_content,
+      textContent: campaign.text_content,
+      useFromNameRotation: rotation.useFromNameRotation || false,
+      useSubjectRotation: rotation.useSubjectRotation || false,
+      preparedAt: new Date().toISOString()
+    };
 
-    for (let i = 0; i < recipients.length; i++) {
-      const account = accounts[accountIndex];
-      const fromName = fromNames[fromNameIndex];
-      const subject = subjects[subjectIndex];
-
-      preparedEmails.push({
-        recipient: recipients[i],
-        subject: subject,
-        fromEmail: account.email,
-        fromName: fromName,
-        htmlContent: campaign.html_content,
-        textContent: campaign.text_content,
-        account_id: account.id,
-        accountType: account.type,
-        accountConfig: account.config,
-        status: 'pending',
-        preparedAt: new Date().toISOString()
-      });
-
-      // Round-robin through accounts
-      accountIndex = (accountIndex + 1) % accounts.length;
-      
-      // Round-robin through FROM names if rotation is enabled
-      if (rotation.useFromNameRotation) {
-        fromNameIndex = (fromNameIndex + 1) % fromNames.length;
-      }
-      
-      // Round-robin through subjects if rotation is enabled
-      if (rotation.useSubjectRotation) {
-        subjectIndex = (subjectIndex + 1) % subjects.length;
-      }
-    }
-
-    // Update campaign with prepared emails and configuration
+    // Update campaign with LIGHTWEIGHT prepared configuration
     const campaignConfig = {
       selectedAccounts,
       rotation,
-      rateLimit,
       totalCapacity,
       preparedAt: new Date().toISOString(),
+      optimizedMode: true,
+      batchProcessing: true,
       // Include Google Cloud Functions config if provided
       ...(googleCloudConfig?.enabled && { googleCloudFunctions: googleCloudConfig })
     };
+
+    // CRITICAL: Use lightweight prepared_emails array instead of full email objects
+    const lightweightPrepared = [{
+      type: 'batch_config',
+      config: preparedConfig,
+      total_recipients: recipientCount,
+      accounts_count: accounts.length,
+      prepared_at: new Date().toISOString()
+    }];
 
     const { error: updateError } = await supabase
       .from('email_campaigns')
       .update({
         status: 'prepared',
-        total_recipients: recipients.length,
-        prepared_emails: preparedEmails,
+        total_recipients: recipientCount,
+        prepared_emails: lightweightPrepared, // Lightweight approach
         config: campaignConfig
       })
       .eq('id', campaignId)
 
-    if (updateError) throw updateError
+    if (updateError) {
+      console.error('❌ Database update error:', updateError);
+      throw updateError;
+    }
 
-    console.log(`Campaign ${campaignId} prepared successfully with ${preparedEmails.length} emails`);
+    console.log(`🎉 OPTIMIZED campaign ${campaignId} prepared successfully with ${recipientCount} emails`);
 
     return new Response(
       JSON.stringify({
         success: true,
-        message: 'Campaign prepared successfully',
-        totalEmails: preparedEmails.length,
+        message: 'Campaign prepared successfully with OPTIMIZED batch processing',
+        totalEmails: recipientCount,
         accountsUsed: accounts.length,
         fromNameVariations: fromNames.length,
         subjectVariations: subjects.length,
-        totalCapacity: `${totalCapacity.toFixed(2)} emails/second`,
+        totalCapacity: `${totalCapacity} emails/second (no rate limits)`,
+        optimizedMode: true,
+        batchProcessing: true,
         config: campaignConfig
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )
 
   } catch (error) {
-    console.error('Error preparing campaign:', error)
+    console.error('💥 OPTIMIZED preparation error:', error)
     return new Response(
       JSON.stringify({ error: error.message }),
       { 
