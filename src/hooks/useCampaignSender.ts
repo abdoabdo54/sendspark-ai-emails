@@ -1,5 +1,6 @@
 
 import { useGcfFunctions } from './useGcfFunctions';
+import { useEmailAccounts } from './useEmailAccounts';
 import { supabase } from '@/integrations/supabase/client';
 
 export interface CampaignData {
@@ -14,35 +15,71 @@ export interface CampaignData {
 
 export const useCampaignSender = (organizationId?: string) => {
   const { functions } = useGcfFunctions(organizationId);
+  const { accounts } = useEmailAccounts(organizationId);
   
-  // Get available functions - either configured functions or fallback
-  const getAvailableFunctions = () => {
+  const getAvailableResources = () => {
     const enabledFunctions = functions.filter(func => func.enabled);
+    const activeAccounts = accounts.filter(account => account.is_active);
     
-    if (enabledFunctions.length > 0) {
-      return enabledFunctions;
+    return {
+      functions: enabledFunctions,
+      accounts: activeAccounts,
+      hasFunctions: enabledFunctions.length > 0,
+      hasAccounts: activeAccounts.length > 0
+    };
+  };
+
+  const calculateCampaignSlicing = (recipients: string[], config: any) => {
+    const { functions: enabledFunctions } = getAvailableResources();
+    
+    if (enabledFunctions.length === 0) {
+      throw new Error('No enabled Cloud Functions available');
     }
+
+    const totalRecipients = recipients.length;
+    const emailsPerFunction = Math.ceil(totalRecipients / enabledFunctions.length);
     
-    // Fallback to legacy function
-    return [{
-      id: 'legacy',
-      name: 'Legacy Function',
-      url: 'https://us-central1-alpin-4d67f.cloudfunctions.net/sendEmailCampaign',
-      enabled: true
-    }];
+    // Create slices for each function
+    const slices = enabledFunctions.map((func, index) => {
+      const skip = index * emailsPerFunction;
+      const limit = Math.min(emailsPerFunction, totalRecipients - skip);
+      
+      return {
+        functionId: func.id,
+        functionUrl: func.url,
+        functionName: func.name,
+        skip,
+        limit,
+        recipients: recipients.slice(skip, skip + limit)
+      };
+    }).filter(slice => slice.limit > 0);
+
+    return slices;
   };
 
   const sendCampaign = async (campaignData: CampaignData) => {
     try {
-      console.log('Sending campaign with data:', campaignData);
+      console.log('🚀 Starting parallel campaign dispatch...');
       
-      // Create campaign in database first
+      // Parse recipients
+      const recipients = campaignData.recipients
+        .split(',')
+        .map(email => email.trim())
+        .filter(email => email);
+
+      if (recipients.length === 0) {
+        throw new Error('No valid recipients found');
+      }
+
+      // Create campaign in database
       const { data: campaign, error: campaignError } = await supabase
         .from('email_campaigns')
         .insert([{
           ...campaignData,
           organization_id: organizationId,
-          status: 'draft'
+          status: 'processing',
+          total_recipients: recipients.length,
+          prepared_emails: recipients
         }])
         .select()
         .single();
@@ -51,24 +88,92 @@ export const useCampaignSender = (organizationId?: string) => {
         throw new Error(`Failed to create campaign: ${campaignError.message}`);
       }
 
-      // Send via the appropriate function
-      const { data: result, error: sendError } = await supabase.functions.invoke('send-campaign', {
-        body: { campaignId: campaign.id }
+      console.log('📊 Campaign created with ID:', campaign.id);
+
+      // Calculate slicing strategy
+      const slices = calculateCampaignSlicing(recipients, campaignData.config);
+      console.log(`📈 Campaign split into ${slices.length} parallel slices`);
+
+      // Dispatch to all functions in parallel
+      const dispatchPromises = slices.map(async (slice, index) => {
+        const payload = {
+          campaignId: campaign.id,
+          slice: {
+            skip: slice.skip,
+            limit: slice.limit,
+            recipients: slice.recipients
+          },
+          campaignData: {
+            from_name: campaignData.from_name,
+            subject: campaignData.subject,
+            html_content: campaignData.html_content,
+            text_content: campaignData.text_content,
+            config: campaignData.config
+          },
+          accounts: getAvailableResources().accounts,
+          organizationId
+        };
+
+        console.log(`🎯 Dispatching slice ${index + 1} to ${slice.functionName} (${slice.limit} emails)`);
+
+        try {
+          const response = await fetch(slice.functionUrl, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(payload)
+          });
+
+          if (!response.ok) {
+            throw new Error(`Function ${slice.functionName} returned ${response.status}`);
+          }
+
+          const result = await response.json();
+          console.log(`✅ Slice ${index + 1} completed successfully`);
+          return result;
+        } catch (error) {
+          console.error(`❌ Slice ${index + 1} failed:`, error);
+          throw error;
+        }
       });
 
-      if (sendError) {
-        throw new Error(`Failed to send campaign: ${sendError.message}`);
-      }
+      // Wait for all slices to complete
+      const results = await Promise.allSettled(dispatchPromises);
+      
+      // Count successful vs failed slices
+      const successful = results.filter(r => r.status === 'fulfilled').length;
+      const failed = results.filter(r => r.status === 'rejected').length;
 
-      return result;
+      console.log(`📈 Campaign dispatch complete: ${successful} successful, ${failed} failed`);
+
+      // Update campaign status
+      await supabase
+        .from('email_campaigns')
+        .update({
+          status: failed === 0 ? 'completed' : 'partially_completed',
+          sent_at: new Date().toISOString(),
+          completed_at: new Date().toISOString()
+        })
+        .eq('id', campaign.id);
+
+      return {
+        campaignId: campaign.id,
+        totalSlices: slices.length,
+        successful,
+        failed,
+        results
+      };
+
     } catch (error) {
-      console.error('Error sending campaign:', error);
+      console.error('❌ Campaign dispatch failed:', error);
       throw error;
     }
   };
 
   return {
-    availableFunctions: getAvailableFunctions(),
-    sendCampaign
+    ...getAvailableResources(),
+    sendCampaign,
+    calculateCampaignSlicing
   };
 };

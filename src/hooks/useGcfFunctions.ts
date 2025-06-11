@@ -9,9 +9,6 @@ export interface GcfFunction {
   name: string;
   url: string;
   enabled: boolean;
-  last_used?: string;
-  region?: string;
-  notes?: string;
   created_at: string;
   updated_at: string;
 }
@@ -36,15 +33,7 @@ export const useGcfFunctions = (organizationId?: string) => {
         .eq('organization_id', organizationId)
         .order('created_at', { ascending: false });
 
-      if (error) {
-        console.error('Error fetching GCF functions:', error);
-        toast({
-          title: "Error",
-          description: "Failed to load Cloud Functions",
-          variant: "destructive"
-        });
-        return;
-      }
+      if (error) throw error;
       
       setFunctions(data || []);
     } catch (error) {
@@ -59,7 +48,7 @@ export const useGcfFunctions = (organizationId?: string) => {
     }
   };
 
-  const createFunction = async (functionData: Omit<GcfFunction, 'id' | 'created_at' | 'updated_at' | 'organization_id'>) => {
+  const createFunction = async (functionData: { name: string; url: string; enabled?: boolean }) => {
     if (!organizationId) {
       toast({
         title: "Error",
@@ -74,20 +63,13 @@ export const useGcfFunctions = (organizationId?: string) => {
         .from('gcf_functions')
         .insert([{
           ...functionData,
-          organization_id: organizationId
+          organization_id: organizationId,
+          enabled: functionData.enabled ?? true
         }])
         .select()
         .single();
 
-      if (error) {
-        console.error('Error creating GCF function:', error);
-        toast({
-          title: "Error",
-          description: `Failed to add Cloud Function: ${error.message}`,
-          variant: "destructive"
-        });
-        return null;
-      }
+      if (error) throw error;
 
       setFunctions(prev => [data, ...prev]);
       toast({
@@ -107,7 +89,7 @@ export const useGcfFunctions = (organizationId?: string) => {
     }
   };
 
-  const updateFunction = async (functionId: string, updates: Partial<GcfFunction>) => {
+  const updateFunction = async (functionId: string, updates: Partial<Pick<GcfFunction, 'name' | 'url' | 'enabled'>>) => {
     try {
       const { data, error } = await supabase
         .from('gcf_functions')
@@ -158,6 +140,38 @@ export const useGcfFunctions = (organizationId?: string) => {
     }
   };
 
+  const testFunction = async (url: string, name: string) => {
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ test: true, ping: 'health-check' })
+      });
+      
+      if (response.ok) {
+        toast({
+          title: "✅ Health Check Passed",
+          description: `${name} is responding correctly`,
+        });
+        return true;
+      } else {
+        toast({
+          title: "❌ Health Check Failed",
+          description: `${name} returned status ${response.status}`,
+          variant: "destructive"
+        });
+        return false;
+      }
+    } catch (error: any) {
+      toast({
+        title: "❌ Health Check Failed",
+        description: `Cannot reach ${name}: ${error.message}`,
+        variant: "destructive"
+      });
+      return false;
+    }
+  };
+
   useEffect(() => {
     fetchFunctions();
   }, [organizationId]);
@@ -168,6 +182,7 @@ export const useGcfFunctions = (organizationId?: string) => {
     createFunction,
     updateFunction,
     deleteFunction,
+    testFunction,
     refetch: fetchFunctions
   };
 };

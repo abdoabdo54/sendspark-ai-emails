@@ -10,9 +10,8 @@ import { Separator } from '@/components/ui/separator';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Clock, Zap, Settings, AlertTriangle, Rocket, ExternalLink } from 'lucide-react';
+import { Clock, Zap, Settings, AlertTriangle, Rocket, ExternalLink, Calculator } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
-import { useEmailAccounts } from '@/hooks/useEmailAccounts';
 import { useSimpleOrganizations } from '@/contexts/SimpleOrganizationContext';
 import { useCampaignSender } from '@/hooks/useCampaignSender';
 import CSVDataImporter from './CSVDataImporter';
@@ -28,8 +27,7 @@ interface BulkEmailComposerProps {
 const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
   const navigate = useNavigate();
   const { currentOrganization } = useSimpleOrganizations();
-  const { accounts, loading: accountsLoading } = useEmailAccounts(currentOrganization?.id);
-  const { availableFunctions, sendCampaign } = useCampaignSender(currentOrganization?.id);
+  const { functions, accounts, hasFunctions, hasAccounts, sendCampaign } = useCampaignSender(currentOrganization?.id);
   
   // Form state
   const [fromName, setFromName] = useState('');
@@ -46,30 +44,40 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
   const [testAfterEmail, setTestAfterEmail] = useState('');
   const [testAfterCount, setTestAfterCount] = useState(500);
   
-  // Account selection state
-  const [useAccountSelection, setUseAccountSelection] = useState(false);
-  const [selectedAccounts, setSelectedAccounts] = useState<string[]>([]);
-  const [numAccountsToUse, setNumAccountsToUse] = useState(10);
-
   // Tracking state
   const [trackingEnabled, setTrackingEnabled] = useState(false);
 
-  // Subject and From rotation
-  const [rotateSubjects, setRotateSubjects] = useState(false);
-  const [subjectVariations, setSubjectVariations] = useState('');
-  const [rotateFromNames, setRotateFromNames] = useState(false);
-  const [fromNameVariations, setFromNameVariations] = useState('');
+  // SmartConfig state
+  const [smartConfig, setSmartConfig] = useState<any>(null);
+  const [estimatedTime, setEstimatedTime] = useState('');
 
-  const activeAccounts = accounts.filter(account => account.is_active);
   const recipientCount = recipients.split(',').filter(email => email.trim()).length;
 
-  const handleAccountToggle = (accountId: string) => {
-    setSelectedAccounts(prev => 
-      prev.includes(accountId) 
-        ? prev.filter(id => id !== accountId)
-        : [...prev, accountId]
-    );
-  };
+  // Load SmartConfig on mount
+  useEffect(() => {
+    try {
+      const savedConfig = localStorage.getItem('smartConfig');
+      if (savedConfig) {
+        const config = JSON.parse(savedConfig);
+        setSmartConfig(config);
+      }
+    } catch (error) {
+      console.error('Error loading smart config:', error);
+    }
+  }, []);
+
+  // Calculate estimated time
+  useEffect(() => {
+    if (recipientCount > 0 && functions.length > 0) {
+      const emailsPerFunction = Math.ceil(recipientCount / functions.length);
+      const estimatedSeconds = sendingMode === 'zero-delay' 
+        ? Math.ceil(emailsPerFunction / 1000) 
+        : Math.ceil(emailsPerFunction / 200);
+      setEstimatedTime(`~${estimatedSeconds} seconds`);
+    } else {
+      setEstimatedTime('');
+    }
+  }, [recipientCount, functions.length, sendingMode]);
 
   const handleCSVImport = (data: Array<{ [key: string]: any }>) => {
     const emails = data.map(row => {
@@ -133,10 +141,19 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
       return false;
     }
 
-    if (activeAccounts.length === 0) {
+    if (!hasFunctions) {
       toast({
         title: "Validation Error",
-        description: "No active email accounts found. Please add and activate at least one email account.",
+        description: "No Cloud Functions available. Please add functions in Function Manager.",
+        variant: "destructive"
+      });
+      return false;
+    }
+
+    if (!hasAccounts) {
+      toast({
+        title: "Validation Error",
+        description: "No email accounts available. Please add accounts in Settings.",
         variant: "destructive"
       });
       return false;
@@ -161,16 +178,6 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
 
     const config = {
       sendingMode,
-      selectedAccounts: useAccountSelection ? selectedAccounts : [],
-      numAccountsToUse,
-      subjectRotation: {
-        enabled: rotateSubjects,
-        variations: rotateSubjects ? subjectVariations.split('\n').filter(s => s.trim()) : []
-      },
-      fromNameRotation: {
-        enabled: rotateFromNames,
-        variations: rotateFromNames ? fromNameVariations.split('\n').filter(s => s.trim()) : []
-      },
       testAfter: {
         enabled: useTestAfter,
         email: testAfterEmail,
@@ -180,7 +187,8 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
         enabled: trackingEnabled,
         trackOpens: trackingEnabled,
         trackClicks: trackingEnabled
-      }
+      },
+      smartConfig
     };
 
     const campaignData = {
@@ -189,11 +197,28 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
       recipients,
       html_content: htmlContent,
       text_content: textContent,
-      send_method: 'smtp',
+      send_method: 'parallel_gcf',
       config
     };
 
-    onSend(campaignData);
+    try {
+      console.log('🚀 Starting campaign with parallel dispatch...');
+      const result = await sendCampaign(campaignData);
+      
+      toast({
+        title: "✅ Campaign Dispatched",
+        description: `Campaign sent to ${result.totalSlices} Cloud Functions in parallel`
+      });
+
+      onSend(campaignData);
+    } catch (error: any) {
+      console.error('Campaign failed:', error);
+      toast({
+        title: "❌ Campaign Failed",
+        description: error.message,
+        variant: "destructive"
+      });
+    }
   };
 
   return (
@@ -202,27 +227,72 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Settings className="w-5 h-5" />
-            Email Campaign Composer
+            Parallel Email Campaign Engine
           </CardTitle>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-6">
-            {/* Function Status */}
-            <Alert className="border-blue-200 bg-blue-50">
+            {/* SmartConfig Integration */}
+            {smartConfig && (
+              <Alert className="border-blue-200 bg-blue-50">
+                <Calculator className="h-4 w-4" />
+                <AlertDescription>
+                  <div className="text-blue-800">
+                    <strong>SmartConfig Active:</strong> Optimized for {smartConfig.emailVolume?.toLocaleString()} emails
+                    <br />
+                    <span className="text-sm">
+                      Recommended: {smartConfig.recommendedFunctions} functions, {smartConfig.recommendedAccounts} accounts
+                      • Est. time: {smartConfig.estimatedTime}
+                    </span>
+                  </div>
+                </AlertDescription>
+              </Alert>
+            )}
+
+            {/* Resource Status */}
+            <Alert className={hasFunctions && hasAccounts ? "border-green-200 bg-green-50" : "border-yellow-200 bg-yellow-50"}>
               <Settings className="h-4 w-4" />
               <AlertDescription>
-                <span className="text-blue-800">
-                  <strong>{availableFunctions.length} Function(s)</strong> available for sending
-                </span>
-                <br />
-                <Button 
-                  variant="link" 
-                  className="p-0 h-auto text-blue-800 underline"
-                  onClick={() => navigate('/function-manager')}
-                >
-                  <ExternalLink className="w-3 h-3 mr-1" />
-                  Manage Functions
-                </Button>
+                {hasFunctions && hasAccounts ? (
+                  <span className="text-green-800">
+                    <strong>✅ Ready:</strong> {functions.length} functions, {accounts.length} accounts available
+                    {estimatedTime && ` • ${estimatedTime} estimated`}
+                  </span>
+                ) : (
+                  <div className="text-yellow-800">
+                    <strong>⚠️ Setup Required:</strong>
+                    {!hasFunctions && " Add Cloud Functions"}
+                    {!hasFunctions && !hasAccounts && " • "}
+                    {!hasAccounts && " Add Email Accounts"}
+                    <br />
+                    <div className="flex gap-2 mt-2">
+                      <Button 
+                        variant="link" 
+                        className="p-0 h-auto text-yellow-800 underline"
+                        onClick={() => navigate('/function-manager')}
+                      >
+                        <ExternalLink className="w-3 h-3 mr-1" />
+                        Function Manager
+                      </Button>
+                      <Button 
+                        variant="link" 
+                        className="p-0 h-auto text-yellow-800 underline"
+                        onClick={() => navigate('/settings')}
+                      >
+                        <ExternalLink className="w-3 h-3 mr-1" />
+                        Email Accounts
+                      </Button>
+                      <Button 
+                        variant="link" 
+                        className="p-0 h-auto text-yellow-800 underline"
+                        onClick={() => navigate('/smart-config')}
+                      >
+                        <Calculator className="w-3 h-3 mr-1" />
+                        SmartConfig
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </AlertDescription>
             </Alert>
 
@@ -242,7 +312,7 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
                       <Label htmlFor="controlled" className="font-medium">Controlled Send</Label>
                     </div>
                     <p className="text-sm text-gray-600 mt-1">
-                      Standard sending with rate limits
+                      Standard rate limits
                     </p>
                   </div>
                 </div>
@@ -251,10 +321,10 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
                   <div className="flex-1">
                     <div className="flex items-center gap-2">
                       <Zap className="w-4 h-4 text-orange-600" />
-                      <Label htmlFor="fast" className="font-medium">Fast Send</Label>
+                      <Label htmlFor="fast" className="font-medium">Fast Parallel</Label>
                     </div>
                     <p className="text-sm text-gray-600 mt-1">
-                      High-speed sending
+                      High-speed parallel dispatch
                     </p>
                   </div>
                 </div>
@@ -263,14 +333,23 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
                   <div className="flex-1">
                     <div className="flex items-center gap-2">
                       <Rocket className="w-4 h-4 text-red-600" />
-                      <Label htmlFor="zero-delay" className="font-medium">Maximum Speed</Label>
+                      <Label htmlFor="zero-delay" className="font-medium">Zero Delay</Label>
                     </div>
                     <p className="text-sm text-gray-600 mt-1">
-                      No delays between sends
+                      Maximum speed
                     </p>
                   </div>
                 </div>
               </RadioGroup>
+
+              {sendingMode === 'zero-delay' && (
+                <Alert className="border-red-200 bg-red-50">
+                  <AlertTriangle className="h-4 w-4 text-red-600" />
+                  <AlertDescription className="text-red-800">
+                    <strong>Zero Delay Mode:</strong> Maximum speed parallel dispatch across all functions.
+                  </AlertDescription>
+                </Alert>
+              )}
             </div>
 
             <Separator />
@@ -360,14 +439,30 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
               onTestAfterCountChange={setTestAfterCount}
             />
 
+            {/* Tracking Configuration */}
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label>Email Tracking</Label>
+                  <p className="text-sm text-gray-600">
+                    Track email opens and link clicks
+                  </p>
+                </div>
+                <Switch
+                  checked={trackingEnabled}
+                  onCheckedChange={setTrackingEnabled}
+                />
+              </div>
+            </div>
+
             <Button 
               type="submit" 
               className="w-full" 
               size="lg"
-              disabled={accountsLoading}
+              disabled={!hasFunctions || !hasAccounts}
             >
-              <Zap className="w-4 h-4 mr-2" />
-              Send Campaign
+              <Rocket className="w-4 h-4 mr-2" />
+              Launch Parallel Campaign
             </Button>
           </form>
         </CardContent>

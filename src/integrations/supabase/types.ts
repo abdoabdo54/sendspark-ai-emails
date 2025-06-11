@@ -460,11 +460,8 @@ export type Database = {
           created_at: string
           enabled: boolean
           id: string
-          last_used: string | null
           name: string
-          notes: string | null
           organization_id: string
-          region: string | null
           updated_at: string
           url: string
         }
@@ -472,11 +469,8 @@ export type Database = {
           created_at?: string
           enabled?: boolean
           id?: string
-          last_used?: string | null
           name: string
-          notes?: string | null
           organization_id: string
-          region?: string | null
           updated_at?: string
           url: string
         }
@@ -484,11 +478,8 @@ export type Database = {
           created_at?: string
           enabled?: boolean
           id?: string
-          last_used?: string | null
           name?: string
-          notes?: string | null
           organization_id?: string
-          region?: string | null
           updated_at?: string
           url?: string
         }
@@ -834,6 +825,12 @@ export type Database = {
         Returns: string
       }
       get_user_organization_ids: {
+        Args: { user_id_param: string }
+        Returns: {
+          organization_id: string
+        }[]
+      }
+      get_user_organization_ids_safe: {
         Args: { user_id_param: string }
         Returns: {
           organization_id: string

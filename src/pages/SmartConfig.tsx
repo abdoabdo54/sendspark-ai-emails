@@ -1,227 +1,266 @@
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
-import { ArrowRight, Calculator, Zap, Clock } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { Calculator, Zap, Users, Clock, CheckCircle } from 'lucide-react';
+import { useGcfFunctions } from '@/hooks/useGcfFunctions';
+import { useEmailAccounts } from '@/hooks/useEmailAccounts';
+import { useSimpleOrganizations } from '@/contexts/SimpleOrganizationContext';
 import { toast } from '@/hooks/use-toast';
+import { useNavigate } from 'react-router-dom';
 
 const SmartConfig = () => {
   const navigate = useNavigate();
-  const [totalEmails, setTotalEmails] = useState(50000);
-  const [recommendedFunctions, setRecommendedFunctions] = useState(10);
-  const [recommendedAccounts, setRecommendedAccounts] = useState(25);
-  const [estimatedTimeControlled, setEstimatedTimeControlled] = useState('');
-  const [estimatedTimeFast, setEstimatedTimeFast] = useState('');
-  const [estimatedTimeZeroDelay, setEstimatedTimeZeroDelay] = useState('');
+  const { currentOrganization } = useSimpleOrganizations();
+  const { functions } = useGcfFunctions(currentOrganization?.id);
+  const { accounts } = useEmailAccounts(currentOrganization?.id);
+  
+  const [emailVolume, setEmailVolume] = useState(10000);
+  const [smartConfig, setSmartConfig] = useState({
+    recommendedFunctions: 0,
+    recommendedAccounts: 0,
+    estimatedTime: '',
+    emailsPerFunction: 0,
+    emailsPerAccount: 0
+  });
 
-  useEffect(() => {
-    // Calculate optimal configuration
-    const funcs = Math.max(1, Math.min(50, Math.ceil(totalEmails / 5000))); // Max 50 functions
-    const accts = Math.max(1, Math.min(100, Math.ceil(totalEmails / 2000))); // Max 100 accounts
-    
-    setRecommendedFunctions(funcs);
-    setRecommendedAccounts(accts);
+  const activeFunctions = functions.filter(f => f.enabled);
+  const activeAccounts = accounts.filter(a => a.is_active);
 
-    // Calculate estimated times for different modes
-    const emailsPerFunction = Math.ceil(totalEmails / funcs);
-    
-    // Controlled mode: ~200 emails/minute per function
-    const controlledMinutes = Math.ceil(emailsPerFunction / 200);
-    setEstimatedTimeControlled(`${controlledMinutes} minutes`);
-    
-    // Fast mode: ~1000 emails/minute per function
-    const fastSeconds = Math.ceil(emailsPerFunction / 16.67); // ~1000/min = 16.67/sec
-    setEstimatedTimeFast(`${fastSeconds} seconds`);
-    
-    // Zero delay mode: ~5000+ emails/minute per function
-    const zeroDelaySeconds = Math.max(1, Math.ceil(emailsPerFunction / 83.33)); // ~5000/min = 83.33/sec
-    setEstimatedTimeZeroDelay(`${zeroDelaySeconds} seconds`);
-  }, [totalEmails]);
+  const calculateOptimalConfig = () => {
+    if (emailVolume <= 0) {
+      toast({
+        title: "Invalid Input",
+        description: "Please enter a valid email volume",
+        variant: "destructive"
+      });
+      return;
+    }
 
-  const applyConfig = () => {
-    const config = {
-      totalEmails,
+    // Smart recommendations based on volume
+    let recommendedFunctions = Math.min(
+      Math.max(1, Math.ceil(emailVolume / 5000)), // 5k emails per function
+      Math.max(1, activeFunctions.length) // Use available functions
+    );
+
+    let recommendedAccounts = Math.min(
+      Math.max(2, Math.ceil(emailVolume / 2000)), // 2k emails per account
+      Math.max(1, activeAccounts.length) // Use available accounts
+    );
+
+    const emailsPerFunction = Math.ceil(emailVolume / recommendedFunctions);
+    const emailsPerAccount = Math.ceil(emailVolume / recommendedAccounts);
+
+    // Estimate time (assuming 1000 emails per minute per function in parallel)
+    const estimatedMinutes = Math.ceil(emailsPerFunction / 1000);
+    const estimatedTime = estimatedMinutes < 60 
+      ? `~${estimatedMinutes} minutes`
+      : `~${Math.ceil(estimatedMinutes / 60)} hours`;
+
+    setSmartConfig({
       recommendedFunctions,
       recommendedAccounts,
-      appliedAt: new Date().toISOString()
-    };
-    
-    localStorage.setItem('smartConfig', JSON.stringify(config));
-    
-    toast({
-      title: "Configuration Applied!",
-      description: `Optimal settings saved: ${recommendedFunctions} functions, ${recommendedAccounts} accounts`,
+      estimatedTime,
+      emailsPerFunction,
+      emailsPerAccount
     });
-    
-    // Navigate to main page to use the configuration
-    navigate('/');
+
+    // Save to localStorage for campaign composer
+    localStorage.setItem('smartConfig', JSON.stringify({
+      emailVolume,
+      recommendedFunctions,
+      recommendedAccounts,
+      estimatedTime
+    }));
+
+    toast({
+      title: "✅ Configuration Calculated",
+      description: `Optimal setup for ${emailVolume.toLocaleString()} emails calculated`
+    });
   };
 
-  const formatNumber = (num: number) => {
-    return num.toLocaleString();
+  const applyConfiguration = () => {
+    localStorage.setItem('smartConfig', JSON.stringify(smartConfig));
+    toast({
+      title: "✅ Configuration Applied",
+      description: "Smart config will be used in campaign composer"
+    });
+    navigate('/');
   };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-purple-50 p-6">
       <div className="max-w-4xl mx-auto space-y-6">
         <div className="text-center">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">
-            Smart Configuration Engine
+          <h1 className="text-3xl font-bold text-gray-900 flex items-center justify-center gap-2">
+            <Calculator className="w-8 h-8 text-blue-600" />
+            SmartConfig Engine
           </h1>
-          <p className="text-gray-600">
-            Get optimal recommendations for your email campaign volume
+          <p className="text-gray-600 mt-2">
+            Get optimal recommendations for your email campaign
           </p>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Input Configuration */}
+          {/* Input Section */}
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <Calculator className="w-5 h-5" />
-                Campaign Volume
+                <Users className="w-5 h-5" />
+                Campaign Parameters
               </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="space-y-6">
               <div>
-                <Label htmlFor="emails">Total Emails to Send</Label>
-                <Input 
-                  id="emails" 
-                  type="number" 
-                  value={totalEmails} 
-                  onChange={e => setTotalEmails(parseInt(e.target.value || '0'))}
-                  min="1"
-                  max="1000000"
+                <Label htmlFor="volume">Total Email Volume</Label>
+                <Input
+                  id="volume"
+                  type="number"
+                  value={emailVolume}
+                  onChange={(e) => setEmailVolume(Number(e.target.value))}
+                  placeholder="10000"
+                  className="text-lg"
                 />
               </div>
-              
-              <div className="pt-4">
-                <Badge variant="outline" className="text-lg px-3 py-1">
-                  {formatNumber(totalEmails)} emails
-                </Badge>
+
+              <Separator />
+
+              <div className="space-y-3">
+                <h3 className="font-semibold">Available Resources</h3>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="text-center p-3 bg-blue-50 rounded-lg">
+                    <div className="text-2xl font-bold text-blue-600">
+                      {activeFunctions.length}
+                    </div>
+                    <div className="text-sm text-gray-600">Cloud Functions</div>
+                  </div>
+                  <div className="text-center p-3 bg-green-50 rounded-lg">
+                    <div className="text-2xl font-bold text-green-600">
+                      {activeAccounts.length}
+                    </div>
+                    <div className="text-sm text-gray-600">Email Accounts</div>
+                  </div>
+                </div>
               </div>
+
+              <Button 
+                onClick={calculateOptimalConfig}
+                className="w-full"
+                size="lg"
+              >
+                <Calculator className="w-4 h-4 mr-2" />
+                Calculate Optimal Config
+              </Button>
             </CardContent>
           </Card>
 
-          {/* Recommendations */}
+          {/* Results Section */}
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Zap className="w-5 h-5" />
-                Optimal Configuration
+                Smart Recommendations
               </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="text-center p-3 bg-blue-50 rounded-lg">
-                  <div className="text-2xl font-bold text-blue-600">
-                    {recommendedFunctions}
+            <CardContent className="space-y-6">
+              {smartConfig.recommendedFunctions > 0 ? (
+                <>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="text-center p-4 border rounded-lg">
+                      <div className="text-3xl font-bold text-purple-600">
+                        {smartConfig.recommendedFunctions}
+                      </div>
+                      <div className="text-sm text-gray-600">Functions Needed</div>
+                      <div className="text-xs text-gray-500 mt-1">
+                        {smartConfig.emailsPerFunction.toLocaleString()} emails each
+                      </div>
+                    </div>
+                    <div className="text-center p-4 border rounded-lg">
+                      <div className="text-3xl font-bold text-orange-600">
+                        {smartConfig.recommendedAccounts}
+                      </div>
+                      <div className="text-sm text-gray-600">Accounts Needed</div>
+                      <div className="text-xs text-gray-500 mt-1">
+                        {smartConfig.emailsPerAccount.toLocaleString()} emails each
+                      </div>
+                    </div>
                   </div>
-                  <div className="text-sm text-gray-600">
-                    Cloud Functions
+
+                  <div className="text-center p-4 bg-green-50 rounded-lg">
+                    <Clock className="w-6 h-6 text-green-600 mx-auto mb-2" />
+                    <div className="text-lg font-semibold text-green-800">
+                      Estimated Time: {smartConfig.estimatedTime}
+                    </div>
+                    <div className="text-sm text-green-600">
+                      With parallel dispatch enabled
+                    </div>
                   </div>
+
+                  <div className="space-y-3">
+                    <h4 className="font-semibold">Strategy Benefits:</h4>
+                    <div className="space-y-2 text-sm">
+                      <div className="flex items-center gap-2">
+                        <CheckCircle className="w-4 h-4 text-green-600" />
+                        <span>Parallel processing across {smartConfig.recommendedFunctions} functions</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <CheckCircle className="w-4 h-4 text-green-600" />
+                        <span>Load balanced across {smartConfig.recommendedAccounts} accounts</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <CheckCircle className="w-4 h-4 text-green-600" />
+                        <span>No serial bottlenecks</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <Button 
+                    onClick={applyConfiguration}
+                    className="w-full"
+                    variant="default"
+                  >
+                    <CheckCircle className="w-4 h-4 mr-2" />
+                    Apply This Configuration
+                  </Button>
+                </>
+              ) : (
+                <div className="text-center py-8 text-gray-500">
+                  <Calculator className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                  <p>Enter email volume and click "Calculate Optimal Config"</p>
                 </div>
-                <div className="text-center p-3 bg-green-50 rounded-lg">
-                  <div className="text-2xl font-bold text-green-600">
-                    {recommendedAccounts}
-                  </div>
-                  <div className="text-sm text-gray-600">
-                    Sender Accounts
-                  </div>
-                </div>
-              </div>
-              
-              <p className="text-sm text-gray-600 text-center">
-                ~{Math.ceil(totalEmails / recommendedFunctions).toLocaleString()} emails per function
-              </p>
+              )}
             </CardContent>
           </Card>
         </div>
 
-        {/* Estimated Performance */}
+        {/* Quick Actions */}
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Clock className="w-5 h-5" />
-              Estimated Delivery Times
-            </CardTitle>
+            <CardTitle>Quick Actions</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="p-4 border rounded-lg bg-blue-50">
-                <div className="flex items-center gap-2 mb-2">
-                  <Clock className="w-4 h-4 text-blue-600" />
-                  <span className="font-medium">Controlled Mode</span>
-                </div>
-                <div className="text-2xl font-bold text-blue-600 mb-1">
-                  {estimatedTimeControlled}
-                </div>
-                <p className="text-sm text-gray-600">
-                  Standard rate limits
-                </p>
-              </div>
-              
-              <div className="p-4 border rounded-lg bg-orange-50">
-                <div className="flex items-center gap-2 mb-2">
-                  <Zap className="w-4 h-4 text-orange-600" />
-                  <span className="font-medium">Fast Mode</span>
-                </div>
-                <div className="text-2xl font-bold text-orange-600 mb-1">
-                  {estimatedTimeFast}
-                </div>
-                <p className="text-sm text-gray-600">
-                  High-speed parallel
-                </p>
-              </div>
-              
-              <div className="p-4 border rounded-lg bg-red-50">
-                <div className="flex items-center gap-2 mb-2">
-                  <Zap className="w-4 h-4 text-red-600" />
-                  <span className="font-medium">Zero Delay</span>
-                </div>
-                <div className="text-2xl font-bold text-red-600 mb-1">
-                  {estimatedTimeZeroDelay}
-                </div>
-                <p className="text-sm text-gray-600">
-                  Maximum speed
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Configuration Summary */}
-        <Card>
-          <CardContent className="pt-6">
-            <div className="text-center space-y-4">
-              <div className="text-lg font-medium">
-                📧 {formatNumber(totalEmails)} emails → 
-                ⚡ {recommendedFunctions} functions + 
-                👥 {recommendedAccounts} accounts → 
-                🚀 {estimatedTimeZeroDelay} (Zero Delay Mode)
-              </div>
-              
-              <Separator />
-              
-              <div className="flex justify-center gap-4">
-                <Button onClick={applyConfig} size="lg" className="px-8">
-                  <ArrowRight className="w-4 h-4 mr-2" />
-                  Apply This Configuration
-                </Button>
-                
-                <Button variant="outline" onClick={() => navigate('/')} size="lg">
-                  Back to Campaigns
-                </Button>
-              </div>
-              
-              <p className="text-sm text-gray-500">
-                This configuration will be auto-filled in your campaign composer
-              </p>
+            <div className="flex gap-4">
+              <Button 
+                variant="outline" 
+                onClick={() => navigate('/function-manager')}
+              >
+                Manage Functions
+              </Button>
+              <Button 
+                variant="outline" 
+                onClick={() => navigate('/settings')}
+              >
+                Manage Accounts
+              </Button>
+              <Button 
+                onClick={() => navigate('/')}
+              >
+                Start Campaign
+              </Button>
             </div>
           </CardContent>
         </Card>
