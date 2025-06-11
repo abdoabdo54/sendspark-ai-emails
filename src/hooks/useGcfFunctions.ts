@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
@@ -21,7 +22,6 @@ export const useGcfFunctions = (organizationId?: string) => {
 
   const fetchFunctions = async () => {
     if (!organizationId) {
-      console.log('No organization ID provided, clearing functions');
       setFunctions([]);
       setLoading(false);
       return;
@@ -29,15 +29,12 @@ export const useGcfFunctions = (organizationId?: string) => {
 
     try {
       setLoading(true);
-      console.log('Fetching GCF functions for organization:', organizationId);
       
       const { data, error } = await supabase
         .from('gcf_functions')
         .select('*')
         .eq('organization_id', organizationId)
         .order('created_at', { ascending: false });
-
-      console.log('GCF functions query result:', { data, error });
 
       if (error) {
         console.error('Error fetching GCF functions:', error);
@@ -49,9 +46,7 @@ export const useGcfFunctions = (organizationId?: string) => {
         return;
       }
       
-      const functionsData = data || [];
-      console.log('Loaded GCF functions:', functionsData);
-      setFunctions(functionsData);
+      setFunctions(data || []);
     } catch (error) {
       console.error('Error fetching GCF functions:', error);
       toast({
@@ -75,46 +70,12 @@ export const useGcfFunctions = (organizationId?: string) => {
     }
 
     try {
-      console.log('Creating GCF function with organization_id:', organizationId);
-      console.log('Function data:', functionData);
-      
-      // First check if user has proper role
-      const { data: userRole, error: roleError } = await supabase
-        .from('user_roles')
-        .select('role')
-        .eq('user_id', (await supabase.auth.getUser()).data.user?.id)
-        .eq('organization_id', organizationId)
-        .single();
-
-      if (roleError || !userRole) {
-        console.error('Error checking user role:', roleError);
-        toast({
-          title: "Error",
-          description: "Unable to verify permissions",
-          variant: "destructive"
-        });
-        return null;
-      }
-
-      if (!['admin', 'owner', 'super_admin'].includes(userRole.role)) {
-        toast({
-          title: "Error",
-          description: "You don't have permission to create functions",
-          variant: "destructive"
-        });
-        return null;
-      }
-
-      const insertData = {
-        ...functionData,
-        organization_id: organizationId
-      };
-
-      console.log('Inserting function data:', insertData);
-      
       const { data, error } = await supabase
         .from('gcf_functions')
-        .insert([insertData])
+        .insert([{
+          ...functionData,
+          organization_id: organizationId
+        }])
         .select()
         .single();
 
@@ -128,9 +89,7 @@ export const useGcfFunctions = (organizationId?: string) => {
         return null;
       }
 
-      console.log('Created GCF function:', data);
       setFunctions(prev => [data, ...prev]);
-      
       toast({
         title: "Success",
         description: "Cloud Function added successfully"
@@ -150,8 +109,6 @@ export const useGcfFunctions = (organizationId?: string) => {
 
   const updateFunction = async (functionId: string, updates: Partial<GcfFunction>) => {
     try {
-      console.log('Updating GCF function:', functionId, updates);
-      
       const { data, error } = await supabase
         .from('gcf_functions')
         .update(updates)
@@ -159,12 +116,8 @@ export const useGcfFunctions = (organizationId?: string) => {
         .select()
         .single();
 
-      if (error) {
-        console.error('Error updating GCF function:', error);
-        throw error;
-      }
+      if (error) throw error;
 
-      console.log('Updated GCF function:', data);
       setFunctions(prev => prev.map(func => 
         func.id === functionId ? data : func
       ));
@@ -183,21 +136,14 @@ export const useGcfFunctions = (organizationId?: string) => {
 
   const deleteFunction = async (functionId: string) => {
     try {
-      console.log('Deleting GCF function:', functionId);
-      
       const { error } = await supabase
         .from('gcf_functions')
         .delete()
         .eq('id', functionId);
 
-      if (error) {
-        console.error('Error deleting GCF function:', error);
-        throw error;
-      }
+      if (error) throw error;
 
-      console.log('Deleted GCF function:', functionId);
       setFunctions(prev => prev.filter(func => func.id !== functionId));
-      
       toast({
         title: "Success",
         description: "Cloud Function deleted successfully"
@@ -212,28 +158,8 @@ export const useGcfFunctions = (organizationId?: string) => {
     }
   };
 
-  const updateLastUsed = async (functionId: string) => {
-    try {
-      console.log('Updating last_used for function:', functionId);
-      
-      await supabase
-        .from('gcf_functions')
-        .update({ last_used: new Date().toISOString() })
-        .eq('id', functionId);
-    } catch (error) {
-      console.error('Error updating last_used timestamp:', error);
-    }
-  };
-
   useEffect(() => {
-    if (organizationId) {
-      console.log('Organization changed, fetching functions for:', organizationId);
-      fetchFunctions();
-    } else {
-      console.log('No organization, clearing functions');
-      setFunctions([]);
-      setLoading(false);
-    }
+    fetchFunctions();
   }, [organizationId]);
 
   return {
@@ -242,7 +168,6 @@ export const useGcfFunctions = (organizationId?: string) => {
     createFunction,
     updateFunction,
     deleteFunction,
-    updateLastUsed,
     refetch: fetchFunctions
   };
 };

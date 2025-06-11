@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -13,12 +14,11 @@ import { Clock, Zap, Settings, AlertTriangle, Rocket, ExternalLink } from 'lucid
 import { toast } from '@/hooks/use-toast';
 import { useEmailAccounts } from '@/hooks/useEmailAccounts';
 import { useSimpleOrganizations } from '@/contexts/SimpleOrganizationContext';
-import { useGcfFunctions } from '@/hooks/useGcfFunctions';
+import { useCampaignSender } from '@/hooks/useCampaignSender';
 import CSVDataImporter from './CSVDataImporter';
 import GoogleSheetsImport from './GoogleSheetsImport';
 import AISubjectGenerator from './AISubjectGenerator';
 import TestAfterSection from './TestAfterSection';
-import TrackingLinksManager from './TrackingLinksManager';
 import { useNavigate } from 'react-router-dom';
 
 interface BulkEmailComposerProps {
@@ -29,7 +29,7 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
   const navigate = useNavigate();
   const { currentOrganization } = useSimpleOrganizations();
   const { accounts, loading: accountsLoading } = useEmailAccounts(currentOrganization?.id);
-  const { functions, loading: functionsLoading } = useGcfFunctions(currentOrganization?.id);
+  const { availableFunctions, sendCampaign } = useCampaignSender(currentOrganization?.id);
   
   // Form state
   const [fromName, setFromName] = useState('');
@@ -60,45 +60,8 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
   const [rotateFromNames, setRotateFromNames] = useState(false);
   const [fromNameVariations, setFromNameVariations] = useState('');
 
-  // Legacy Cloud Function URL (fallback) - ensure this is always available
-  const [legacyFunctionUrl, setLegacyFunctionUrl] = useState('https://us-central1-alpin-4d67f.cloudfunctions.net/sendEmailCampaign');
-
-  // Smart config
-  const [estimatedTime, setEstimatedTime] = useState('');
-
-  useEffect(() => {
-    // Load smart config if available
-    try {
-      const smartConfig = localStorage.getItem('smartConfig');
-      if (smartConfig) {
-        const config = JSON.parse(smartConfig);
-        if (config.recommendedAccounts) setNumAccountsToUse(config.recommendedAccounts);
-      }
-    } catch (error) {
-      console.error('Error loading smart config:', error);
-    }
-  }, []);
-
   const activeAccounts = accounts.filter(account => account.is_active);
-  const enabledFunctions = functions.filter(func => func.enabled);
   const recipientCount = recipients.split(',').filter(email => email.trim()).length;
-
-  // Use either registered functions or fallback to legacy URL - ALWAYS ensure we have at least one function
-  const availableFunctions = enabledFunctions.length > 0 ? enabledFunctions : 
-    [{ id: 'legacy', name: 'Legacy Function', url: legacyFunctionUrl, enabled: true }];
-
-  // Calculate estimated time
-  useEffect(() => {
-    if (recipientCount > 0 && availableFunctions.length > 0) {
-      const emailsPerFunction = Math.ceil(recipientCount / availableFunctions.length);
-      const estimatedSeconds = sendingMode === 'zero-delay' 
-        ? Math.ceil(emailsPerFunction / 1000) // Ultra-fast estimate for zero delay
-        : Math.ceil(emailsPerFunction / 200); // Conservative estimate
-      setEstimatedTime(`~${estimatedSeconds} seconds`);
-    } else {
-      setEstimatedTime('');
-    }
-  }, [recipientCount, availableFunctions.length, sendingMode]);
 
   const handleAccountToggle = (accountId: string) => {
     setSelectedAccounts(prev => 
@@ -196,57 +159,29 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
     
     if (!validateForm()) return;
 
-    console.log('Building dynamic parallel campaign configuration...');
-
-    const config: any = {
+    const config = {
       sendingMode,
       selectedAccounts: useAccountSelection ? selectedAccounts : [],
       numAccountsToUse,
-      
-      // Subject rotation
       subjectRotation: {
         enabled: rotateSubjects,
         variations: rotateSubjects ? subjectVariations.split('\n').filter(s => s.trim()) : []
       },
-      
-      // From name rotation
       fromNameRotation: {
         enabled: rotateFromNames,
         variations: rotateFromNames ? fromNameVariations.split('\n').filter(s => s.trim()) : []
       },
-      
-      // Test-After configuration
       testAfter: {
         enabled: useTestAfter,
         email: testAfterEmail,
         count: testAfterCount
       },
-      
-      // Tracking configuration
       tracking: {
         enabled: trackingEnabled,
         trackOpens: trackingEnabled,
         trackClicks: trackingEnabled
       }
     };
-
-    // Zero Delay Mode configuration
-    if (sendingMode === 'zero-delay') {
-      config.zeroDelayMode = true;
-      config.bypassAllRateLimits = true;
-      config.maxParallelSends = true;
-    }
-
-    // Google Cloud Functions config for parallel dispatch - ALWAYS ensure we have functions
-    if ((sendingMode === 'fast' || sendingMode === 'zero-delay') && availableFunctions.length > 0) {
-      config.googleCloudFunctions = {
-        enabled: true,
-        functionUrls: availableFunctions.map(func => func.url),
-        functionIds: availableFunctions.map(func => func.id), 
-        parallelDispatch: true,
-        zeroDelayMode: sendingMode === 'zero-delay'
-      };
-    }
 
     const campaignData = {
       from_name: fromName,
@@ -258,7 +193,6 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
       config
     };
 
-    console.log('Final parallel campaign data:', campaignData);
     onSend(campaignData);
   };
 
@@ -268,36 +202,29 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Settings className="w-5 h-5" />
-            Parallel Email Campaign Engine
+            Email Campaign Composer
           </CardTitle>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-6">
             {/* Function Status */}
-            {(sendingMode === 'fast' || sendingMode === 'zero-delay') && (
-              <Alert className={availableFunctions.length > 0 ? "border-green-200 bg-green-50" : "border-yellow-200 bg-yellow-50"}>
-                <Settings className="h-4 w-4" />
-                <AlertDescription>
-                  {enabledFunctions.length > 0 ? (
-                    <span className="text-green-800">
-                      <strong>{enabledFunctions.length} Cloud Functions</strong> ready for parallel dispatch
-                    </span>
-                  ) : (
-                    <div className="text-yellow-800">
-                      <strong>Using legacy function:</strong> {legacyFunctionUrl}
-                      <br />
-                      <Button 
-                        variant="link" 
-                        className="p-0 h-auto text-yellow-800 underline"
-                        onClick={() => navigate('/function-manager')}
-                      >
-                        Configure new functions here
-                      </Button>
-                    </div>
-                  )}
-                </AlertDescription>
-              </Alert>
-            )}
+            <Alert className="border-blue-200 bg-blue-50">
+              <Settings className="h-4 w-4" />
+              <AlertDescription>
+                <span className="text-blue-800">
+                  <strong>{availableFunctions.length} Function(s)</strong> available for sending
+                </span>
+                <br />
+                <Button 
+                  variant="link" 
+                  className="p-0 h-auto text-blue-800 underline"
+                  onClick={() => navigate('/function-manager')}
+                >
+                  <ExternalLink className="w-3 h-3 mr-1" />
+                  Manage Functions
+                </Button>
+              </AlertDescription>
+            </Alert>
 
             {/* Sending Mode Selection */}
             <div className="space-y-4">
@@ -324,10 +251,10 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
                   <div className="flex-1">
                     <div className="flex items-center gap-2">
                       <Zap className="w-4 h-4 text-orange-600" />
-                      <Label htmlFor="fast" className="font-medium">Fast Parallel Send</Label>
+                      <Label htmlFor="fast" className="font-medium">Fast Send</Label>
                     </div>
                     <p className="text-sm text-gray-600 mt-1">
-                      High-speed parallel dispatch
+                      High-speed sending
                     </p>
                   </div>
                 </div>
@@ -336,43 +263,17 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
                   <div className="flex-1">
                     <div className="flex items-center gap-2">
                       <Rocket className="w-4 h-4 text-red-600" />
-                      <Label htmlFor="zero-delay" className="font-medium">Zero Delay Mode</Label>
+                      <Label htmlFor="zero-delay" className="font-medium">Maximum Speed</Label>
                     </div>
                     <p className="text-sm text-gray-600 mt-1">
-                      Maximum speed, no delays
+                      No delays between sends
                     </p>
                   </div>
                 </div>
               </RadioGroup>
-
-              {sendingMode === 'zero-delay' && (
-                <Alert className="border-red-200 bg-red-50">
-                  <AlertTriangle className="h-4 w-4 text-red-600" />
-                  <AlertDescription className="text-red-800">
-                    <strong>Zero Delay Mode:</strong> Bypasses ALL rate limits for maximum speed.
-                    Best for bulk campaigns with dedicated sending infrastructure.
-                  </AlertDescription>
-                </Alert>
-              )}
             </div>
 
             <Separator />
-
-            {/* Legacy Function URL Configuration (when no new functions are configured) */}
-            {enabledFunctions.length === 0 && (sendingMode === 'fast' || sendingMode === 'zero-delay') && (
-              <div className="space-y-4">
-                <Label htmlFor="legacyUrl">Legacy Cloud Function URL</Label>
-                <Input
-                  id="legacyUrl"
-                  value={legacyFunctionUrl}
-                  onChange={(e) => setLegacyFunctionUrl(e.target.value)}
-                  placeholder="https://your-region-project.cloudfunctions.net/functionName"
-                />
-                <p className="text-sm text-gray-600">
-                  This fallback URL will be used until you configure functions in Function Manager
-                </p>
-              </div>
-            )}
 
             {/* Basic Campaign Information */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -397,71 +298,6 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
                 />
               </div>
             </div>
-
-            {/* From Name Rotation */}
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <Label>Rotate From Names</Label>
-                  <p className="text-sm text-gray-600">
-                    Use different from names to improve deliverability
-                  </p>
-                </div>
-                <Switch
-                  checked={rotateFromNames}
-                  onCheckedChange={setRotateFromNames}
-                />
-              </div>
-              {rotateFromNames && (
-                <div>
-                  <Label htmlFor="fromNameVariations">From Name Variations (one per line)</Label>
-                  <Textarea
-                    id="fromNameVariations"
-                    value={fromNameVariations}
-                    onChange={(e) => setFromNameVariations(e.target.value)}
-                    placeholder="John Smith&#10;Jane Doe&#10;Mike Johnson"
-                    rows={3}
-                  />
-                </div>
-              )}
-            </div>
-
-            {/* Subject Rotation */}
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <Label>Rotate Subjects</Label>
-                  <p className="text-sm text-gray-600">
-                    Use different subject lines to improve engagement
-                  </p>
-                </div>
-                <Switch
-                  checked={rotateSubjects}
-                  onCheckedChange={setRotateSubjects}
-                />
-              </div>
-              {rotateSubjects && (
-                <div>
-                  <Label htmlFor="subjectVariations">Subject Variations (one per line)</Label>
-                  <Textarea
-                    id="subjectVariations"
-                    value={subjectVariations}
-                    onChange={(e) => setSubjectVariations(e.target.value)}
-                    placeholder="Great offer for you!&#10;Don't miss this deal&#10;Special promotion inside"
-                    rows={3}
-                  />
-                </div>
-              )}
-            </div>
-
-            {estimatedTime && availableFunctions.length > 0 && (
-              <Alert className="border-blue-200 bg-blue-50">
-                <AlertTriangle className="h-4 w-4 text-blue-600" />
-                <AlertDescription className="text-blue-800">
-                  <strong>Estimated Delivery Time:</strong> {estimatedTime} using {availableFunctions.length} functions and {numAccountsToUse} accounts
-                </AlertDescription>
-              </Alert>
-            )}
 
             <AISubjectGenerator onSubjectSelect={setSubject} />
 
@@ -514,108 +350,6 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
 
             <Separator />
 
-            {/* Manual Account Selection */}
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <Label>Manual Account Selection</Label>
-                  <p className="text-sm text-gray-600">
-                    Choose specific sender accounts instead of automatic rotation
-                  </p>
-                </div>
-                <Switch
-                  checked={useAccountSelection}
-                  onCheckedChange={setUseAccountSelection}
-                />
-              </div>
-
-              {useAccountSelection && (
-                <div className="space-y-4">
-                  <Label>Select Sender Accounts</Label>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-48 overflow-y-auto border rounded-lg p-4">
-                    {activeAccounts.map((account) => (
-                      <div key={account.id} className="flex items-center space-x-2">
-                        <input
-                          type="checkbox"
-                          id={account.id}
-                          checked={selectedAccounts.includes(account.id)}
-                          onChange={() => handleAccountToggle(account.id)}
-                          className="rounded"
-                        />
-                        <Label htmlFor={account.id} className="text-sm flex-1">
-                          {account.email} ({account.type})
-                        </Label>
-                      </div>
-                    ))}
-                  </div>
-                  {selectedAccounts.length > 0 && (
-                    <p className="text-sm text-green-600">
-                      {selectedAccounts.length} accounts selected
-                    </p>
-                  )}
-                </div>
-              )}
-
-              {!useAccountSelection && (
-                <div>
-                  <Label htmlFor="numAccounts">Number of Sender Accounts</Label>
-                  <Input
-                    id="numAccounts"
-                    type="number"
-                    min={1}
-                    max={activeAccounts.length}
-                    value={numAccountsToUse}
-                    onChange={(e) => setNumAccountsToUse(parseInt(e.target.value) || 1)}
-                  />
-                  <p className="text-sm text-gray-600 mt-1">
-                    Rotates through available accounts (max: {activeAccounts.length})
-                  </p>
-                </div>
-              )}
-            </div>
-
-            <Separator />
-
-            {/* Function and Account Summary */}
-            <div className="grid grid-cols-2 gap-4">
-              <div className="p-4 border rounded-lg bg-blue-50">
-                <div className="flex items-center gap-2 mb-2">
-                  <Settings className="w-4 h-4 text-blue-600" />
-                  <span className="font-medium">Cloud Functions</span>
-                </div>
-                <div className="text-2xl font-bold text-blue-600 mb-1">
-                  {availableFunctions.length}
-                </div>
-                <p className="text-sm text-gray-600">
-                  {enabledFunctions.length > 0 ? 'Enabled functions' : 'Legacy function available'}
-                </p>
-                {enabledFunctions.length === 0 && (
-                  <Button 
-                    variant="link" 
-                    className="p-0 h-auto text-sm"
-                    onClick={() => navigate('/function-manager')}
-                  >
-                    <ExternalLink className="w-3 h-3 mr-1" />
-                    Configure Functions
-                  </Button>
-                )}
-              </div>
-              <div className="p-4 border rounded-lg bg-green-50">
-                <div className="flex items-center gap-2 mb-2">
-                  <Settings className="w-4 h-4 text-green-600" />
-                  <span className="font-medium">Sender Accounts</span>
-                </div>
-                <div className="text-2xl font-bold text-green-600 mb-1">
-                  {useAccountSelection ? selectedAccounts.length : Math.min(numAccountsToUse, activeAccounts.length)}
-                </div>
-                <p className="text-sm text-gray-600">
-                  Will be used
-                </p>
-              </div>
-            </div>
-
-            <Separator />
-
             {/* Test-After Configuration */}
             <TestAfterSection
               useTestAfter={useTestAfter}
@@ -626,46 +360,14 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
               onTestAfterCountChange={setTestAfterCount}
             />
 
-            <Separator />
-
-            {/* Tracking Configuration */}
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <Label>Email Tracking</Label>
-                  <p className="text-sm text-gray-600">
-                    Include tracking pixels and click tracking
-                  </p>
-                </div>
-                <Switch
-                  checked={trackingEnabled}
-                  onCheckedChange={setTrackingEnabled}
-                />
-              </div>
-            </div>
-
             <Button 
               type="submit" 
               className="w-full" 
               size="lg"
-              disabled={accountsLoading || functionsLoading}
+              disabled={accountsLoading}
             >
-              {sendingMode === 'zero-delay' ? (
-                <>
-                  <Rocket className="w-4 h-4 mr-2" />
-                  Launch Zero Delay Campaign
-                </>
-              ) : sendingMode === 'fast' ? (
-                <>
-                  <Zap className="w-4 h-4 mr-2" />
-                  Start Fast Parallel Campaign
-                </>
-              ) : (
-                <>
-                  <Clock className="w-4 h-4 mr-2" />
-                  Create Controlled Campaign
-                </>
-              )}
+              <Zap className="w-4 h-4 mr-2" />
+              Send Campaign
             </Button>
           </form>
         </CardContent>
