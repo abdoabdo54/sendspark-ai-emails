@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
@@ -76,20 +75,57 @@ export const useGcfFunctions = (organizationId?: string) => {
     }
 
     try {
-      console.log('Creating GCF function:', functionData);
+      console.log('Creating GCF function with organization_id:', organizationId);
+      console.log('Function data:', functionData);
+      
+      // First check if user has proper role
+      const { data: userRole, error: roleError } = await supabase
+        .from('user_roles')
+        .select('role')
+        .eq('user_id', (await supabase.auth.getUser()).data.user?.id)
+        .eq('organization_id', organizationId)
+        .single();
+
+      if (roleError || !userRole) {
+        console.error('Error checking user role:', roleError);
+        toast({
+          title: "Error",
+          description: "Unable to verify permissions",
+          variant: "destructive"
+        });
+        return null;
+      }
+
+      if (!['admin', 'owner', 'super_admin'].includes(userRole.role)) {
+        toast({
+          title: "Error",
+          description: "You don't have permission to create functions",
+          variant: "destructive"
+        });
+        return null;
+      }
+
+      const insertData = {
+        ...functionData,
+        organization_id: organizationId
+      };
+
+      console.log('Inserting function data:', insertData);
       
       const { data, error } = await supabase
         .from('gcf_functions')
-        .insert([{
-          ...functionData,
-          organization_id: organizationId
-        }])
+        .insert([insertData])
         .select()
         .single();
 
       if (error) {
         console.error('Error creating GCF function:', error);
-        throw error;
+        toast({
+          title: "Error",
+          description: `Failed to add Cloud Function: ${error.message}`,
+          variant: "destructive"
+        });
+        return null;
       }
 
       console.log('Created GCF function:', data);
@@ -101,11 +137,11 @@ export const useGcfFunctions = (organizationId?: string) => {
       });
       
       return data;
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error creating GCF function:', error);
       toast({
         title: "Error",
-        description: "Failed to add Cloud Function",
+        description: `Failed to add Cloud Function: ${error.message}`,
         variant: "destructive"
       });
       return null;

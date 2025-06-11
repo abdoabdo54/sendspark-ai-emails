@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -61,7 +60,7 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
   const [rotateFromNames, setRotateFromNames] = useState(false);
   const [fromNameVariations, setFromNameVariations] = useState('');
 
-  // Legacy Cloud Function URL (fallback)
+  // Legacy Cloud Function URL (fallback) - ensure this is always available
   const [legacyFunctionUrl, setLegacyFunctionUrl] = useState('https://us-central1-alpin-4d67f.cloudfunctions.net/sendEmailCampaign');
 
   // Smart config
@@ -84,7 +83,7 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
   const enabledFunctions = functions.filter(func => func.enabled);
   const recipientCount = recipients.split(',').filter(email => email.trim()).length;
 
-  // Use either registered functions or fallback to legacy URL
+  // Use either registered functions or fallback to legacy URL - ALWAYS ensure we have at least one function
   const availableFunctions = enabledFunctions.length > 0 ? enabledFunctions : 
     [{ id: 'legacy', name: 'Legacy Function', url: legacyFunctionUrl, enabled: true }];
 
@@ -238,12 +237,12 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
       config.maxParallelSends = true;
     }
 
-    // Google Cloud Functions config for parallel dispatch
+    // Google Cloud Functions config for parallel dispatch - ALWAYS ensure we have functions
     if ((sendingMode === 'fast' || sendingMode === 'zero-delay') && availableFunctions.length > 0) {
       config.googleCloudFunctions = {
         enabled: true,
         functionUrls: availableFunctions.map(func => func.url),
-        functionIds: availableFunctions.map(func => func.id), // Store function IDs for last_used updates
+        functionIds: availableFunctions.map(func => func.id), 
         parallelDispatch: true,
         zeroDelayMode: sendingMode === 'zero-delay'
       };
@@ -676,3 +675,5 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
 };
 
 export default BulkEmailComposer;
+
+</edits_to_apply>
