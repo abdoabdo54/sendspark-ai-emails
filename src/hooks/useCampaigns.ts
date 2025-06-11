@@ -45,7 +45,14 @@ export const useCampaigns = (organizationId?: string) => {
 
       if (error) throw error;
       
-      setCampaigns(data || []);
+      // Type-safe conversion from database to Campaign interface
+      const typedCampaigns: Campaign[] = (data || []).map(campaign => ({
+        ...campaign,
+        config: campaign.config || {},
+        prepared_emails: Array.isArray(campaign.prepared_emails) ? campaign.prepared_emails : []
+      }));
+      
+      setCampaigns(typedCampaigns);
     } catch (error) {
       console.error('Error fetching campaigns:', error);
       toast({
@@ -80,13 +87,19 @@ export const useCampaigns = (organizationId?: string) => {
 
       if (error) throw error;
 
-      setCampaigns(prev => [data, ...prev]);
+      const typedCampaign: Campaign = {
+        ...data,
+        config: data.config || {},
+        prepared_emails: Array.isArray(data.prepared_emails) ? data.prepared_emails : []
+      };
+
+      setCampaigns(prev => [typedCampaign, ...prev]);
       toast({
         title: "Success",
         description: "Campaign created successfully"
       });
       
-      return data;
+      return typedCampaign;
     } catch (error: any) {
       console.error('Error creating campaign:', error);
       toast({
@@ -109,11 +122,17 @@ export const useCampaigns = (organizationId?: string) => {
 
       if (error) throw error;
 
+      const typedCampaign: Campaign = {
+        ...data,
+        config: data.config || {},
+        prepared_emails: Array.isArray(data.prepared_emails) ? data.prepared_emails : []
+      };
+
       setCampaigns(prev => prev.map(campaign => 
-        campaign.id === campaignId ? data : campaign
+        campaign.id === campaignId ? typedCampaign : campaign
       ));
 
-      return data;
+      return typedCampaign;
     } catch (error) {
       console.error('Error updating campaign:', error);
       toast({
@@ -122,6 +141,92 @@ export const useCampaigns = (organizationId?: string) => {
         variant: "destructive"
       });
       return null;
+    }
+  };
+
+  const prepareCampaign = async (campaignId: string) => {
+    try {
+      await updateCampaign(campaignId, { status: 'prepared' });
+      toast({
+        title: "Success",
+        description: "Campaign prepared successfully"
+      });
+    } catch (error) {
+      console.error('Error preparing campaign:', error);
+      toast({
+        title: "Error",
+        description: "Failed to prepare campaign",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const pauseCampaign = async (campaignId: string) => {
+    try {
+      await updateCampaign(campaignId, { status: 'paused' });
+      toast({
+        title: "Success",
+        description: "Campaign paused successfully"
+      });
+    } catch (error) {
+      console.error('Error pausing campaign:', error);
+      toast({
+        title: "Error",
+        description: "Failed to pause campaign",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const resumeCampaign = async (campaignId: string) => {
+    try {
+      await updateCampaign(campaignId, { status: 'sending' });
+      toast({
+        title: "Success",
+        description: "Campaign resumed successfully"
+      });
+    } catch (error) {
+      console.error('Error resuming campaign:', error);
+      toast({
+        title: "Error",
+        description: "Failed to resume campaign",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const duplicateCampaign = async (campaignId: string) => {
+    try {
+      const campaign = campaigns.find(c => c.id === campaignId);
+      if (!campaign) {
+        throw new Error('Campaign not found');
+      }
+
+      const duplicateData: Omit<Campaign, 'id' | 'created_at' | 'organization_id'> = {
+        from_name: campaign.from_name,
+        subject: `Copy of ${campaign.subject}`,
+        recipients: campaign.recipients,
+        html_content: campaign.html_content,
+        text_content: campaign.text_content,
+        send_method: campaign.send_method,
+        status: 'draft',
+        sent_count: 0,
+        total_recipients: campaign.total_recipients,
+        config: campaign.config,
+        prepared_emails: [],
+        sent_at: undefined,
+        error_message: undefined,
+        completed_at: undefined
+      };
+
+      await createCampaign(duplicateData);
+    } catch (error) {
+      console.error('Error duplicating campaign:', error);
+      toast({
+        title: "Error",
+        description: "Failed to duplicate campaign",
+        variant: "destructive"
+      });
     }
   };
 
@@ -204,6 +309,10 @@ export const useCampaigns = (organizationId?: string) => {
     updateCampaign,
     deleteCampaign,
     sendCampaign,
+    prepareCampaign,
+    pauseCampaign,
+    resumeCampaign,
+    duplicateCampaign,
     refetch: fetchCampaigns
   };
 };

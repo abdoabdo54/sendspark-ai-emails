@@ -25,7 +25,13 @@ const EmailComposer = ({ activeTab = 'bulk' }: EmailComposerProps) => {
     try {
       console.log('Creating campaign with data:', campaignData);
       
-      // Create the campaign
+      // Parse recipients to get total count
+      const recipients = campaignData.recipients
+        .split(',')
+        .map((email: string) => email.trim())
+        .filter((email: string) => email);
+      
+      // Create the campaign with all required properties
       const campaign = await createCampaign({
         from_name: campaignData.from_name,
         subject: campaignData.subject,
@@ -33,7 +39,14 @@ const EmailComposer = ({ activeTab = 'bulk' }: EmailComposerProps) => {
         html_content: campaignData.html_content || '',
         text_content: campaignData.text_content || '',
         send_method: campaignData.send_method || 'bulk',
-        config: campaignData.config || {}
+        status: 'draft',
+        sent_count: 0,
+        total_recipients: recipients.length,
+        config: campaignData.config || {},
+        prepared_emails: [],
+        sent_at: undefined,
+        error_message: undefined,
+        completed_at: undefined
       });
 
       console.log('Campaign created successfully:', campaign);
