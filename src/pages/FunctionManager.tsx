@@ -235,7 +235,6 @@ const FunctionManager = () => {
                           <Switch
                             checked={func.enabled}
                             onCheckedChange={(enabled) => handleToggleFunction(func.id, enabled)}
-                            size="sm"
                           />
                           <Badge variant={func.enabled ? "default" : "secondary"}>
                             {func.enabled ? 'Enabled' : 'Disabled'}
