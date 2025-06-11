@@ -15,9 +15,7 @@
   },
   "scripts": {
     "start": "functions-framework --target=sendBatch --port=8080 --source=.",
-    "deploy": "gcloud functions deploy sendBatch --gen2 --runtime nodejs20 --trigger-http --allow-unauthenticated --memory=2GB --timeout=540s --max-instances=20 --region=us-central1 --set-env-vars SUPABASE_URL=${SUPABASE_URL},SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY} --entry-point=sendBatch",
-    "deploy-fast": "gcloud functions deploy sendBatchFast --gen2 --runtime nodejs20 --trigger-http --allow-unauthenticated --memory=4GB --timeout=540s --max-instances=50 --region=us-central1 --set-env-vars SUPABASE_URL=${SUPABASE_URL},SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY} --entry-point=sendBatchFast",
-    "deploy-zero": "gcloud functions deploy sendBatchZero --gen2 --runtime nodejs20 --trigger-http --allow-unauthenticated --memory=8GB --timeout=540s --max-instances=100 --region=us-central1 --set-env-vars SUPABASE_URL=${SUPABASE_URL},SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY} --entry-point=sendBatchZero"
+    "deploy": "gcloud functions deploy sendBatch --gen2 --runtime nodejs20 --trigger-http --allow-unauthenticated --memory=2GB --timeout=540s --max-instances=20 --region=us-central1 --set-env-vars SUPABASE_URL=${SUPABASE_URL},SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY} --entry-point=sendBatch"
   },
   "keywords": [
     "email",

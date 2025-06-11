@@ -377,7 +377,5 @@ async function sendEmailCampaignZeroDelay(req, res) {
   }
 }
 
-// Register the function with the Functions Framework
+// Register the main function
 functions.http('sendBatch', sendEmailCampaignZeroDelay);
-functions.http('sendBatchFast', sendEmailCampaignZeroDelay);
-functions.http('sendBatchZero', sendEmailCampaignZeroDelay);
