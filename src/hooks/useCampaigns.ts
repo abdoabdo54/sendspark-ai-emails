@@ -289,88 +289,20 @@ export const useCampaigns = (organizationId?: string) => {
         throw new Error('No valid accounts found for campaign preparation');
       }
 
-      // Get Google Cloud Functions configuration
-      let googleCloudConfig = null;
-      try {
-        const savedSettings = localStorage.getItem('emailCampaignSettings');
-        if (savedSettings) {
-          const parsed = JSON.parse(savedSettings);
-          if (parsed.googleCloudFunctions?.enabled && parsed.googleCloudFunctions?.functionUrl) {
-            googleCloudConfig = {
-              enabled: true,
-              functionUrl: parsed.googleCloudFunctions.functionUrl,
-              defaultRateLimit: parsed.googleCloudFunctions.defaultRateLimit || 3600,
-              defaultBatchSize: parsed.googleCloudFunctions.defaultBatchSize || 10
-            };
-          }
-        }
-      } catch (error) {
-        console.error('Error parsing saved settings:', error);
-      }
-
-      // Enhanced rotation configuration
-      const rotation = {
-        useFromNameRotation: campaignConfig.useFromNameRotation || false,
-        fromNames: campaignConfig.fromNames || [],
-        useSubjectRotation: campaignConfig.useSubjectRotation || false,
-        subjects: campaignConfig.subjects || []
-      };
-
-      // Test after configuration - always enabled and auto-included
-      const testAfterConfig = {
-        enabled: true,
-        email: campaignConfig.testAfter?.email || '',
-        count: campaignConfig.testAfter?.count || 100,
-        automaticallyIncluded: true,
-        insertedIntoRecipientList: true
-      };
-
-      // Analytics configuration - always enabled
-      const analyticsConfig = {
-        trackOpens: true,
-        trackClicks: true,
-        trackingEnabled: true,
-        baseUrl: window.location.origin
-      };
-
-      console.log('Enhanced campaign preparation with:', {
-        campaignId,
-        selectedAccounts: accountsToUse.map(acc => acc.id),
-        rotation,
-        testAfterConfig,
-        analyticsConfig,
-        googleCloudConfig,
-        totalRecipients: allRecipients.length
+      // Mark campaign as prepared - no need for complex preparation
+      await updateCampaign(campaignId, { 
+        status: 'prepared',
+        prepared_emails: [] // Empty array since we'll process on-demand
       });
-
-      // Call the enhanced prepare function
-      const { data, error } = await supabase.functions.invoke('prepare-campaign-advanced', {
-        body: { 
-          campaignId,
-          selectedAccounts: accountsToUse.map(acc => acc.id),
-          rotation,
-          googleCloudConfig,
-          testAfterConfig,
-          analyticsConfig,
-          ignoreAccountRateLimits: true // Always ignore account-level rate limits
-        }
-      });
-
-      if (error) {
-        console.error('Error calling prepare-campaign-advanced:', error);
-        throw error;
-      }
-
-      console.log('Enhanced campaign preparation result:', data);
 
       toast({
         title: "Success",
-        description: `Campaign prepared successfully! ${data.totalEmails} emails ready with analytics tracking and auto test-after integration across ${data.accountsUsed} accounts.`
+        description: `Campaign prepared successfully! Ready to send ${allRecipients.length} emails using ${accountsToUse.length} accounts.`
       });
 
       await fetchCampaigns();
       
-      return data;
+      return { success: true, totalEmails: allRecipients.length, accountsUsed: accountsToUse.length };
     } catch (error) {
       console.error('Error preparing campaign:', error);
       toast({
@@ -436,9 +368,6 @@ export const useCampaigns = (organizationId?: string) => {
         await updateCampaign(campaignId, { status: 'prepared', error_message: 'Function error' });
         throw new Error('Failed to invoke cloud functions');
       }
-
-      await fetchCampaigns();
-      return data;
     } catch (error) {
       console.error('💥 CRITICAL ERROR in Google Cloud send:', error);
       
