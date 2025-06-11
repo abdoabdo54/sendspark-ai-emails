@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -61,6 +60,11 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
   // Tracking state - User controlled
   const [autoTrackingEnabled, setAutoTrackingEnabled] = useState(false);
 
+  // Smart config overrides
+  const [numFunctions, setNumFunctions] = useState(1);
+  const [numAccounts, setNumAccounts] = useState(1);
+  const [estimatedTime, setEstimatedTime] = useState('');
+
   useEffect(() => {
     // Load saved settings
     try {
@@ -74,6 +78,19 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
       }
     } catch (error) {
       console.error('Error loading saved settings:', error);
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('smartConfig');
+      if (raw) {
+        const cfg = JSON.parse(raw);
+        if (cfg.recommendedFunctions) setNumFunctions(cfg.recommendedFunctions);
+        if (cfg.recommendedAccounts) setNumAccounts(cfg.recommendedAccounts);
+      }
+    } catch (err) {
+      console.error('Error loading smartConfig:', err);
     }
   }, []);
 
@@ -315,7 +332,9 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
         trackOpens: autoTrackingEnabled,
         trackClicks: autoTrackingEnabled,
         trackingEnabled: autoTrackingEnabled
-      }
+      },
+      numFunctions,
+      numAccounts
     };
 
     console.log('Test-After configuration:', config.testAfter);
@@ -364,6 +383,11 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
   const finalRecipientCount = useTestAfter ? 
     insertTestAfterEmails(recipients, testAfterEmail, testAfterCount).split(',').filter(email => email.trim()).length :
     recipientCount;
+
+  useEffect(() => {
+    const secs = Math.round((finalRecipientCount / (numFunctions * 5000)) * 12 + 2);
+    setEstimatedTime(`${secs} sec`);
+  }, [finalRecipientCount, numFunctions]);
 
   return (
     <div className="max-w-4xl mx-auto p-6 space-y-6">
@@ -459,6 +483,8 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
                 />
               </div>
             </div>
+
+            <p className="text-sm text-gray-600">Estimated time: {estimatedTime}</p>
 
             {/* AI Subject Generator */}
             <AISubjectGenerator onSubjectSelect={setSubject} />
@@ -619,9 +645,19 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
                         id="gcfUrl"
                         value={googleCloudFunctionUrl}
                         onChange={(e) => setGoogleCloudFunctionUrl(e.target.value)}
-                        placeholder="https://your-region-your-project.cloudfunctions.net/sendEmailCampaign"
+                        placeholder="https://your-region-your-project.cloudfunctions.net/sendBatch"
                         required={sendingMode === 'fast' || sendingMode === 'zero-delay'}
                       />
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <Label htmlFor="numFuncs">Functions</Label>
+                          <Input id="numFuncs" type="number" min={1} value={numFunctions} onChange={e => setNumFunctions(parseInt(e.target.value))} />
+                        </div>
+                        <div>
+                          <Label htmlFor="numAccts">Accounts</Label>
+                          <Input id="numAccts" type="number" min={1} value={numAccounts} onChange={e => setNumAccounts(parseInt(e.target.value))} />
+                        </div>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -728,3 +764,5 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
 };
 
 export default BulkEmailComposer;
+
+}

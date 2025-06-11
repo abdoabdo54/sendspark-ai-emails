@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
 
@@ -400,32 +401,40 @@ export const useCampaigns = (organizationId?: string) => {
         error_message: null
       });
 
-      const { data, error } = await supabase.functions.invoke('send-via-google-cloud-advanced', {
-        body: { campaignId, resumeFromIndex }
-      });
+      const cfg = campaign.config || {};
+      const baseUrl = cfg.googleCloudFunctions?.functionUrl || '';
+      const numFuncs = cfg.numFunctions || 1;
+      const zeroDelay = cfg.sendingMode === 'zero-delay';
 
-      if (error) {
-        console.error('❌ Google Cloud sender error:', error);
-        
-        await updateCampaign(campaignId, { 
-          status: 'prepared',
-          error_message: `Google Cloud error: ${error.message}`
-        });
-        
-        throw error;
+      if (!baseUrl) throw new Error('Function URL not configured');
+
+      const chunkSize = Math.ceil(campaign.total_recipients / numFuncs);
+      const requests: Promise<Response>[] = [];
+      for (let i = 0; i < numFuncs; i++) {
+        const skip = i * chunkSize;
+        const limit = Math.min(chunkSize, campaign.total_recipients - skip);
+        const url = `${baseUrl}${i + 1}`;
+        requests.push(fetch(`${url}?skip=${skip}&limit=${limit}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ campaignId, zeroDelay })
+        }));
       }
 
-      console.log('✅ Google Cloud HIGH-SPEED send initiated:', data);
-
-      if (data.success) {
+      const results = await Promise.all(requests);
+      const ok = results.every(r => r.ok);
+      if (ok) {
         toast({
-          title: "🚀 MAXIMUM SPEED Campaign Started!",
-          description: `Processing ${data.configuration?.total_emails || 0} emails at MAXIMUM SPEED via Google Cloud Functions with rotation and test-after features. Real-time updates every 3 seconds.`
+          title: 'Campaign Started',
+          description: `Dispatched to ${numFuncs} functions`
         });
 
         startPolling();
+        await fetchCampaigns();
+        return { success: true };
       } else {
-        throw new Error(data.error || 'Failed to start high-speed campaign sending');
+        await updateCampaign(campaignId, { status: 'prepared', error_message: 'Function error' });
+        throw new Error('Failed to invoke cloud functions');
       }
 
       await fetchCampaigns();
