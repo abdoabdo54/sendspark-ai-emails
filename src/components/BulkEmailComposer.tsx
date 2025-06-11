@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -8,7 +7,10 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Rocket, ExternalLink, Calculator, Mail } from 'lucide-react';
+import { Switch } from '@/components/ui/switch';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Rocket, ExternalLink, Calculator, Mail, Eye, Zap, Clock, RotateCcw, Target } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { useSimpleOrganizations } from '@/contexts/SimpleOrganizationContext';
 import { useCampaignSender } from '@/hooks/useCampaignSender';
@@ -18,7 +20,6 @@ import CSVDataImporter from './CSVDataImporter';
 import GoogleSheetsImport from './GoogleSheetsImport';
 import AISubjectGenerator from './AISubjectGenerator';
 import CompactAccountSelector from './CompactAccountSelector';
-import AdvancedConfigurationPanel from './AdvancedConfigurationPanel';
 
 interface BulkEmailComposerProps {
   onSend: (data: any) => void;
@@ -40,14 +41,24 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
   // Account selection state
   const [selectedAccounts, setSelectedAccounts] = useState<string[]>([]);
   
-  // Configuration states
+  // Sending configuration
   const [sendingMode, setSendingMode] = useState<'controlled' | 'fast' | 'zero-delay'>('controlled');
+  const [dispatchMethod, setDispatchMethod] = useState<'parallel' | 'round-robin' | 'sequential'>('parallel');
+  
+  // Rotation configuration
+  const [useFromRotation, setUseFromRotation] = useState(false);
+  const [useSubjectRotation, setUseSubjectRotation] = useState(false);
+  const [fromNameVariations, setFromNameVariations] = useState('');
+  const [subjectVariations, setSubjectVariations] = useState('');
+  
+  // Test-After configuration
   const [useTestAfter, setUseTestAfter] = useState(true);
   const [testAfterEmail, setTestAfterEmail] = useState('');
   const [testAfterCount, setTestAfterCount] = useState(500);
+  
+  // Other configuration
   const [trackingEnabled, setTrackingEnabled] = useState(false);
-  const [useFromRotation, setUseFromRotation] = useState(false);
-  const [useSubjectRotation, setUseSubjectRotation] = useState(false);
+  const [htmlPreviewOpen, setHtmlPreviewOpen] = useState(false);
 
   // SmartConfig state
   const [smartConfig, setSmartConfig] = useState<any>(null);
@@ -134,19 +145,37 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
   };
 
   const validateForm = () => {
-    if (!fromName.trim()) {
+    if (!fromName.trim() && !useFromRotation) {
       toast({
         title: "Validation Error",
-        description: "From name is required",
+        description: "From name is required or enable rotation with variations",
         variant: "destructive"
       });
       return false;
     }
 
-    if (!subject.trim()) {
+    if (!subject.trim() && !useSubjectRotation) {
       toast({
         title: "Validation Error", 
-        description: "Subject is required",
+        description: "Subject is required or enable rotation with variations",
+        variant: "destructive"
+      });
+      return false;
+    }
+
+    if (useFromRotation && !fromNameVariations.trim()) {
+      toast({
+        title: "Validation Error",
+        description: "From name variations are required when rotation is enabled",
+        variant: "destructive"
+      });
+      return false;
+    }
+
+    if (useSubjectRotation && !subjectVariations.trim()) {
+      toast({
+        title: "Validation Error",
+        description: "Subject variations are required when rotation is enabled",
         variant: "destructive"
       });
       return false;
@@ -207,7 +236,14 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
 
     const config = {
       sendingMode,
+      dispatchMethod,
       selectedAccounts,
+      rotation: {
+        fromName: useFromRotation,
+        subject: useSubjectRotation,
+        fromNameVariations: useFromRotation ? fromNameVariations.split(',').map(s => s.trim()) : [],
+        subjectVariations: useSubjectRotation ? subjectVariations.split(',').map(s => s.trim()) : []
+      },
       testAfter: {
         enabled: useTestAfter,
         email: testAfterEmail,
@@ -218,16 +254,12 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
         trackOpens: trackingEnabled,
         trackClicks: trackingEnabled
       },
-      rotation: {
-        fromName: useFromRotation,
-        subject: useSubjectRotation
-      },
       smartConfig
     };
 
     const campaignData = {
-      from_name: fromName,
-      subject,
+      from_name: useFromRotation ? fromNameVariations.split(',')[0].trim() : fromName,
+      subject: useSubjectRotation ? subjectVariations.split(',')[0].trim() : subject,
       recipients,
       html_content: htmlContent,
       text_content: textContent,
@@ -241,7 +273,7 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
       
       toast({
         title: "✅ Campaign Dispatched",
-        description: `Campaign sent to ${result.totalSlices} Cloud Functions in parallel`
+        description: `Campaign sent to ${result.totalSlices} Cloud Functions in ${dispatchMethod} mode`
       });
 
       onSend(campaignData);
@@ -314,6 +346,70 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
               </Alert>
             )}
 
+            {/* Sending Mode & Dispatch Method */}
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <Target className="w-4 h-4" />
+                  Sending Configuration
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-3">
+                    <Label className="text-sm font-medium">Sending Mode</Label>
+                    <RadioGroup 
+                      value={sendingMode} 
+                      onValueChange={(value: 'controlled' | 'fast' | 'zero-delay') => setSendingMode(value)}
+                    >
+                      <div className="flex items-center space-x-2">
+                        <RadioGroupItem value="controlled" id="controlled" />
+                        <Label htmlFor="controlled" className="flex items-center gap-1 text-sm">
+                          <Clock className="w-3 h-3" />
+                          Controlled (2s delay)
+                        </Label>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <RadioGroupItem value="fast" id="fast" />
+                        <Label htmlFor="fast" className="flex items-center gap-1 text-sm">
+                          <Zap className="w-3 h-3" />
+                          Fast (0.5s delay)
+                        </Label>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <RadioGroupItem value="zero-delay" id="zero-delay" />
+                        <Label htmlFor="zero-delay" className="flex items-center gap-1 text-sm">
+                          <Rocket className="w-3 h-3" />
+                          Zero Delay (Max Speed)
+                        </Label>
+                      </div>
+                    </RadioGroup>
+                  </div>
+
+                  <div className="space-y-3">
+                    <Label className="text-sm font-medium">Dispatch Method</Label>
+                    <RadioGroup 
+                      value={dispatchMethod} 
+                      onValueChange={(value: 'parallel' | 'round-robin' | 'sequential') => setDispatchMethod(value)}
+                    >
+                      <div className="flex items-center space-x-2">
+                        <RadioGroupItem value="parallel" id="parallel" />
+                        <Label htmlFor="parallel" className="text-sm">Parallel (All functions)</Label>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <RadioGroupItem value="round-robin" id="round-robin" />
+                        <Label htmlFor="round-robin" className="text-sm">Round Robin</Label>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <RadioGroupItem value="sequential" id="sequential" />
+                        <Label htmlFor="sequential" className="text-sm">Sequential</Label>
+                      </div>
+                    </RadioGroup>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
             {/* Account Selection */}
             <CompactAccountSelector
               selectedAccounts={selectedAccounts}
@@ -322,7 +418,7 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
               onDeselectAll={handleDeselectAllAccounts}
             />
 
-            {/* Basic Campaign Information */}
+            {/* Campaign Details */}
             <Card>
               <CardHeader className="pb-3">
                 <CardTitle className="text-sm">Campaign Details</CardTitle>
@@ -330,26 +426,82 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
               <CardContent className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <Label htmlFor="fromName" className="text-sm">From Name *</Label>
+                    <Label htmlFor="fromName" className="text-sm">
+                      From Name {!useFromRotation && '*'}
+                    </Label>
                     <Input
                       id="fromName"
                       value={fromName}
                       onChange={(e) => setFromName(e.target.value)}
                       placeholder="Your Name"
                       className="mt-1"
-                      required
+                      disabled={useFromRotation}
+                      required={!useFromRotation}
                     />
                   </div>
                   <div>
-                    <Label htmlFor="subject" className="text-sm">Subject *</Label>
+                    <Label htmlFor="subject" className="text-sm">
+                      Subject {!useSubjectRotation && '*'}
+                    </Label>
                     <Input
                       id="subject"
                       value={subject}
                       onChange={(e) => setSubject(e.target.value)}
                       placeholder="Email Subject"
                       className="mt-1"
-                      required
+                      disabled={useSubjectRotation}
+                      required={!useSubjectRotation}
                     />
+                  </div>
+                </div>
+
+                {/* Rotation Options */}
+                <div className="space-y-4 border-t pt-4">
+                  <div className="flex items-center gap-2">
+                    <RotateCcw className="w-4 h-4" />
+                    <Label className="text-sm font-medium">Rotation Options</Label>
+                  </div>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <Label htmlFor="useFromRotation" className="text-sm">From Name Rotation</Label>
+                        <Switch
+                          id="useFromRotation"
+                          checked={useFromRotation}
+                          onCheckedChange={setUseFromRotation}
+                        />
+                      </div>
+                      {useFromRotation && (
+                        <Textarea
+                          placeholder="Variation 1, Variation 2, Variation 3..."
+                          value={fromNameVariations}
+                          onChange={(e) => setFromNameVariations(e.target.value)}
+                          rows={2}
+                          className="text-sm"
+                        />
+                      )}
+                    </div>
+
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <Label htmlFor="useSubjectRotation" className="text-sm">Subject Rotation</Label>
+                        <Switch
+                          id="useSubjectRotation"
+                          checked={useSubjectRotation}
+                          onCheckedChange={setUseSubjectRotation}
+                        />
+                      </div>
+                      {useSubjectRotation && (
+                        <Textarea
+                          placeholder="Subject 1, Subject 2, Subject 3..."
+                          value={subjectVariations}
+                          onChange={(e) => setSubjectVariations(e.target.value)}
+                          rows={2}
+                          className="text-sm"
+                        />
+                      )}
+                    </div>
                   </div>
                 </div>
 
@@ -381,7 +533,25 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
 
                 {/* Email Content */}
                 <div className="space-y-3">
-                  <Label htmlFor="htmlContent" className="text-sm">HTML Content *</Label>
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="htmlContent" className="text-sm">HTML Content *</Label>
+                    <Dialog open={htmlPreviewOpen} onOpenChange={setHtmlPreviewOpen}>
+                      <DialogTrigger asChild>
+                        <Button variant="outline" size="sm" type="button">
+                          <Eye className="w-3 h-3 mr-1" />
+                          Preview
+                        </Button>
+                      </DialogTrigger>
+                      <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
+                        <DialogHeader>
+                          <DialogTitle>HTML Preview</DialogTitle>
+                        </DialogHeader>
+                        <div className="border rounded p-4">
+                          <div dangerouslySetInnerHTML={{ __html: htmlContent }} />
+                        </div>
+                      </DialogContent>
+                    </Dialog>
+                  </div>
                   <Textarea
                     id="htmlContent"
                     value={htmlContent}
@@ -407,26 +577,97 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
               </CardContent>
             </Card>
 
-            {/* Advanced Configuration */}
-            <AdvancedConfigurationPanel
-              sendingMode={sendingMode}
-              onSendingModeChange={setSendingMode}
-              useTestAfter={useTestAfter}
-              onUseTestAfterChange={setUseTestAfter}
-              testAfterEmail={testAfterEmail}
-              onTestAfterEmailChange={setTestAfterEmail}
-              testAfterCount={testAfterCount}
-              onTestAfterCountChange={setTestAfterCount}
-              trackingEnabled={trackingEnabled}
-              onTrackingEnabledChange={setTrackingEnabled}
-              useFromRotation={useFromRotation}
-              onUseFromRotationChange={setUseFromRotation}
-              useSubjectRotation={useSubjectRotation}
-              onUseSubjectRotationChange={setUseSubjectRotation}
-              hasAccounts={hasAccounts}
-              hasFunctions={hasFunctions}
-              estimatedTime={estimatedTime}
-            />
+            {/* Test-After Configuration */}
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <Target className="w-4 h-4" />
+                  Test-After Configuration
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="useTestAfter" className="text-sm">Enable Test-After</Label>
+                  <Switch
+                    id="useTestAfter"
+                    checked={useTestAfter}
+                    onCheckedChange={setUseTestAfter}
+                  />
+                </div>
+                
+                {useTestAfter && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div>
+                      <Label htmlFor="testAfterEmail" className="text-sm">Test Email *</Label>
+                      <Input
+                        id="testAfterEmail"
+                        type="email"
+                        value={testAfterEmail}
+                        onChange={(e) => setTestAfterEmail(e.target.value)}
+                        placeholder="test@example.com"
+                        className="mt-1"
+                        required={useTestAfter}
+                      />
+                    </div>
+                    
+                    <div>
+                      <Label htmlFor="testAfterCount" className="text-sm">Test Every X Emails</Label>
+                      <Input
+                        id="testAfterCount"
+                        type="number"
+                        min="1"
+                        max="1000"
+                        value={testAfterCount}
+                        onChange={(e) => setTestAfterCount(parseInt(e.target.value) || 1)}
+                        className="mt-1"
+                      />
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Tracking Configuration */}
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <Target className="w-4 h-4" />
+                  Email Tracking
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-center justify-between">
+                  <div className="space-y-1">
+                    <Label className="text-sm">Track Opens & Clicks</Label>
+                    <p className="text-xs text-gray-600">Monitor email engagement</p>
+                  </div>
+                  <Switch
+                    checked={trackingEnabled}
+                    onCheckedChange={setTrackingEnabled}
+                  />
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Status Summary */}
+            <Alert className={hasAccounts && hasFunctions ? "border-green-200 bg-green-50" : "border-yellow-200 bg-yellow-50"}>
+              <Target className="h-4 w-4" />
+              <AlertDescription>
+                {hasAccounts && hasFunctions ? (
+                  <span className="text-green-800 text-sm">
+                    <strong>✅ Ready to Launch</strong>
+                    {estimatedTime && ` • Estimated time: ${estimatedTime} (${dispatchMethod} mode)`}
+                  </span>
+                ) : (
+                  <div className="text-yellow-800 text-sm">
+                    <strong>⚠️ Setup Required:</strong>
+                    {!hasFunctions && " Configure Cloud Functions"}
+                    {!hasFunctions && !hasAccounts && " • "}
+                    {!hasAccounts && " Select Email Accounts"}
+                  </div>
+                )}
+              </AlertDescription>
+            </Alert>
 
             <Separator />
 
@@ -437,7 +678,7 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
               disabled={!hasFunctions || !hasAccounts}
             >
               <Rocket className="w-4 h-4 mr-2" />
-              Launch Parallel Campaign
+              Launch {dispatchMethod.charAt(0).toUpperCase() + dispatchMethod.slice(1)} Campaign
               {estimatedTime && (
                 <Badge variant="secondary" className="ml-2 text-xs">
                   {estimatedTime}

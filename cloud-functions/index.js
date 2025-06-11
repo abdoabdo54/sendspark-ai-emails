@@ -96,30 +96,23 @@ function addTracking(htmlContent, campaignId, recipient, trackingConfig) {
   return trackedContent;
 }
 
-// Rotation helpers
-function rotateFromName(baseName, index, rotationEnabled) {
-  if (!rotationEnabled) return baseName;
+// Enhanced rotation helpers
+function rotateFromName(config, index) {
+  if (!config.rotation?.fromName || !config.rotation?.fromNameVariations?.length) {
+    return config.baseName || 'Default Sender';
+  }
   
-  const variations = [
-    baseName,
-    `${baseName} Team`,
-    `${baseName} Support`,
-    `${baseName} Marketing`
-  ];
-  
+  const variations = config.rotation.fromNameVariations;
   return variations[index % variations.length];
 }
 
-function rotateSubject(baseSubject, index, rotationEnabled) {
-  if (!rotationEnabled) return baseSubject;
+function rotateSubject(config, index) {
+  if (!config.rotation?.subject || !config.rotation?.subjectVariations?.length) {
+    return config.baseSubject || 'Default Subject';
+  }
   
-  const prefixes = ['', '🚀 ', '✨ ', '💡 '];
-  const suffixes = ['', ' - Limited Time', ' - Don\'t Miss Out', ' - Act Now'];
-  
-  const prefix = prefixes[index % prefixes.length];
-  const suffix = suffixes[Math.floor(index / prefixes.length) % suffixes.length];
-  
-  return `${prefix}${baseSubject}${suffix}`;
+  const variations = config.rotation.subjectVariations;
+  return variations[index % variations.length];
 }
 
 // Apply sending mode delays
@@ -138,7 +131,7 @@ async function applySendingDelay(sendingMode) {
   }
 }
 
-// Main function
+// Main function - Enhanced for Gen2 with advanced features
 functions.http('sendBatch', async (req, res) => {
   // Enable CORS
   res.set('Access-Control-Allow-Origin', '*');
@@ -150,6 +143,8 @@ functions.http('sendBatch', async (req, res) => {
     return;
   }
 
+  const startTime = Date.now();
+
   try {
     const { 
       campaignId, 
@@ -159,39 +154,51 @@ functions.http('sendBatch', async (req, res) => {
       organizationId 
     } = req.body;
 
-    console.log(`🚀 Processing slice: ${slice.recipients.length} emails for campaign ${campaignId}`);
+    console.log(`🚀 [${campaignId}] Processing slice: ${slice.recipients.length} emails`);
 
     const results = [];
     let accountIndex = 0;
 
-    // Get configuration
+    // Get enhanced configuration
     const config = campaignData.config || {};
     const sendingMode = config.sendingMode || 'controlled';
+    const dispatchMethod = config.dispatchMethod || 'parallel';
     const rotationConfig = config.rotation || {};
     const trackingConfig = config.tracking || {};
     const testAfterConfig = config.testAfter || {};
 
+    console.log(`📊 [${campaignId}] Mode: ${sendingMode}, Dispatch: ${dispatchMethod}, Rotation: ${rotationConfig.fromName || rotationConfig.subject ? 'enabled' : 'disabled'}`);
+
+    // Account selection strategy based on dispatch method
+    const getAccount = (index) => {
+      switch (dispatchMethod) {
+        case 'round-robin':
+          return accounts[index % accounts.length];
+        case 'sequential':
+          return accounts[Math.floor(index / Math.ceil(slice.recipients.length / accounts.length))];
+        case 'parallel':
+        default:
+          return accounts[index % accounts.length];
+      }
+    };
+
     // Process each recipient in the slice
     for (let i = 0; i < slice.recipients.length; i++) {
       const recipient = slice.recipients[i];
-      
-      // Rotate through available accounts
-      const account = accounts[accountIndex % accounts.length];
+      const account = getAccount(i);
       accountIndex++;
 
       try {
-        // Apply rotation to from name and subject
-        const fromName = rotateFromName(
-          campaignData.from_name, 
-          i, 
-          rotationConfig.fromName
-        );
+        // Apply enhanced rotation
+        const fromName = rotateFromName({
+          baseName: campaignData.from_name,
+          rotation: rotationConfig
+        }, i);
         
-        const subject = rotateSubject(
-          campaignData.subject, 
-          i, 
-          rotationConfig.subject
-        );
+        const subject = rotateSubject({
+          baseSubject: campaignData.subject,
+          rotation: rotationConfig
+        }, i);
 
         // Prepare email content
         let htmlContent = campaignData.html_content;
@@ -213,12 +220,12 @@ functions.http('sendBatch', async (req, res) => {
 
         let result;
 
-        // Send based on account type
+        // Send based on account type with enhanced error handling
         if (account.type === 'smtp') {
           const transporter = createTransporter(account.config);
           if (transporter) {
             result = await sendViaSMTP(transporter, emailData);
-            transporter.close(); // Close connection after use
+            transporter.close();
           } else {
             result = { success: false, error: 'Failed to create SMTP transporter' };
           }
@@ -229,7 +236,7 @@ functions.http('sendBatch', async (req, res) => {
         }
 
         if (result.success) {
-          console.log(`✅ Sent to ${recipient} via ${account.type} (${account.name})`);
+          console.log(`✅ [${campaignId}] ${i+1}/${slice.recipients.length} → ${recipient} via ${account.name}`);
           results.push({
             recipient,
             status: 'sent',
@@ -237,38 +244,45 @@ functions.http('sendBatch', async (req, res) => {
             accountName: account.name,
             messageId: result.messageId,
             fromName: fromName,
-            subject: subject
+            subject: subject,
+            timestamp: new Date().toISOString()
           });
         } else {
-          console.log(`❌ Failed to ${recipient}: ${result.error}`);
+          console.log(`❌ [${campaignId}] ${i+1}/${slice.recipients.length} → ${recipient}: ${result.error}`);
           results.push({
             recipient,
             status: 'failed',
             error: result.error,
             accountType: account.type,
-            accountName: account.name
+            accountName: account.name,
+            timestamp: new Date().toISOString()
           });
         }
 
-        // Test-After functionality
+        // Enhanced Test-After functionality
         if (testAfterConfig.enabled && testAfterConfig.email) {
           const testAfterCount = testAfterConfig.count || 500;
           
           if ((i + 1) % testAfterCount === 0) {
-            console.log(`📧 Sending test-after email for batch ${Math.floor((i + 1) / testAfterCount)}`);
+            console.log(`📧 [${campaignId}] Sending test-after email for batch ${Math.floor((i + 1) / testAfterCount)}`);
             
             const testEmailData = {
               to: testAfterConfig.email,
-              subject: `Test-After: ${campaignData.subject} - Batch ${Math.floor((i + 1) / testAfterCount)}`,
+              subject: `Test-After: ${subject} - Batch ${Math.floor((i + 1) / testAfterCount)}`,
               html: `
-                <h3>Test-After Report</h3>
+                <h3>Test-After Report - ${campaignId}</h3>
                 <p><strong>Campaign:</strong> ${campaignData.subject}</p>
                 <p><strong>Emails Sent:</strong> ${i + 1}</p>
                 <p><strong>Last Account Used:</strong> ${account.name} (${account.email})</p>
                 <p><strong>Sending Mode:</strong> ${sendingMode}</p>
+                <p><strong>Dispatch Method:</strong> ${dispatchMethod}</p>
+                <p><strong>Current From Name:</strong> ${fromName}</p>
+                <p><strong>Current Subject:</strong> ${subject}</p>
                 <p><strong>Timestamp:</strong> ${new Date().toISOString()}</p>
+                <hr>
+                <p><strong>Success Rate:</strong> ${results.filter(r => r.status === 'sent').length}/${results.length}</p>
               `,
-              text: `Test-After Report: Successfully sent ${i + 1} emails. Campaign: ${campaignData.subject}. Mode: ${sendingMode}`,
+              text: `Test-After Report: Successfully sent ${i + 1} emails. Campaign: ${campaignData.subject}. Mode: ${sendingMode} (${dispatchMethod})`,
               fromName: fromName,
               fromEmail: account.email
             };
@@ -283,8 +297,9 @@ functions.http('sendBatch', async (req, res) => {
               } else if (account.type === 'apps-script') {
                 await sendViaAppsScript(account.config, testEmailData);
               }
+              console.log(`📧 [${campaignId}] Test-after email sent successfully`);
             } catch (testError) {
-              console.log(`⚠️ Test-after email failed: ${testError.message}`);
+              console.log(`⚠️ [${campaignId}] Test-after email failed: ${testError.message}`);
             }
           }
         }
@@ -293,11 +308,12 @@ functions.http('sendBatch', async (req, res) => {
         await applySendingDelay(sendingMode);
 
       } catch (error) {
-        console.error(`❌ Error processing ${recipient}:`, error);
+        console.error(`❌ [${campaignId}] Error processing ${recipient}:`, error);
         results.push({
           recipient,
           status: 'failed',
-          error: error.message
+          error: error.message,
+          timestamp: new Date().toISOString()
         });
       }
     }
@@ -305,6 +321,7 @@ functions.http('sendBatch', async (req, res) => {
     // Update campaign statistics in Supabase
     const sentCount = results.filter(r => r.status === 'sent').length;
     const failedCount = results.filter(r => r.status === 'failed').length;
+    const processingTime = Date.now() - startTime;
 
     try {
       const { error: updateError } = await supabase
@@ -318,29 +335,39 @@ functions.http('sendBatch', async (req, res) => {
         .eq('id', campaignId);
 
       if (updateError) {
-        console.error('Failed to update campaign stats:', updateError);
+        console.error(`❌ [${campaignId}] Failed to update campaign stats:`, updateError);
       }
     } catch (dbError) {
-      console.error('Database update failed:', dbError);
+      console.error(`❌ [${campaignId}] Database update failed:`, dbError);
     }
 
-    console.log(`✅ Slice completed: ${sentCount} sent, ${failedCount} failed`);
+    const successRate = Math.round((sentCount / slice.recipients.length) * 100);
+    console.log(`✅ [${campaignId}] Slice completed: ${sentCount} sent, ${failedCount} failed (${successRate}%) in ${processingTime}ms`);
 
     res.status(200).json({
       success: true,
+      campaignId,
       processed: slice.recipients.length,
       sent: sentCount,
       failed: failedCount,
-      sendingMode: sendingMode,
-      results: results
+      successRate,
+      processingTimeMs: processingTime,
+      sendingMode,
+      dispatchMethod,
+      rotationEnabled: rotationConfig.fromName || rotationConfig.subject,
+      trackingEnabled: trackingConfig.enabled,
+      testAfterEnabled: testAfterConfig.enabled,
+      results: results.slice(-5) // Only return last 5 results to keep response size manageable
     });
 
   } catch (error) {
+    const processingTime = Date.now() - startTime;
     console.error('❌ Function error:', error);
     res.status(500).json({
       success: false,
       error: error.message,
-      stack: error.stack
+      processingTimeMs: processingTime,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
   }
 });
