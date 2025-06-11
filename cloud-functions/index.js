@@ -98,20 +98,20 @@ function addTracking(htmlContent, campaignId, recipient, trackingConfig) {
 
 // Enhanced rotation helpers
 function rotateFromName(config, index) {
-  if (!config.rotation?.fromName || !config.rotation?.fromNameVariations?.length) {
+  if (!config.rotation?.fromNames || !config.rotation?.fromNames?.length) {
     return config.baseName || 'Default Sender';
   }
   
-  const variations = config.rotation.fromNameVariations;
+  const variations = config.rotation.fromNames;
   return variations[index % variations.length];
 }
 
 function rotateSubject(config, index) {
-  if (!config.rotation?.subject || !config.rotation?.subjectVariations?.length) {
+  if (!config.rotation?.subjects || !config.rotation?.subjects?.length) {
     return config.baseSubject || 'Default Subject';
   }
   
-  const variations = config.rotation.subjectVariations;
+  const variations = config.rotation.subjects;
   return variations[index % variations.length];
 }
 
@@ -137,15 +137,16 @@ function selectAccount(accounts, index, dispatchMethod) {
     case 'round-robin':
       return accounts[index % accounts.length];
     case 'sequential':
-      return accounts[Math.floor(index / Math.ceil(accounts.length))];
+      const accountIndex = Math.floor(index / Math.ceil(index / accounts.length)) % accounts.length;
+      return accounts[accountIndex];
     case 'parallel':
     default:
       return accounts[index % accounts.length];
   }
 }
 
-// Main function - Enhanced for Gen2 with advanced features
-functions.http('sendBatch', async (req, res) => {
+// Main function handler for Gen2
+async function sendEmailCampaignZeroDelay(req, res) {
   // Enable CORS
   res.set('Access-Control-Allow-Origin', '*');
   res.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -173,13 +174,13 @@ functions.http('sendBatch', async (req, res) => {
 
     // Get enhanced configuration
     const config = campaignData.config || {};
-    const sendingMode = config.sendingMode || 'controlled';
+    const sendingMode = config.sendingMode || 'zero-delay';
     const dispatchMethod = config.dispatchMethod || 'parallel';
     const rotationConfig = config.rotation || {};
     const trackingConfig = config.tracking || {};
     const testAfterConfig = config.testAfter || {};
 
-    console.log(`📊 [${campaignId}] Mode: ${sendingMode}, Dispatch: ${dispatchMethod}, Rotation: ${rotationConfig.fromName || rotationConfig.subject ? 'enabled' : 'disabled'}`);
+    console.log(`📊 [${campaignId}] Mode: ${sendingMode}, Dispatch: ${dispatchMethod}, Rotation: ${rotationConfig.useFromNameRotation || rotationConfig.useSubjectRotation ? 'enabled' : 'disabled'}`);
 
     // Process each recipient in the slice
     for (let i = 0; i < slice.recipients.length; i++) {
@@ -322,13 +323,19 @@ functions.http('sendBatch', async (req, res) => {
     const processingTime = Date.now() - startTime;
 
     try {
+      // Get current campaign data to increment sent count
+      const { data: currentCampaign } = await supabase
+        .from('email_campaigns')
+        .select('sent_count')
+        .eq('id', campaignId)
+        .single();
+
+      const newSentCount = (currentCampaign?.sent_count || 0) + sentCount;
+
       const { error: updateError } = await supabase
         .from('email_campaigns')
         .update({
-          sent_count: supabase.rpc('increment_sent_count', { 
-            campaign_id: campaignId, 
-            increment_by: sentCount 
-          })
+          sent_count: newSentCount
         })
         .eq('id', campaignId);
 
@@ -352,7 +359,7 @@ functions.http('sendBatch', async (req, res) => {
       processingTimeMs: processingTime,
       sendingMode,
       dispatchMethod,
-      rotationEnabled: rotationConfig.fromName || rotationConfig.subject,
+      rotationEnabled: rotationConfig.useFromNameRotation || rotationConfig.useSubjectRotation,
       trackingEnabled: trackingConfig.enabled,
       testAfterEnabled: testAfterConfig.enabled,
       results: results.slice(-5) // Only return last 5 results to keep response size manageable
@@ -368,4 +375,9 @@ functions.http('sendBatch', async (req, res) => {
       stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
   }
-});
+}
+
+// Register the function with the Functions Framework
+functions.http('sendBatch', sendEmailCampaignZeroDelay);
+functions.http('sendBatchFast', sendEmailCampaignZeroDelay);
+functions.http('sendBatchZero', sendEmailCampaignZeroDelay);
