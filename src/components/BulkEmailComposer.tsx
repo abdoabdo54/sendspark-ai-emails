@@ -61,6 +61,9 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
   const [rotateFromNames, setRotateFromNames] = useState(false);
   const [fromNameVariations, setFromNameVariations] = useState('');
 
+  // Legacy Cloud Function URL (fallback)
+  const [legacyFunctionUrl, setLegacyFunctionUrl] = useState('https://us-central1-alpin-4d67f.cloudfunctions.net/sendEmailCampaign');
+
   // Smart config
   const [estimatedTime, setEstimatedTime] = useState('');
 
@@ -81,10 +84,14 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
   const enabledFunctions = functions.filter(func => func.enabled);
   const recipientCount = recipients.split(',').filter(email => email.trim()).length;
 
+  // Use either registered functions or fallback to legacy URL
+  const availableFunctions = enabledFunctions.length > 0 ? enabledFunctions : 
+    [{ id: 'legacy', name: 'Legacy Function', url: legacyFunctionUrl, enabled: true }];
+
   // Calculate estimated time
   useEffect(() => {
-    if (recipientCount > 0 && enabledFunctions.length > 0) {
-      const emailsPerFunction = Math.ceil(recipientCount / enabledFunctions.length);
+    if (recipientCount > 0 && availableFunctions.length > 0) {
+      const emailsPerFunction = Math.ceil(recipientCount / availableFunctions.length);
       const estimatedSeconds = sendingMode === 'zero-delay' 
         ? Math.ceil(emailsPerFunction / 1000) // Ultra-fast estimate for zero delay
         : Math.ceil(emailsPerFunction / 200); // Conservative estimate
@@ -92,7 +99,7 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
     } else {
       setEstimatedTime('');
     }
-  }, [recipientCount, enabledFunctions.length, sendingMode]);
+  }, [recipientCount, availableFunctions.length, sendingMode]);
 
   const handleAccountToggle = (accountId: string) => {
     setSelectedAccounts(prev => 
@@ -173,15 +180,6 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
       return false;
     }
 
-    if ((sendingMode === 'fast' || sendingMode === 'zero-delay') && enabledFunctions.length === 0) {
-      toast({
-        title: "Validation Error",
-        description: "No enabled Cloud Functions found. Please configure at least one function in Function Manager.",
-        variant: "destructive"
-      });
-      return false;
-    }
-
     if (useTestAfter && !testAfterEmail.trim()) {
       toast({
         title: "Validation Error",
@@ -240,12 +238,12 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
       config.maxParallelSends = true;
     }
 
-    // Google Cloud Functions config for parallel dispatch using registered functions
-    if ((sendingMode === 'fast' || sendingMode === 'zero-delay') && enabledFunctions.length > 0) {
+    // Google Cloud Functions config for parallel dispatch
+    if ((sendingMode === 'fast' || sendingMode === 'zero-delay') && availableFunctions.length > 0) {
       config.googleCloudFunctions = {
         enabled: true,
-        functionUrls: enabledFunctions.map(func => func.url),
-        functionIds: enabledFunctions.map(func => func.id), // Store function IDs for last_used updates
+        functionUrls: availableFunctions.map(func => func.url),
+        functionIds: availableFunctions.map(func => func.id), // Store function IDs for last_used updates
         parallelDispatch: true,
         zeroDelayMode: sendingMode === 'zero-delay'
       };
@@ -278,7 +276,7 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
           <form onSubmit={handleSubmit} className="space-y-6">
             {/* Function Status */}
             {(sendingMode === 'fast' || sendingMode === 'zero-delay') && (
-              <Alert className={enabledFunctions.length > 0 ? "border-green-200 bg-green-50" : "border-red-200 bg-red-50"}>
+              <Alert className={availableFunctions.length > 0 ? "border-green-200 bg-green-50" : "border-yellow-200 bg-yellow-50"}>
                 <Settings className="h-4 w-4" />
                 <AlertDescription>
                   {enabledFunctions.length > 0 ? (
@@ -286,14 +284,15 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
                       <strong>{enabledFunctions.length} Cloud Functions</strong> ready for parallel dispatch
                     </span>
                   ) : (
-                    <div className="text-red-800">
-                      <strong>No Cloud Functions configured.</strong>{' '}
+                    <div className="text-yellow-800">
+                      <strong>Using legacy function:</strong> {legacyFunctionUrl}
+                      <br />
                       <Button 
                         variant="link" 
-                        className="p-0 h-auto text-red-800 underline"
+                        className="p-0 h-auto text-yellow-800 underline"
                         onClick={() => navigate('/function-manager')}
                       >
-                        Configure functions here
+                        Configure new functions here
                       </Button>
                     </div>
                   )}
@@ -359,6 +358,22 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
             </div>
 
             <Separator />
+
+            {/* Legacy Function URL Configuration (when no new functions are configured) */}
+            {enabledFunctions.length === 0 && (sendingMode === 'fast' || sendingMode === 'zero-delay') && (
+              <div className="space-y-4">
+                <Label htmlFor="legacyUrl">Legacy Cloud Function URL</Label>
+                <Input
+                  id="legacyUrl"
+                  value={legacyFunctionUrl}
+                  onChange={(e) => setLegacyFunctionUrl(e.target.value)}
+                  placeholder="https://your-region-project.cloudfunctions.net/functionName"
+                />
+                <p className="text-sm text-gray-600">
+                  This fallback URL will be used until you configure functions in Function Manager
+                </p>
+              </div>
+            )}
 
             {/* Basic Campaign Information */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -440,11 +455,11 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
               )}
             </div>
 
-            {estimatedTime && enabledFunctions.length > 0 && (
+            {estimatedTime && availableFunctions.length > 0 && (
               <Alert className="border-blue-200 bg-blue-50">
                 <AlertTriangle className="h-4 w-4 text-blue-600" />
                 <AlertDescription className="text-blue-800">
-                  <strong>Estimated Delivery Time:</strong> {estimatedTime} using {enabledFunctions.length} functions and {numAccountsToUse} accounts
+                  <strong>Estimated Delivery Time:</strong> {estimatedTime} using {availableFunctions.length} functions and {numAccountsToUse} accounts
                 </AlertDescription>
               </Alert>
             )}
@@ -529,7 +544,7 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
                           className="rounded"
                         />
                         <Label htmlFor={account.id} className="text-sm flex-1">
-                          {account.email} ({account.provider})
+                          {account.email} ({account.type})
                         </Label>
                       </div>
                     ))}
@@ -570,10 +585,10 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
                   <span className="font-medium">Cloud Functions</span>
                 </div>
                 <div className="text-2xl font-bold text-blue-600 mb-1">
-                  {enabledFunctions.length}
+                  {availableFunctions.length}
                 </div>
                 <p className="text-sm text-gray-600">
-                  Enabled functions
+                  {enabledFunctions.length > 0 ? 'Enabled functions' : 'Legacy function available'}
                 </p>
                 {enabledFunctions.length === 0 && (
                   <Button 

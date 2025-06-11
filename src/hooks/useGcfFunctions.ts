@@ -21,18 +21,38 @@ export const useGcfFunctions = (organizationId?: string) => {
   const [loading, setLoading] = useState(true);
 
   const fetchFunctions = async () => {
-    if (!organizationId) return;
+    if (!organizationId) {
+      console.log('No organization ID provided, clearing functions');
+      setFunctions([]);
+      setLoading(false);
+      return;
+    }
 
     try {
+      setLoading(true);
+      console.log('Fetching GCF functions for organization:', organizationId);
+      
       const { data, error } = await supabase
         .from('gcf_functions')
         .select('*')
         .eq('organization_id', organizationId)
         .order('created_at', { ascending: false });
 
-      if (error) throw error;
+      console.log('GCF functions query result:', { data, error });
+
+      if (error) {
+        console.error('Error fetching GCF functions:', error);
+        toast({
+          title: "Error",
+          description: "Failed to load Cloud Functions",
+          variant: "destructive"
+        });
+        return;
+      }
       
-      setFunctions(data || []);
+      const functionsData = data || [];
+      console.log('Loaded GCF functions:', functionsData);
+      setFunctions(functionsData);
     } catch (error) {
       console.error('Error fetching GCF functions:', error);
       toast({
@@ -56,6 +76,8 @@ export const useGcfFunctions = (organizationId?: string) => {
     }
 
     try {
+      console.log('Creating GCF function:', functionData);
+      
       const { data, error } = await supabase
         .from('gcf_functions')
         .insert([{
@@ -65,8 +87,12 @@ export const useGcfFunctions = (organizationId?: string) => {
         .select()
         .single();
 
-      if (error) throw error;
+      if (error) {
+        console.error('Error creating GCF function:', error);
+        throw error;
+      }
 
+      console.log('Created GCF function:', data);
       setFunctions(prev => [data, ...prev]);
       
       toast({
@@ -88,6 +114,8 @@ export const useGcfFunctions = (organizationId?: string) => {
 
   const updateFunction = async (functionId: string, updates: Partial<GcfFunction>) => {
     try {
+      console.log('Updating GCF function:', functionId, updates);
+      
       const { data, error } = await supabase
         .from('gcf_functions')
         .update(updates)
@@ -95,8 +123,12 @@ export const useGcfFunctions = (organizationId?: string) => {
         .select()
         .single();
 
-      if (error) throw error;
+      if (error) {
+        console.error('Error updating GCF function:', error);
+        throw error;
+      }
 
+      console.log('Updated GCF function:', data);
       setFunctions(prev => prev.map(func => 
         func.id === functionId ? data : func
       ));
@@ -115,13 +147,19 @@ export const useGcfFunctions = (organizationId?: string) => {
 
   const deleteFunction = async (functionId: string) => {
     try {
+      console.log('Deleting GCF function:', functionId);
+      
       const { error } = await supabase
         .from('gcf_functions')
         .delete()
         .eq('id', functionId);
 
-      if (error) throw error;
+      if (error) {
+        console.error('Error deleting GCF function:', error);
+        throw error;
+      }
 
+      console.log('Deleted GCF function:', functionId);
       setFunctions(prev => prev.filter(func => func.id !== functionId));
       
       toast({
@@ -140,6 +178,8 @@ export const useGcfFunctions = (organizationId?: string) => {
 
   const updateLastUsed = async (functionId: string) => {
     try {
+      console.log('Updating last_used for function:', functionId);
+      
       await supabase
         .from('gcf_functions')
         .update({ last_used: new Date().toISOString() })
@@ -151,7 +191,12 @@ export const useGcfFunctions = (organizationId?: string) => {
 
   useEffect(() => {
     if (organizationId) {
+      console.log('Organization changed, fetching functions for:', organizationId);
       fetchFunctions();
+    } else {
+      console.log('No organization, clearing functions');
+      setFunctions([]);
+      setLoading(false);
     }
   }, [organizationId]);
 
