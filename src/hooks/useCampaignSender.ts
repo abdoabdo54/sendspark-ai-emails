@@ -71,6 +71,16 @@ export const useCampaignSender = (organizationId?: string) => {
         throw new Error('No valid recipients found');
       }
 
+      // Get selected accounts from config
+      const selectedAccountIds = campaignData.config?.selectedAccounts || [];
+      const selectedAccounts = accounts.filter(account => 
+        selectedAccountIds.includes(account.id) && account.is_active
+      );
+
+      if (selectedAccounts.length === 0) {
+        throw new Error('No valid accounts selected');
+      }
+
       // Create campaign in database
       const { data: campaign, error: campaignError } = await supabase
         .from('email_campaigns')
@@ -79,6 +89,7 @@ export const useCampaignSender = (organizationId?: string) => {
           organization_id: organizationId,
           status: 'processing',
           total_recipients: recipients.length,
+          sent_count: 0,
           prepared_emails: recipients
         }])
         .select()
@@ -110,7 +121,7 @@ export const useCampaignSender = (organizationId?: string) => {
             text_content: campaignData.text_content,
             config: campaignData.config
           },
-          accounts: getAvailableResources().accounts,
+          accounts: selectedAccounts,
           organizationId
         };
 

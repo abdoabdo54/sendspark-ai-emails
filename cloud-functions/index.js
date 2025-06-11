@@ -131,6 +131,19 @@ async function applySendingDelay(sendingMode) {
   }
 }
 
+// Account selection strategy based on dispatch method
+function selectAccount(accounts, index, dispatchMethod) {
+  switch (dispatchMethod) {
+    case 'round-robin':
+      return accounts[index % accounts.length];
+    case 'sequential':
+      return accounts[Math.floor(index / Math.ceil(accounts.length))];
+    case 'parallel':
+    default:
+      return accounts[index % accounts.length];
+  }
+}
+
 // Main function - Enhanced for Gen2 with advanced features
 functions.http('sendBatch', async (req, res) => {
   // Enable CORS
@@ -157,7 +170,6 @@ functions.http('sendBatch', async (req, res) => {
     console.log(`🚀 [${campaignId}] Processing slice: ${slice.recipients.length} emails`);
 
     const results = [];
-    let accountIndex = 0;
 
     // Get enhanced configuration
     const config = campaignData.config || {};
@@ -169,24 +181,10 @@ functions.http('sendBatch', async (req, res) => {
 
     console.log(`📊 [${campaignId}] Mode: ${sendingMode}, Dispatch: ${dispatchMethod}, Rotation: ${rotationConfig.fromName || rotationConfig.subject ? 'enabled' : 'disabled'}`);
 
-    // Account selection strategy based on dispatch method
-    const getAccount = (index) => {
-      switch (dispatchMethod) {
-        case 'round-robin':
-          return accounts[index % accounts.length];
-        case 'sequential':
-          return accounts[Math.floor(index / Math.ceil(slice.recipients.length / accounts.length))];
-        case 'parallel':
-        default:
-          return accounts[index % accounts.length];
-      }
-    };
-
     // Process each recipient in the slice
     for (let i = 0; i < slice.recipients.length; i++) {
       const recipient = slice.recipients[i];
-      const account = getAccount(i);
-      accountIndex++;
+      const account = selectAccount(accounts, i, dispatchMethod);
 
       try {
         // Apply enhanced rotation
