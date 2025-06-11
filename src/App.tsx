@@ -1,4 +1,3 @@
-
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -8,6 +7,7 @@ import { AuthProvider, useAuth } from "@/hooks/useAuth";
 import { SimpleOrganizationProvider } from "@/contexts/SimpleOrganizationContext";
 import Index from "./pages/Index";
 import Campaigns from "./pages/Campaigns";
+import SmartConfig from "./pages/SmartConfig";
 import AuthForm from "./components/AuthForm";
 import { useState } from "react";
 
@@ -36,6 +36,7 @@ const AppContent = () => {
     <Routes>
       <Route path="/" element={<Index activeTab={activeTab} onTabChange={setActiveTab} />} />
       <Route path="/campaigns" element={<Campaigns />} />
+      <Route path="/smart-config" element={<SmartConfig />} />
     </Routes>
   );
 };
