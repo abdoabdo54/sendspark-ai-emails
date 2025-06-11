@@ -1,7 +1,8 @@
 
 {
-  "name": "send-email-batch",
-  "version": "1.0.0",
+  "name": "send-email-batch-parallel",
+  "version": "2.0.0",
+  "description": "Parallel email batch sender for dynamic multi-function dispatch",
   "main": "index.js",
   "type": "commonjs",
   "dependencies": {
@@ -13,6 +14,7 @@
     "node": ">=20"
   },
   "scripts": {
-    "start": "functions-framework --target=sendBatch"
+    "start": "functions-framework --target=sendBatch",
+    "deploy": "gcloud functions deploy sendBatch --runtime nodejs20 --trigger-http --allow-unauthenticated --memory=1GB --timeout=540s --max-instances=10"
   }
 }

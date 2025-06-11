@@ -316,7 +316,7 @@ export const useCampaigns = (organizationId?: string) => {
 
   const sendCampaignViaGoogleCloud = async (campaignId: string, resumeFromIndex = 0) => {
     try {
-      console.log('🚀 Initiating MAXIMUM SPEED Google Cloud send for campaign:', campaignId);
+      console.log('🚀 Initiating PARALLEL Google Cloud send for campaign:', campaignId);
 
       const campaign = campaigns.find(c => c.id === campaignId);
       if (!campaign) {
@@ -334,49 +334,102 @@ export const useCampaigns = (organizationId?: string) => {
       });
 
       const cfg = campaign.config || {};
-      const baseUrl = cfg.googleCloudFunctions?.functionUrl || '';
-      const numFuncs = cfg.numFunctions || 1;
-      const zeroDelay = cfg.sendingMode === 'zero-delay';
-
-      if (!baseUrl) throw new Error('Function URL not configured');
-
-      const chunkSize = Math.ceil(campaign.total_recipients / numFuncs);
-      const requests: Promise<Response>[] = [];
-      for (let i = 0; i < numFuncs; i++) {
-        const skip = i * chunkSize;
-        const limit = Math.min(chunkSize, campaign.total_recipients - skip);
-        const url = `${baseUrl}${i + 1}`;
-        requests.push(fetch(`${url}?skip=${skip}&limit=${limit}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ campaignId, zeroDelay })
-        }));
-      }
-
-      const results = await Promise.all(requests);
-      const ok = results.every(r => r.ok);
-      if (ok) {
-        toast({
-          title: 'Campaign Started',
-          description: `Dispatched to ${numFuncs} functions`
-        });
-
-        startPolling();
-        await fetchCampaigns();
-        return { success: true };
-      } else {
-        await updateCampaign(campaignId, { status: 'prepared', error_message: 'Function error' });
-        throw new Error('Failed to invoke cloud functions');
-      }
-    } catch (error) {
-      console.error('💥 CRITICAL ERROR in Google Cloud send:', error);
+      const googleCloudConfig = cfg.googleCloudFunctions;
       
-      const errorMsg = error.message.includes('non-2xx status code')
-        ? 'Google Cloud Function error. Check your function URL and deployment.'
-        : `High-speed campaign failed: ${error.message}`;
+      if (!googleCloudConfig?.enabled || !googleCloudConfig.functionUrls?.length) {
+        throw new Error('Google Cloud Functions not configured or no function URLs provided');
+      }
+
+      const functionUrls = googleCloudConfig.functionUrls.filter((url: string) => url.trim());
+      if (functionUrls.length === 0) {
+        throw new Error('No valid function URLs found');
+      }
+
+      const zeroDelay = cfg.sendingMode === 'zero-delay';
+      const totalRecipients = campaign.total_recipients;
+      const numFunctions = functionUrls.length;
+
+      console.log(`📊 Parallel dispatch: ${totalRecipients} emails across ${numFunctions} functions`);
+
+      // Calculate email distribution across functions
+      const emailsPerFunction = Math.ceil(totalRecipients / numFunctions);
+      const requests: Promise<Response>[] = [];
+
+      // Create parallel requests to all functions
+      for (let i = 0; i < numFunctions; i++) {
+        const skip = i * emailsPerFunction;
+        const limit = Math.min(emailsPerFunction, totalRecipients - skip);
+        
+        if (limit > 0) {
+          const functionUrl = functionUrls[i];
+          
+          console.log(`📤 Function ${i + 1}: ${functionUrl} (skip: ${skip}, limit: ${limit})`);
+          
+          const requestPromise = fetch(functionUrl, {
+            method: 'POST',
+            headers: { 
+              'Content-Type': 'application/json',
+              'Accept': 'application/json'
+            },
+            body: JSON.stringify({ 
+              campaignId, 
+              skip, 
+              limit,
+              zeroDelay,
+              useTestAfter: cfg.testAfter?.enabled || false,
+              testAfterEmail: cfg.testAfter?.email || '',
+              testAfterCount: cfg.testAfter?.count || 500,
+              useTracking: cfg.tracking?.enabled || false
+            })
+          });
+          
+          requests.push(requestPromise);
+        }
+      }
+
+      console.log(`🔥 Dispatching ${requests.length} parallel requests...`);
+
+      // Execute all requests in parallel
+      const results = await Promise.allSettled(requests);
+      
+      // Check results
+      const successful = results.filter(result => 
+        result.status === 'fulfilled' && result.value.ok
+      ).length;
+      
+      const failed = results.length - successful;
+
+      if (successful === 0) {
+        await updateCampaign(campaignId, { 
+          status: 'prepared', 
+          error_message: 'All function calls failed' 
+        });
+        throw new Error('All function calls failed');
+      }
+
+      if (failed > 0) {
+        console.warn(`⚠️ ${failed} out of ${results.length} function calls failed`);
+      }
+
+      toast({
+        title: `🚀 Parallel Campaign Started!`,
+        description: `Dispatched to ${successful} functions${failed > 0 ? ` (${failed} failed)` : ''}. Real-time updates every 3 seconds.`
+      });
+
+      // Start polling for status updates
+      startPolling();
+      await fetchCampaigns();
+      
+      return { success: true, functionsUsed: successful, functionsFailed: failed };
+    } catch (error) {
+      console.error('💥 CRITICAL ERROR in parallel Google Cloud send:', error);
+      
+      const errorMsg = error.message.includes('fetch')
+        ? 'Network error calling Google Cloud Functions. Check your function URLs and deployment.'
+        : `Parallel campaign failed: ${error.message}`;
       
       toast({
-        title: "⚡ High-Speed Campaign Failed",
+        title: "⚡ Parallel Campaign Failed",
         description: errorMsg,
         variant: "destructive"
       });

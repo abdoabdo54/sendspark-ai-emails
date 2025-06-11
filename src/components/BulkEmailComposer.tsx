@@ -5,13 +5,12 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Separator } from '@/components/ui/separator';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Clock, Zap, Settings, AlertTriangle, Rocket } from 'lucide-react';
+import { Clock, Zap, Settings, AlertTriangle, Rocket, Plus, Minus } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { useEmailAccounts } from '@/hooks/useEmailAccounts';
 import { useSimpleOrganizations } from '@/contexts/SimpleOrganizationContext';
@@ -36,144 +35,74 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
   const [htmlContent, setHtmlContent] = useState('');
   const [textContent, setTextContent] = useState('');
   
-  // Sending mode state - updated with new zero delay mode
+  // Sending mode state
   const [sendingMode, setSendingMode] = useState<'controlled' | 'fast' | 'zero-delay'>('controlled');
   
-  // Test-After state - ALWAYS ENABLED by default
+  // Test-After state
   const [useTestAfter, setUseTestAfter] = useState(true);
   const [testAfterEmail, setTestAfterEmail] = useState('');
-  const [testAfterCount, setTestAfterCount] = useState(100);
+  const [testAfterCount, setTestAfterCount] = useState(500);
   
   // Account selection state
   const [useAccountSelection, setUseAccountSelection] = useState(false);
   const [selectedAccounts, setSelectedAccounts] = useState<string[]>([]);
+  const [numAccountsToUse, setNumAccountsToUse] = useState(10);
   
-  // Rotation state
-  const [useFromNameRotation, setUseFromNameRotation] = useState(false);
-  const [fromNames, setFromNames] = useState<string[]>(['']);
-  const [useSubjectRotation, setUseSubjectRotation] = useState(false);
-  const [subjects, setSubjects] = useState<string[]>(['']);
-
-  // Google Cloud Functions configuration state
+  // Google Cloud Functions configuration - support multiple URLs
   const [useGoogleCloudFunctions, setUseGoogleCloudFunctions] = useState(false);
-  const [googleCloudFunctionUrl, setGoogleCloudFunctionUrl] = useState('');
+  const [googleCloudFunctionUrls, setGoogleCloudFunctionUrls] = useState<string[]>(['']);
+  const [numFunctionsToUse, setNumFunctionsToUse] = useState(5);
 
-  // Tracking state - User controlled
-  const [autoTrackingEnabled, setAutoTrackingEnabled] = useState(false);
+  // Tracking state
+  const [trackingEnabled, setTrackingEnabled] = useState(false);
 
-  // Smart config overrides
-  const [numFunctions, setNumFunctions] = useState(1);
-  const [numAccounts, setNumAccounts] = useState(1);
+  // Smart config
   const [estimatedTime, setEstimatedTime] = useState('');
 
   useEffect(() => {
-    // Load saved settings
+    // Load smart config if available
     try {
-      const savedSettings = localStorage.getItem('emailCampaignSettings');
-      if (savedSettings) {
-        const settings = JSON.parse(savedSettings);
-        if (settings.googleCloudFunctions?.enabled) {
-          setUseGoogleCloudFunctions(true);
-          setGoogleCloudFunctionUrl(settings.googleCloudFunctions.functionUrl || '');
-        }
+      const smartConfig = localStorage.getItem('smartConfig');
+      if (smartConfig) {
+        const config = JSON.parse(smartConfig);
+        if (config.recommendedFunctions) setNumFunctionsToUse(config.recommendedFunctions);
+        if (config.recommendedAccounts) setNumAccountsToUse(config.recommendedAccounts);
       }
     } catch (error) {
-      console.error('Error loading saved settings:', error);
-    }
-  }, []);
-
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem('smartConfig');
-      if (raw) {
-        const cfg = JSON.parse(raw);
-        if (cfg.recommendedFunctions) setNumFunctions(cfg.recommendedFunctions);
-        if (cfg.recommendedAccounts) setNumAccounts(cfg.recommendedAccounts);
-      }
-    } catch (err) {
-      console.error('Error loading smartConfig:', err);
+      console.error('Error loading smart config:', error);
     }
   }, []);
 
   const activeAccounts = accounts.filter(account => account.is_active);
+  const recipientCount = recipients.split(',').filter(email => email.trim()).length;
 
-  // Function to automatically insert test emails into recipient list
-  const insertTestAfterEmails = (recipientList: string, testEmail: string, interval: number) => {
-    if (!testEmail.trim()) return recipientList;
-    
-    const emails = recipientList.split(',').map(email => email.trim()).filter(email => email);
-    const result = [];
-    
-    for (let i = 0; i < emails.length; i++) {
-      result.push(emails[i]);
-      
-      // Insert test email after every interval
-      if ((i + 1) % interval === 0 && i < emails.length - 1) {
-        result.push(testEmail);
-      }
-    }
-    
-    // Always add test email at the end
-    if (emails.length > 0) {
-      result.push(testEmail);
-    }
-    
-    return result.join(', ');
-  };
-
-  // Function to add analytics tracking to HTML content - only if user enabled it
-  const addAnalyticsTracking = (htmlContent: string, campaignId: string) => {
-    if (!htmlContent || !autoTrackingEnabled) return htmlContent;
-    
-    // Add tracking pixel for opens
-    const trackingPixel = `<img src="${window.location.origin}/functions/v1/track-open?campaign={{campaign_id}}&email={{email}}" width="1" height="1" style="display:none;" />`;
-    
-    // Add click tracking to all links
-    let trackedContent = htmlContent.replace(
-      /<a\s+([^>]*href=["'])([^"']+)(["'][^>]*)>/gi,
-      `<a $1${window.location.origin}/functions/v1/track-click?campaign={{campaign_id}}&email={{email}}&url=$2$3>`
-    );
-    
-    // Add tracking pixel at the end of the body or at the end if no body tag
-    if (trackedContent.includes('</body>')) {
-      trackedContent = trackedContent.replace('</body>', `${trackingPixel}</body>`);
+  // Calculate estimated time
+  useEffect(() => {
+    if (recipientCount > 0 && numFunctionsToUse > 0) {
+      const emailsPerFunction = Math.ceil(recipientCount / numFunctionsToUse);
+      const estimatedSeconds = sendingMode === 'zero-delay' 
+        ? Math.ceil(emailsPerFunction / 1000) // Ultra-fast estimate for zero delay
+        : Math.ceil(emailsPerFunction / 200); // Conservative estimate
+      setEstimatedTime(`~${estimatedSeconds} seconds`);
     } else {
-      trackedContent += trackingPixel;
+      setEstimatedTime('');
     }
-    
-    return trackedContent;
+  }, [recipientCount, numFunctionsToUse, sendingMode]);
+
+  const addFunctionUrl = () => {
+    setGoogleCloudFunctionUrls([...googleCloudFunctionUrls, '']);
   };
 
-  const addFromName = () => {
-    setFromNames([...fromNames, '']);
-  };
-
-  const removeFromName = (index: number) => {
-    if (fromNames.length > 1) {
-      setFromNames(fromNames.filter((_, i) => i !== index));
+  const removeFunctionUrl = (index: number) => {
+    if (googleCloudFunctionUrls.length > 1) {
+      setGoogleCloudFunctionUrls(googleCloudFunctionUrls.filter((_, i) => i !== index));
     }
   };
 
-  const updateFromName = (index: number, value: string) => {
-    const updated = [...fromNames];
+  const updateFunctionUrl = (index: number, value: string) => {
+    const updated = [...googleCloudFunctionUrls];
     updated[index] = value;
-    setFromNames(updated);
-  };
-
-  const addSubject = () => {
-    setSubjects([...subjects, '']);
-  };
-
-  const removeSubject = (index: number) => {
-    if (subjects.length > 1) {
-      setSubjects(subjects.filter((_, i) => i !== index));
-    }
-  };
-
-  const updateSubject = (index: number, value: string) => {
-    const updated = [...subjects];
-    updated[index] = value;
-    setSubjects(updated);
+    setGoogleCloudFunctionUrls(updated);
   };
 
   const handleAccountToggle = (accountId: string) => {
@@ -185,9 +114,7 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
   };
 
   const handleCSVImport = (data: Array<{ [key: string]: any }>) => {
-    // Extract email addresses from the imported data
     const emails = data.map(row => {
-      // Look for common email field names
       const emailField = Object.keys(row).find(key => 
         key.toLowerCase().includes('email') || key.toLowerCase() === 'e-mail'
       );
@@ -257,38 +184,22 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
       return false;
     }
 
-    if (useAccountSelection && selectedAccounts.length === 0) {
-      toast({
-        title: "Validation Error",
-        description: "Please select at least one email account for sending",
-        variant: "destructive"
-      });
-      return false;
+    if ((sendingMode === 'fast' || sendingMode === 'zero-delay') && useGoogleCloudFunctions) {
+      const validUrls = googleCloudFunctionUrls.filter(url => url.trim());
+      if (validUrls.length === 0) {
+        toast({
+          title: "Validation Error",
+          description: "At least one Google Cloud Function URL is required for Fast and Zero Delay modes",
+          variant: "destructive"
+        });
+        return false;
+      }
     }
 
-    if ((sendingMode === 'fast' || sendingMode === 'zero-delay') && useGoogleCloudFunctions && !googleCloudFunctionUrl.trim()) {
+    if (useTestAfter && !testAfterEmail.trim()) {
       toast({
         title: "Validation Error",
-        description: "Google Cloud Function URL is required for Fast Bulk Send Mode and Zero Delay Mode",
-        variant: "destructive"
-      });
-      return false;
-    }
-
-    // Test-After validation - since it's always enabled now
-    if (!testAfterEmail.trim()) {
-      toast({
-        title: "Validation Error",
-        description: "Test-After email address is required",
-        variant: "destructive"
-      });
-      return false;
-    }
-
-    if (testAfterCount < 1) {
-      toast({
-        title: "Validation Error",
-        description: "Test-After count must be at least 1",
+        description: "Test-After email address is required when Test-After is enabled",
         variant: "destructive"
       });
       return false;
@@ -302,93 +213,60 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
     
     if (!validateForm()) return;
 
-    console.log('Building campaign configuration...');
+    console.log('Building dynamic parallel campaign configuration...');
 
-    // Automatically insert test emails into recipient list
-    const finalRecipients = insertTestAfterEmails(recipients, testAfterEmail, testAfterCount);
-    
-    // Add analytics tracking to HTML content ONLY if user enabled it
-    const trackedHtmlContent = addAnalyticsTracking(htmlContent, 'CAMPAIGN_ID_PLACEHOLDER');
-
-    // Build configuration object - Test-After is ALWAYS included
     const config: any = {
       sendingMode,
       selectedAccounts: useAccountSelection ? selectedAccounts : [],
-      useFromNameRotation,
-      fromNames: useFromNameRotation ? fromNames.filter(name => name.trim()) : [],
-      useSubjectRotation, 
-      subjects: useSubjectRotation ? subjects.filter(subj => subj.trim()) : [],
+      numAccountsToUse,
+      numFunctionsToUse,
       
-      // Test-After configuration - ALWAYS INCLUDED AND ENABLED
+      // Test-After configuration
       testAfter: {
-        enabled: true,
+        enabled: useTestAfter,
         email: testAfterEmail,
-        count: testAfterCount,
-        automaticallyIncluded: true,
-        insertedIntoRecipientList: true
+        count: testAfterCount
       },
       
-      // Analytics tracking - controlled by user
-      analytics: {
-        trackOpens: autoTrackingEnabled,
-        trackClicks: autoTrackingEnabled,
-        trackingEnabled: autoTrackingEnabled
-      },
-      numFunctions,
-      numAccounts
+      // Tracking configuration
+      tracking: {
+        enabled: trackingEnabled,
+        trackOpens: trackingEnabled,
+        trackClicks: trackingEnabled
+      }
     };
 
-    console.log('Test-After configuration:', config.testAfter);
-    console.log('Analytics configuration:', config.analytics);
-    console.log('Final recipients with test emails:', finalRecipients);
-
-    // Zero Delay Mode configuration - completely bypass all rate limits
+    // Zero Delay Mode configuration
     if (sendingMode === 'zero-delay') {
-      config.forceFastSend = true;
-      config.useCustomRateLimit = true;
       config.zeroDelayMode = true;
       config.bypassAllRateLimits = true;
-      config.forceMaxSpeed = true;
-      config.unlimitedSpeed = true;
-      config.ignoreAccountRateLimits = true;
+      config.maxParallelSends = true;
     }
 
-    // Add Google Cloud Functions config for fast modes
+    // Google Cloud Functions config for parallel dispatch
     if ((sendingMode === 'fast' || sendingMode === 'zero-delay') && useGoogleCloudFunctions) {
+      const validUrls = googleCloudFunctionUrls.filter(url => url.trim());
       config.googleCloudFunctions = {
         enabled: true,
-        functionUrl: googleCloudFunctionUrl,
-        fastMode: sendingMode === 'fast',
-        zeroDelayMode: sendingMode === 'zero-delay',
-        bypassRateLimits: sendingMode === 'zero-delay',
-        unlimitedSpeed: sendingMode === 'zero-delay',
-        ignoreAccountLimits: true
+        functionUrls: validUrls,
+        parallelDispatch: true,
+        zeroDelayMode: sendingMode === 'zero-delay'
       };
     }
 
     const campaignData = {
       from_name: fromName,
       subject,
-      recipients: finalRecipients, // Use the modified recipient list with test emails
-      html_content: trackedHtmlContent, // Use tracked HTML content only if user enabled it
+      recipients,
+      html_content: htmlContent,
       text_content: textContent,
       send_method: 'smtp',
       config
     };
 
-    console.log('Final campaign data with user-controlled analytics and test-after:', campaignData);
+    console.log('Final parallel campaign data:', campaignData);
     onSend(campaignData);
   };
-
-  const recipientCount = recipients.split(',').filter(email => email.trim()).length;
-  const finalRecipientCount = useTestAfter ? 
-    insertTestAfterEmails(recipients, testAfterEmail, testAfterCount).split(',').filter(email => email.trim()).length :
-    recipientCount;
-
-  useEffect(() => {
-    const secs = Math.round((finalRecipientCount / (numFunctions * 5000)) * 12 + 2);
-    setEstimatedTime(`${secs} sec`);
-  }, [finalRecipientCount, numFunctions]);
 
   return (
     <div className="max-w-4xl mx-auto p-6 space-y-6">
@@ -396,12 +274,12 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Settings className="w-5 h-5" />
-            Bulk Email Campaign
+            Parallel Email Campaign Engine
           </CardTitle>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-6">
-            {/* Sending Mode Selection - Updated with Zero Delay Mode */}
+            {/* Sending Mode Selection */}
             <div className="space-y-4">
               <Label className="text-base font-medium">Sending Mode</Label>
               <RadioGroup 
@@ -414,10 +292,10 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
                   <div className="flex-1">
                     <div className="flex items-center gap-2">
                       <Clock className="w-4 h-4 text-blue-600" />
-                      <Label htmlFor="controlled" className="font-medium">Controlled Send Mode</Label>
+                      <Label htmlFor="controlled" className="font-medium">Controlled Send</Label>
                     </div>
                     <p className="text-sm text-gray-600 mt-1">
-                      Uses campaign-level rate limits for optimal deliverability
+                      Standard sending with rate limits
                     </p>
                   </div>
                 </div>
@@ -426,10 +304,10 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
                   <div className="flex-1">
                     <div className="flex items-center gap-2">
                       <Zap className="w-4 h-4 text-orange-600" />
-                      <Label htmlFor="fast" className="font-medium">Fast Bulk Send Mode</Label>
+                      <Label htmlFor="fast" className="font-medium">Fast Parallel Send</Label>
                     </div>
                     <p className="text-sm text-gray-600 mt-1">
-                      High speed sending with minimal delays
+                      High-speed parallel dispatch
                     </p>
                   </div>
                 </div>
@@ -441,19 +319,18 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
                       <Label htmlFor="zero-delay" className="font-medium">Zero Delay Mode</Label>
                     </div>
                     <p className="text-sm text-gray-600 mt-1">
-                      Maximum speed with no delays - ignores ALL rate limits
+                      Maximum speed, no delays
                     </p>
                   </div>
                 </div>
               </RadioGroup>
 
-              {/* Zero Delay Mode Warning */}
               {sendingMode === 'zero-delay' && (
                 <Alert className="border-red-200 bg-red-50">
                   <AlertTriangle className="h-4 w-4 text-red-600" />
                   <AlertDescription className="text-red-800">
-                    <strong>Warning:</strong> Zero Delay Mode bypasses ALL rate limits including account-level limits. 
-                    This sends emails at maximum speed with automatic analytics tracking and test-after integration.
+                    <strong>Zero Delay Mode:</strong> Bypasses ALL rate limits for maximum speed.
+                    Best for bulk campaigns with dedicated sending infrastructure.
                   </AlertDescription>
                 </Alert>
               )}
@@ -485,25 +362,24 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
               </div>
             </div>
 
-            <p className="text-sm text-gray-600">Estimated time: {estimatedTime}</p>
+            {estimatedTime && (
+              <Alert className="border-blue-200 bg-blue-50">
+                <AlertTriangle className="h-4 w-4 text-blue-600" />
+                <AlertDescription className="text-blue-800">
+                  <strong>Estimated Delivery Time:</strong> {estimatedTime} using {numFunctionsToUse} functions and {numAccountsToUse} accounts
+                </AlertDescription>
+              </Alert>
+            )}
 
-            {/* AI Subject Generator */}
             <AISubjectGenerator onSubjectSelect={setSubject} />
 
             {/* Recipients */}
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <Label htmlFor="recipients">Recipients *</Label>
-                <div className="flex items-center gap-2">
-                  <Badge variant="secondary">
-                    {recipientCount} original recipient{recipientCount !== 1 ? 's' : ''}
-                  </Badge>
-                  {useTestAfter && (
-                    <Badge variant="outline" className="text-blue-600 border-blue-200">
-                      {finalRecipientCount} total (with test emails)
-                    </Badge>
-                  )}
-                </div>
+                <Badge variant="secondary">
+                  {recipientCount} recipient{recipientCount !== 1 ? 's' : ''}
+                </Badge>
               </div>
               <Textarea
                 id="recipients"
@@ -514,7 +390,6 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
                 required
               />
               
-              {/* Import Tools */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <CSVDataImporter onImport={handleCSVImport} />
                 <GoogleSheetsImport onImport={handleGoogleSheetsImport} />
@@ -528,13 +403,10 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
                 id="htmlContent"
                 value={htmlContent}
                 onChange={(e) => setHtmlContent(e.target.value)}
-                placeholder="<h1>Your HTML content here...</h1><p>Use the tracking manager below to add analytics</p>"
+                placeholder="<h1>Your HTML content here...</h1>"
                 rows={6}
                 required
               />
-              <p className="text-sm text-gray-600">
-                📊 Use the tracking manager below to control analytics tracking
-              </p>
             </div>
 
             <div className="space-y-4">
@@ -550,89 +422,47 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
 
             <Separator />
 
-            {/* Tracking Links Manager */}
-            <TrackingLinksManager
-              campaignId="CAMPAIGN_ID_PLACEHOLDER"
-              onTrackingToggle={setAutoTrackingEnabled}
-              onHtmlContentUpdate={setHtmlContent}
-              htmlContent={htmlContent}
-              autoTrackingEnabled={autoTrackingEnabled}
-            />
-
-            <Separator />
-
-            {/* Test-After Email Section - ALWAYS VISIBLE AND ENABLED */}
-            <div className="space-y-4">
-              <Alert className="border-blue-200 bg-blue-50">
-                <AlertTriangle className="h-4 w-4 text-blue-600" />
-                <AlertDescription className="text-blue-800">
-                  <strong>Auto Test-After:</strong> Test emails will be automatically inserted into your recipient list 
-                  every {testAfterCount} emails and at the end. This ensures delivery verification throughout the campaign.
-                </AlertDescription>
-              </Alert>
-              
-              <TestAfterSection
-                useTestAfter={true}
-                onUseTestAfterChange={() => {}} // Disabled since always true
-                testAfterEmail={testAfterEmail}
-                onTestAfterEmailChange={setTestAfterEmail}
-                testAfterCount={testAfterCount}
-                onTestAfterCountChange={setTestAfterCount}
-              />
-            </div>
-
-            <Separator />
-
-            {/* Advanced Configuration */}
+            {/* Parallel Configuration */}
             <div className="space-y-6">
-              <h3 className="text-lg font-medium">Advanced Configuration</h3>
+              <h3 className="text-lg font-medium">Parallel Sending Configuration</h3>
 
-              {/* Account Selection */}
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <Label>Account Selection</Label>
-                  <Switch
-                    checked={useAccountSelection}
-                    onCheckedChange={setUseAccountSelection}
+              {/* Function Count */}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="numFunctions">Number of Cloud Functions</Label>
+                  <Input
+                    id="numFunctions"
+                    type="number"
+                    min={1}
+                    max={50}
+                    value={numFunctionsToUse}
+                    onChange={(e) => setNumFunctionsToUse(parseInt(e.target.value) || 1)}
                   />
+                  <p className="text-sm text-gray-600 mt-1">
+                    More functions = faster sending
+                  </p>
                 </div>
-                
-                {useAccountSelection && (
-                  <div className="space-y-2">
-                    <Label className="text-sm text-gray-600">Select accounts to use for sending (rate limits removed for campaign control):</Label>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                      {activeAccounts.map((account) => (
-                        <div key={account.id} className="flex items-center space-x-2 p-2 border rounded">
-                          <input
-                            type="checkbox"
-                            id={`account-${account.id}`}
-                            checked={selectedAccounts.includes(account.id)}
-                            onChange={() => handleAccountToggle(account.id)}
-                            className="rounded"
-                          />
-                          <Label htmlFor={`account-${account.id}`} className="flex-1 text-sm">
-                            {account.name} ({account.email})
-                          </Label>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
+                <div>
+                  <Label htmlFor="numAccounts">Number of Sender Accounts</Label>
+                  <Input
+                    id="numAccounts"
+                    type="number"
+                    min={1}
+                    max={100}
+                    value={numAccountsToUse}
+                    onChange={(e) => setNumAccountsToUse(parseInt(e.target.value) || 1)}
+                  />
+                  <p className="text-sm text-gray-600 mt-1">
+                    Rotates through available accounts
+                  </p>
+                </div>
               </div>
 
-              {/* Google Cloud Functions - For Fast and Zero Delay Modes */}
+              {/* Google Cloud Functions URLs */}
               {(sendingMode === 'fast' || sendingMode === 'zero-delay') && (
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
-                    <div>
-                      <Label>Google Cloud Functions (Required for Fast Modes)</Label>
-                      <p className="text-sm text-gray-600">
-                        {sendingMode === 'zero-delay' 
-                          ? 'Zero Delay Mode requires Google Cloud Functions for maximum speed with analytics'
-                          : 'Fast Bulk Send Mode requires Google Cloud Functions for high performance'
-                        }
-                      </p>
-                    </div>
+                    <Label>Google Cloud Function URLs *</Label>
                     <Switch
                       checked={useGoogleCloudFunctions}
                       onCheckedChange={setUseGoogleCloudFunctions}
@@ -641,96 +471,71 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
                   
                   {useGoogleCloudFunctions && (
                     <div className="space-y-3">
-                      <Label htmlFor="gcfUrl">Function URL *</Label>
-                      <Input
-                        id="gcfUrl"
-                        value={googleCloudFunctionUrl}
-                        onChange={(e) => setGoogleCloudFunctionUrl(e.target.value)}
-                        placeholder="https://your-region-your-project.cloudfunctions.net/sendBatch"
-                        required={sendingMode === 'fast' || sendingMode === 'zero-delay'}
-                      />
-                      <div className="grid grid-cols-2 gap-2">
-                        <div>
-                          <Label htmlFor="numFuncs">Functions</Label>
-                          <Input id="numFuncs" type="number" min={1} value={numFunctions} onChange={e => setNumFunctions(parseInt(e.target.value))} />
+                      <p className="text-sm text-gray-600">
+                        Add URLs for your deployed sendBatch functions (sendBatch1, sendBatch2, etc.)
+                      </p>
+                      {googleCloudFunctionUrls.map((url, index) => (
+                        <div key={index} className="flex items-center space-x-2">
+                          <Input
+                            value={url}
+                            onChange={(e) => updateFunctionUrl(index, e.target.value)}
+                            placeholder={`https://region-project.cloudfunctions.net/sendBatch${index + 1}`}
+                            className="flex-1"
+                          />
+                          {googleCloudFunctionUrls.length > 1 && (
+                            <Button 
+                              type="button" 
+                              variant="outline" 
+                              size="sm" 
+                              onClick={() => removeFunctionUrl(index)}
+                            >
+                              <Minus className="w-4 h-4" />
+                            </Button>
+                          )}
                         </div>
-                        <div>
-                          <Label htmlFor="numAccts">Accounts</Label>
-                          <Input id="numAccts" type="number" min={1} value={numAccounts} onChange={e => setNumAccounts(parseInt(e.target.value))} />
-                        </div>
-                      </div>
+                      ))}
+                      <Button 
+                        type="button" 
+                        variant="outline" 
+                        size="sm" 
+                        onClick={addFunctionUrl}
+                      >
+                        <Plus className="w-4 h-4 mr-2" />
+                        Add Function URL
+                      </Button>
                     </div>
                   )}
                 </div>
               )}
+            </div>
 
-              {/* Rotation Features - Available for all modes */}
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <Label>From Name Rotation</Label>
-                  <Switch
-                    checked={useFromNameRotation}
-                    onCheckedChange={setUseFromNameRotation}
-                  />
-                </div>
-                
-                {useFromNameRotation && (
-                  <div className="space-y-2">
-                    <Label className="text-sm text-gray-600">From names to rotate:</Label>
-                    {fromNames.map((name, index) => (
-                      <div key={index} className="flex items-center space-x-2">
-                        <Input
-                          value={name}
-                          onChange={(e) => updateFromName(index, e.target.value)}
-                          placeholder={`From name ${index + 1}`}
-                          className="flex-1"
-                        />
-                        {fromNames.length > 1 && (
-                          <Button type="button" variant="outline" size="sm" onClick={() => removeFromName(index)}>
-                            Remove
-                          </Button>
-                        )}
-                      </div>
-                    ))}
-                    <Button type="button" variant="outline" size="sm" onClick={addFromName}>
-                      Add From Name
-                    </Button>
-                  </div>
-                )}
-              </div>
+            <Separator />
 
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <Label>Subject Rotation</Label>
-                  <Switch
-                    checked={useSubjectRotation}
-                    onCheckedChange={setUseSubjectRotation}
-                  />
+            {/* Test-After Configuration */}
+            <TestAfterSection
+              useTestAfter={useTestAfter}
+              onUseTestAfterChange={setUseTestAfter}
+              testAfterEmail={testAfterEmail}
+              onTestAfterEmailChange={setTestAfterEmail}
+              testAfterCount={testAfterCount}
+              onTestAfterCountChange={setTestAfterCount}
+            />
+
+            <Separator />
+
+            {/* Tracking Configuration */}
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label>Email Tracking</Label>
+                  <p className="text-sm text-gray-600">
+                    Include tracking pixels and click tracking
+                  </p>
                 </div>
-                
-                {useSubjectRotation && (
-                  <div className="space-y-2">
-                    <Label className="text-sm text-gray-600">Subjects to rotate:</Label>
-                    {subjects.map((subj, index) => (
-                      <div key={index} className="flex items-center space-x-2">
-                        <Input
-                          value={subj}
-                          onChange={(e) => updateSubject(index, e.target.value)}
-                          placeholder={`Subject line ${index + 1}`}
-                          className="flex-1"
-                        />
-                        {subjects.length > 1 && (
-                          <Button type="button" variant="outline" size="sm" onClick={() => removeSubject(index)}>
-                            Remove
-                          </Button>
-                        )}
-                      </div>
-                    ))}
-                    <Button type="button" variant="outline" size="sm" onClick={addSubject}>
-                      Add Subject
-                    </Button>
-                  </div>
-                )}
+                <Switch
+                  checked={trackingEnabled}
+                  onCheckedChange={setTrackingEnabled}
+                />
               </div>
             </div>
 
@@ -743,17 +548,17 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
               {sendingMode === 'zero-delay' ? (
                 <>
                   <Rocket className="w-4 h-4 mr-2" />
-                  Create Zero Delay Campaign {autoTrackingEnabled && '(With Analytics)'} (Auto Test-After)
+                  Launch Zero Delay Campaign
                 </>
               ) : sendingMode === 'fast' ? (
                 <>
                   <Zap className="w-4 h-4 mr-2" />
-                  Create Fast Bulk Campaign {autoTrackingEnabled && '(With Analytics)'} (Auto Test-After)
+                  Start Fast Parallel Campaign
                 </>
               ) : (
                 <>
                   <Clock className="w-4 h-4 mr-2" />
-                  Create Controlled Campaign {autoTrackingEnabled && '(With Analytics)'} (Auto Test-After)
+                  Create Controlled Campaign
                 </>
               )}
             </Button>
