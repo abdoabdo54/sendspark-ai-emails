@@ -76,77 +76,8 @@ async function sendViaSMTP(transporter, emailData) {
   }
 }
 
-// Add tracking pixels and links
-function addTracking(htmlContent, campaignId, recipient, trackingConfig) {
-  let trackedContent = htmlContent;
-  
-  if (trackingConfig?.trackOpens) {
-    const trackingPixel = `<img src="${supabaseUrl}/functions/v1/track-open?campaign=${campaignId}&email=${encodeURIComponent(recipient)}" width="1" height="1" style="display:none;" />`;
-    trackedContent += trackingPixel;
-  }
-  
-  if (trackingConfig?.trackClicks) {
-    // Replace links with tracking URLs
-    trackedContent = trackedContent.replace(
-      /href="([^"]+)"/g,
-      `href="${supabaseUrl}/functions/v1/track-click?campaign=${campaignId}&email=${encodeURIComponent(recipient)}&url=$1"`
-    );
-  }
-  
-  return trackedContent;
-}
-
-// Enhanced rotation helpers
-function rotateFromName(config, index) {
-  if (!config.rotation?.fromNames || !config.rotation?.fromNames?.length) {
-    return config.baseName || 'Default Sender';
-  }
-  
-  const variations = config.rotation.fromNames;
-  return variations[index % variations.length];
-}
-
-function rotateSubject(config, index) {
-  if (!config.rotation?.subjects || !config.rotation?.subjects?.length) {
-    return config.baseSubject || 'Default Subject';
-  }
-  
-  const variations = config.rotation.subjects;
-  return variations[index % variations.length];
-}
-
-// Apply sending mode delays
-async function applySendingDelay(sendingMode) {
-  switch (sendingMode) {
-    case 'controlled':
-      await new Promise(resolve => setTimeout(resolve, 2000)); // 2 seconds
-      break;
-    case 'fast':
-      await new Promise(resolve => setTimeout(resolve, 500)); // 0.5 seconds
-      break;
-    case 'zero-delay':
-    default:
-      // No delay
-      break;
-  }
-}
-
-// Account selection strategy based on dispatch method
-function selectAccount(accounts, index, dispatchMethod) {
-  switch (dispatchMethod) {
-    case 'round-robin':
-      return accounts[index % accounts.length];
-    case 'sequential':
-      const accountIndex = Math.floor(index / Math.ceil(index / accounts.length)) % accounts.length;
-      return accounts[accountIndex];
-    case 'parallel':
-    default:
-      return accounts[index % accounts.length];
-  }
-}
-
 // Main function handler for Gen2
-async function sendEmailCampaignZeroDelay(req, res) {
+async function sendBatch(req, res) {
   // Enable CORS
   res.set('Access-Control-Allow-Origin', '*');
   res.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -168,58 +99,44 @@ async function sendEmailCampaignZeroDelay(req, res) {
       organizationId 
     } = req.body;
 
+    // Health check
+    if (!campaignId) {
+      return res.status(200).json({
+        success: true,
+        message: "Function is healthy and ready to process campaigns",
+        timestamp: new Date().toISOString()
+      });
+    }
+
     console.log(`🚀 [${campaignId}] Processing slice: ${slice.recipients.length} emails`);
 
     const results = [];
 
-    // Get enhanced configuration
+    // Get configuration
     const config = campaignData.config || {};
     const sendingMode = config.sendingMode || 'zero-delay';
     const dispatchMethod = config.dispatchMethod || 'parallel';
-    const rotationConfig = config.rotation || {};
-    const trackingConfig = config.tracking || {};
-    const testAfterConfig = config.testAfter || {};
 
-    console.log(`📊 [${campaignId}] Mode: ${sendingMode}, Dispatch: ${dispatchMethod}, Rotation: ${rotationConfig.useFromNameRotation || rotationConfig.useSubjectRotation ? 'enabled' : 'disabled'}`);
+    console.log(`📊 [${campaignId}] Mode: ${sendingMode}, Dispatch: ${dispatchMethod}`);
 
     // Process each recipient in the slice
     for (let i = 0; i < slice.recipients.length; i++) {
       const recipient = slice.recipients[i];
-      const account = selectAccount(accounts, i, dispatchMethod);
+      const account = accounts[i % accounts.length];
 
       try {
-        // Apply enhanced rotation
-        const fromName = rotateFromName({
-          baseName: campaignData.from_name,
-          rotation: rotationConfig
-        }, i);
-        
-        const subject = rotateSubject({
-          baseSubject: campaignData.subject,
-          rotation: rotationConfig
-        }, i);
-
-        // Prepare email content
-        let htmlContent = campaignData.html_content;
-        let textContent = campaignData.text_content;
-
-        // Add tracking if enabled
-        if (trackingConfig.enabled) {
-          htmlContent = addTracking(htmlContent, campaignId, recipient, trackingConfig);
-        }
-
         const emailData = {
           to: recipient,
-          subject: subject,
-          html: htmlContent,
-          text: textContent,
-          fromName: fromName,
+          subject: campaignData.subject,
+          html: campaignData.html_content,
+          text: campaignData.text_content,
+          fromName: campaignData.from_name,
           fromEmail: account.email
         };
 
         let result;
 
-        // Send based on account type with enhanced error handling
+        // Send based on account type
         if (account.type === 'smtp') {
           const transporter = createTransporter(account.config);
           if (transporter) {
@@ -242,8 +159,6 @@ async function sendEmailCampaignZeroDelay(req, res) {
             accountType: account.type,
             accountName: account.name,
             messageId: result.messageId,
-            fromName: fromName,
-            subject: subject,
             timestamp: new Date().toISOString()
           });
         } else {
@@ -258,53 +173,13 @@ async function sendEmailCampaignZeroDelay(req, res) {
           });
         }
 
-        // Enhanced Test-After functionality
-        if (testAfterConfig.enabled && testAfterConfig.email) {
-          const testAfterCount = testAfterConfig.count || 500;
-          
-          if ((i + 1) % testAfterCount === 0) {
-            console.log(`📧 [${campaignId}] Sending test-after email for batch ${Math.floor((i + 1) / testAfterCount)}`);
-            
-            const testEmailData = {
-              to: testAfterConfig.email,
-              subject: `Test-After: ${subject} - Batch ${Math.floor((i + 1) / testAfterCount)}`,
-              html: `
-                <h3>Test-After Report - ${campaignId}</h3>
-                <p><strong>Campaign:</strong> ${campaignData.subject}</p>
-                <p><strong>Emails Sent:</strong> ${i + 1}</p>
-                <p><strong>Last Account Used:</strong> ${account.name} (${account.email})</p>
-                <p><strong>Sending Mode:</strong> ${sendingMode}</p>
-                <p><strong>Dispatch Method:</strong> ${dispatchMethod}</p>
-                <p><strong>Current From Name:</strong> ${fromName}</p>
-                <p><strong>Current Subject:</strong> ${subject}</p>
-                <p><strong>Timestamp:</strong> ${new Date().toISOString()}</p>
-                <hr>
-                <p><strong>Success Rate:</strong> ${results.filter(r => r.status === 'sent').length}/${results.length}</p>
-              `,
-              text: `Test-After Report: Successfully sent ${i + 1} emails. Campaign: ${campaignData.subject}. Mode: ${sendingMode} (${dispatchMethod})`,
-              fromName: fromName,
-              fromEmail: account.email
-            };
-
-            try {
-              if (account.type === 'smtp') {
-                const transporter = createTransporter(account.config);
-                if (transporter) {
-                  await sendViaSMTP(transporter, testEmailData);
-                  transporter.close();
-                }
-              } else if (account.type === 'apps-script') {
-                await sendViaAppsScript(account.config, testEmailData);
-              }
-              console.log(`📧 [${campaignId}] Test-after email sent successfully`);
-            } catch (testError) {
-              console.log(`⚠️ [${campaignId}] Test-after email failed: ${testError.message}`);
-            }
-          }
+        // Apply delay based on sending mode
+        if (sendingMode === 'controlled') {
+          await new Promise(resolve => setTimeout(resolve, 2000)); // 2 seconds
+        } else if (sendingMode === 'fast') {
+          await new Promise(resolve => setTimeout(resolve, 500)); // 0.5 seconds
         }
-
-        // Apply sending mode delays
-        await applySendingDelay(sendingMode);
+        // zero-delay mode has no delay
 
       } catch (error) {
         console.error(`❌ [${campaignId}] Error processing ${recipient}:`, error);
@@ -359,9 +234,6 @@ async function sendEmailCampaignZeroDelay(req, res) {
       processingTimeMs: processingTime,
       sendingMode,
       dispatchMethod,
-      rotationEnabled: rotationConfig.useFromNameRotation || rotationConfig.useSubjectRotation,
-      trackingEnabled: trackingConfig.enabled,
-      testAfterEnabled: testAfterConfig.enabled,
       results: results.slice(-5) // Only return last 5 results to keep response size manageable
     });
 
@@ -378,4 +250,4 @@ async function sendEmailCampaignZeroDelay(req, res) {
 }
 
 // Register the main function
-functions.http('sendBatch', sendEmailCampaignZeroDelay);
+functions.http('sendBatch', sendBatch);
