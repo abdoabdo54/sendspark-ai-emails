@@ -5,8 +5,9 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { ChevronDown, Users, Check, X } from 'lucide-react';
+import { ChevronDown, Users, Check, X, AlertCircle } from 'lucide-react';
 import { useEmailAccounts } from '@/hooks/useEmailAccounts';
+import { useGcfFunctions } from '@/hooks/useGcfFunctions';
 import { useSimpleOrganizations } from '@/contexts/SimpleOrganizationContext';
 
 interface CompactAccountSelectorProps {
@@ -24,9 +25,11 @@ const CompactAccountSelector: React.FC<CompactAccountSelectorProps> = ({
 }) => {
   const { currentOrganization } = useSimpleOrganizations();
   const { accounts } = useEmailAccounts(currentOrganization?.id);
+  const { functions } = useGcfFunctions(currentOrganization?.id);
   const [isOpen, setIsOpen] = useState(false);
 
   const activeAccounts = accounts.filter(account => account.is_active);
+  const enabledFunctions = functions.filter(func => func.enabled);
   const selectedCount = selectedAccounts.length;
 
   const handleAccountToggle = (accountId: string) => {
@@ -48,6 +51,8 @@ const CompactAccountSelector: React.FC<CompactAccountSelectorProps> = ({
     onDeselectAll();
   };
 
+  const hasWarnings = activeAccounts.length === 0 || enabledFunctions.length === 0;
+
   return (
     <Card>
       <CardHeader className="pb-3">
@@ -57,7 +62,20 @@ const CompactAccountSelector: React.FC<CompactAccountSelectorProps> = ({
           <Badge variant="secondary" className="text-xs">
             {selectedCount}/{activeAccounts.length} selected
           </Badge>
+          {hasWarnings && (
+            <AlertCircle className="w-4 h-4 text-amber-500" />
+          )}
         </CardTitle>
+        {hasWarnings && (
+          <div className="text-xs text-amber-600 space-y-1">
+            {activeAccounts.length === 0 && (
+              <div>⚠️ No active email accounts configured</div>
+            )}
+            {enabledFunctions.length === 0 && (
+              <div>⚠️ No Google Cloud Functions enabled</div>
+            )}
+          </div>
+        )}
       </CardHeader>
       <CardContent>
         <Popover open={isOpen} onOpenChange={setIsOpen}>
@@ -66,6 +84,7 @@ const CompactAccountSelector: React.FC<CompactAccountSelectorProps> = ({
               variant="outline" 
               className="w-full justify-between" 
               type="button"
+              disabled={activeAccounts.length === 0}
             >
               <span className="flex items-center gap-2">
                 <Users className="w-4 h-4" />
@@ -86,6 +105,7 @@ const CompactAccountSelector: React.FC<CompactAccountSelectorProps> = ({
                   className="flex-1"
                   onClick={handleSelectAll}
                   type="button"
+                  disabled={activeAccounts.length === 0}
                 >
                   <Check className="w-3 h-3 mr-1" />
                   Select All
@@ -105,7 +125,7 @@ const CompactAccountSelector: React.FC<CompactAccountSelectorProps> = ({
             <div className="max-h-60 overflow-y-auto">
               {activeAccounts.length === 0 ? (
                 <div className="p-4 text-center text-gray-500 text-sm">
-                  No active email accounts found
+                  No active email accounts found. Please configure email accounts first.
                 </div>
               ) : (
                 <div className="p-2 space-y-1">
@@ -138,6 +158,11 @@ const CompactAccountSelector: React.FC<CompactAccountSelectorProps> = ({
                 </div>
               )}
             </div>
+            {enabledFunctions.length > 0 && (
+              <div className="p-3 border-t text-xs text-gray-500">
+                📡 {enabledFunctions.length} Google Cloud Function{enabledFunctions.length !== 1 ? 's' : ''} enabled
+              </div>
+            )}
           </PopoverContent>
         </Popover>
       </CardContent>

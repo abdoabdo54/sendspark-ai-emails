@@ -59,7 +59,7 @@ export const useCampaignSender = (organizationId?: string) => {
 
   const sendCampaign = async (campaignData: CampaignData) => {
     try {
-      console.log('🚀 Starting parallel campaign dispatch...');
+      console.log('🚀 Starting Google Cloud Functions campaign dispatch...');
       
       // Parse recipients
       const recipients = campaignData.recipients
@@ -81,13 +81,13 @@ export const useCampaignSender = (organizationId?: string) => {
         throw new Error('No valid accounts selected');
       }
 
-      // Create campaign in database with correct status value
+      // Create campaign in database
       const { data: campaign, error: campaignError } = await supabase
         .from('email_campaigns')
         .insert([{
           ...campaignData,
           organization_id: organizationId,
-          status: 'sending', // Use 'sending' instead of 'processing'
+          status: 'sending',
           total_recipients: recipients.length,
           sent_count: 0,
           prepared_emails: recipients
@@ -106,7 +106,16 @@ export const useCampaignSender = (organizationId?: string) => {
       const slices = calculateCampaignSlicing(recipients, campaignData.config);
       console.log(`📈 Campaign split into ${slices.length} parallel slices`);
 
-      // Dispatch to all functions in parallel
+      // Prepare accounts for Google Cloud Functions format
+      const gcfAccounts = selectedAccounts.map(account => ({
+        id: account.id,
+        name: account.name,
+        email: account.email,
+        type: account.type,
+        config: account.config
+      }));
+
+      // Dispatch to all Google Cloud Functions in parallel
       const dispatchPromises = slices.map(async (slice, index) => {
         const payload = {
           campaignId: campaign.id,
@@ -122,7 +131,7 @@ export const useCampaignSender = (organizationId?: string) => {
             text_content: campaignData.text_content,
             config: campaignData.config
           },
-          accounts: selectedAccounts,
+          accounts: gcfAccounts,
           organizationId
         };
 
@@ -138,11 +147,12 @@ export const useCampaignSender = (organizationId?: string) => {
           });
 
           if (!response.ok) {
-            throw new Error(`Function ${slice.functionName} returned ${response.status}`);
+            const errorText = await response.text();
+            throw new Error(`Google Cloud Function ${slice.functionName} returned ${response.status}: ${errorText}`);
           }
 
           const result = await response.json();
-          console.log(`✅ Slice ${index + 1} completed successfully`);
+          console.log(`✅ Slice ${index + 1} completed successfully:`, result);
           return result;
         } catch (error) {
           console.error(`❌ Slice ${index + 1} failed:`, error);
@@ -159,13 +169,16 @@ export const useCampaignSender = (organizationId?: string) => {
 
       console.log(`📈 Campaign dispatch complete: ${successful} successful, ${failed} failed`);
 
-      // Update campaign status
+      // Update campaign status based on results
+      const finalStatus = failed === 0 ? 'sent' : (successful > 0 ? 'sent' : 'failed');
+      
       await supabase
         .from('email_campaigns')
         .update({
-          status: failed === 0 ? 'sent' : 'failed', // Use correct status values
+          status: finalStatus,
           sent_at: new Date().toISOString(),
-          completed_at: new Date().toISOString()
+          completed_at: new Date().toISOString(),
+          ...(failed > 0 && { error_message: `${failed} out of ${slices.length} functions failed` })
         })
         .eq('id', campaign.id);
 
@@ -174,7 +187,11 @@ export const useCampaignSender = (organizationId?: string) => {
         totalSlices: slices.length,
         successful,
         failed,
-        results
+        results: results.map((result, index) => ({
+          functionName: slices[index].functionName,
+          status: result.status,
+          ...(result.status === 'fulfilled' ? { data: result.value } : { error: result.reason?.message })
+        }))
       };
 
     } catch (error) {
