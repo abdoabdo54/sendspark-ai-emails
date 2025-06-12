@@ -1,8 +1,8 @@
 
 {
-  "name": "send-email-batch-parallel-advanced",
-  "version": "5.2.0",
-  "description": "Advanced Gen2 Google Cloud Function for ultra-fast parallel email campaigns with rotation, tracking, and test-after features",
+  "name": "send-email-campaign-zero-delay",
+  "version": "6.0.0",
+  "description": "Gen2 Google Cloud Function for zero-delay email campaigns with SMTP and Apps Script support",
   "main": "index.js",
   "type": "commonjs",
   "dependencies": {
@@ -14,19 +14,16 @@
     "node": ">=20"
   },
   "scripts": {
-    "start": "functions-framework --target=sendBatch --port=8080 --source=.",
-    "deploy": "gcloud functions deploy sendBatch --gen2 --runtime nodejs20 --trigger-http --allow-unauthenticated --memory=2GB --timeout=540s --max-instances=20 --region=us-central1 --set-env-vars SUPABASE_URL=${SUPABASE_URL},SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY} --entry-point=sendBatch"
+    "start": "functions-framework --target=sendEmailCampaignZeroDelay --port=8080 --source=.",
+    "deploy": "gcloud functions deploy sendEmailCampaignZeroDelay --gen2 --runtime nodejs20 --trigger-http --allow-unauthenticated --memory=2GB --timeout=540s --max-instances=20 --region=us-central1 --set-env-vars SUPABASE_URL=${SUPABASE_URL},SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY} --entry-point=sendEmailCampaignZeroDelay"
   },
   "keywords": [
     "email",
     "campaign",
-    "parallel",
     "google-cloud-functions",
     "gen2",
     "nodemailer",
     "supabase",
-    "rotation",
-    "tracking",
-    "advanced"
+    "zero-delay"
   ]
 }

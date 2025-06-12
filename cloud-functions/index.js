@@ -22,7 +22,7 @@ function createTransporter(accountConfig) {
       pool: true,
       maxConnections: 20,
       maxMessages: 200,
-      rateLimit: 10 // emails per second
+      rateLimit: 10
     });
   }
   
@@ -76,8 +76,8 @@ async function sendViaSMTP(transporter, emailData) {
   }
 }
 
-// Main function handler for Gen2
-async function sendBatch(req, res) {
+// Main function handler
+const sendEmailCampaignZeroDelay = async (req, res) => {
   // Enable CORS
   res.set('Access-Control-Allow-Origin', '*');
   res.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -175,11 +175,10 @@ async function sendBatch(req, res) {
 
         // Apply delay based on sending mode
         if (sendingMode === 'controlled') {
-          await new Promise(resolve => setTimeout(resolve, 2000)); // 2 seconds
+          await new Promise(resolve => setTimeout(resolve, 2000));
         } else if (sendingMode === 'fast') {
-          await new Promise(resolve => setTimeout(resolve, 500)); // 0.5 seconds
+          await new Promise(resolve => setTimeout(resolve, 500));
         }
-        // zero-delay mode has no delay
 
       } catch (error) {
         console.error(`❌ [${campaignId}] Error processing ${recipient}:`, error);
@@ -234,7 +233,7 @@ async function sendBatch(req, res) {
       processingTimeMs: processingTime,
       sendingMode,
       dispatchMethod,
-      results: results.slice(-5) // Only return last 5 results to keep response size manageable
+      results: results.slice(-5)
     });
 
   } catch (error) {
@@ -247,7 +246,7 @@ async function sendBatch(req, res) {
       stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
   }
-}
+};
 
-// Register the function with Functions Framework for Gen2
-functions.http('sendBatch', sendBatch);
+// Register the function with Functions Framework
+functions.http('sendEmailCampaignZeroDelay', sendEmailCampaignZeroDelay);
