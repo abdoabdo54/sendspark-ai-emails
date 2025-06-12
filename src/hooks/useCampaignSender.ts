@@ -81,13 +81,13 @@ export const useCampaignSender = (organizationId?: string) => {
         throw new Error('No valid accounts selected');
       }
 
-      // Create campaign in database
+      // Create campaign in database with correct status value
       const { data: campaign, error: campaignError } = await supabase
         .from('email_campaigns')
         .insert([{
           ...campaignData,
           organization_id: organizationId,
-          status: 'processing',
+          status: 'sending', // Use 'sending' instead of 'processing'
           total_recipients: recipients.length,
           sent_count: 0,
           prepared_emails: recipients
@@ -96,6 +96,7 @@ export const useCampaignSender = (organizationId?: string) => {
         .single();
 
       if (campaignError) {
+        console.error('Campaign creation error:', campaignError);
         throw new Error(`Failed to create campaign: ${campaignError.message}`);
       }
 
@@ -162,7 +163,7 @@ export const useCampaignSender = (organizationId?: string) => {
       await supabase
         .from('email_campaigns')
         .update({
-          status: failed === 0 ? 'completed' : 'partially_completed',
+          status: failed === 0 ? 'sent' : 'failed', // Use correct status values
           sent_at: new Date().toISOString(),
           completed_at: new Date().toISOString()
         })

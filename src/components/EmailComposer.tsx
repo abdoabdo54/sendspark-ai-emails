@@ -31,7 +31,7 @@ const EmailComposer = ({ activeTab = 'bulk' }: EmailComposerProps) => {
         .map((email: string) => email.trim())
         .filter((email: string) => email);
       
-      // Create the campaign with all required properties
+      // Create the campaign with all required properties using correct status
       const campaign = await createCampaign({
         from_name: campaignData.from_name,
         subject: campaignData.subject,
@@ -39,7 +39,7 @@ const EmailComposer = ({ activeTab = 'bulk' }: EmailComposerProps) => {
         html_content: campaignData.html_content || '',
         text_content: campaignData.text_content || '',
         send_method: campaignData.send_method || 'bulk',
-        status: 'draft',
+        status: 'draft', // Use 'draft' as the initial status
         sent_count: 0,
         total_recipients: recipients.length,
         config: campaignData.config || {},
