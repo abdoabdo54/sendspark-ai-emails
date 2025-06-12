@@ -249,5 +249,5 @@ async function sendBatch(req, res) {
   }
 }
 
-// Register the main function
+// Register the function with Functions Framework for Gen2
 functions.http('sendBatch', sendBatch);
