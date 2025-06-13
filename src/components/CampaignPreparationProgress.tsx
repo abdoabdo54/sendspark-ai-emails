@@ -19,6 +19,7 @@ const CampaignPreparationProgress: React.FC<CampaignPreparationProgressProps> = 
   const [status, setStatus] = useState<'preparing' | 'completed' | 'error'>('preparing');
   const [message, setMessage] = useState('Starting preparation...');
   const [emailCount, setEmailCount] = useState(0);
+  const [estimatedTime, setEstimatedTime] = useState(0);
   const { prepareCampaign, campaigns } = useCampaigns();
 
   useEffect(() => {
@@ -43,18 +44,33 @@ const CampaignPreparationProgress: React.FC<CampaignPreparationProgressProps> = 
         }
         
         setEmailCount(estimatedCount);
-        setMessage(`Preparing ${estimatedCount} emails...`);
         
-        // Start progress simulation with slower, more realistic timing
+        // Calculate estimated time based on email count
+        let timeEstimate = 0;
+        if (estimatedCount > 5000) {
+          timeEstimate = 15; // 15 seconds for very large lists
+          setMessage(`Preparing ${estimatedCount} emails (large list - this may take up to 15 seconds)...`);
+        } else if (estimatedCount > 1000) {
+          timeEstimate = 8; // 8 seconds for large lists
+          setMessage(`Preparing ${estimatedCount} emails (this may take up to 8 seconds)...`);
+        } else {
+          timeEstimate = 3; // 3 seconds for smaller lists
+          setMessage(`Preparing ${estimatedCount} emails...`);
+        }
+        
+        setEstimatedTime(timeEstimate);
+        
+        // Start realistic progress simulation
         const progressInterval = setInterval(() => {
           setProgress(prev => {
-            if (prev < 85) {
-              const increment = Math.random() * 8 + 3; // Random increment between 3-11
-              return Math.min(prev + increment, 85);
+            if (prev < 90) {
+              // Slower progress for large lists
+              const increment = estimatedCount > 1000 ? Math.random() * 3 + 1 : Math.random() * 8 + 3;
+              return Math.min(prev + increment, 90);
             }
             return prev;
           });
-        }, 1200); // Update every 1.2 seconds for more realistic feel
+        }, estimatedCount > 1000 ? 800 : 600); // Slower updates for large lists
         
         // Call the REAL preparation function
         const result = await prepareCampaign(campaignId);
@@ -118,7 +134,12 @@ const CampaignPreparationProgress: React.FC<CampaignPreparationProgressProps> = 
         </div>
         {emailCount > 0 && (
           <div className="text-center text-sm text-gray-500">
-            Processing {emailCount} email recipients
+            Processing {emailCount.toLocaleString()} email recipients
+            {estimatedTime > 5 && (
+              <div className="text-xs text-orange-600 mt-1">
+                Large lists may take up to {estimatedTime} seconds to process
+              </div>
+            )}
           </div>
         )}
       </div>

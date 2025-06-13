@@ -83,49 +83,42 @@ serve(async (req) => {
     // Enhanced recipient parsing to handle multiple formats
     const rawRecipients = campaign.recipients || '';
     console.log('📝 Raw recipients string length:', rawRecipients.length);
-    console.log('📝 Raw recipients preview (first 200 chars):', rawRecipients.substring(0, 200));
 
     let recipients = [];
 
     // Handle different recipient formats
     if (rawRecipients.includes('\n')) {
-      // Newline separated
       recipients = rawRecipients
         .split('\n')
         .map(email => email.trim())
         .filter(email => email && email.includes('@'));
     } else if (rawRecipients.includes(',')) {
-      // Comma separated
       recipients = rawRecipients
         .split(',')
         .map(email => email.trim())
         .filter(email => email && email.includes('@'));
     } else if (rawRecipients.includes(';')) {
-      // Semicolon separated
       recipients = rawRecipients
         .split(';')
         .map(email => email.trim())
         .filter(email => email && email.includes('@'));
     } else if (rawRecipients.includes(' ')) {
-      // Space separated
       recipients = rawRecipients
         .split(' ')
         .map(email => email.trim())
         .filter(email => email && email.includes('@'));
     } else {
-      // Single email or try to parse as single
       const singleEmail = rawRecipients.trim();
       if (singleEmail && singleEmail.includes('@')) {
         recipients = [singleEmail];
       }
     }
 
-    console.log(`📊 PARSING RESULTS: Found ${recipients.length} valid recipients from ${rawRecipients.length} character string`);
+    console.log(`📊 PARSING RESULTS: Found ${recipients.length} valid recipients`);
     
     if (recipients.length === 0) {
       console.error('❌ No valid recipients found after parsing');
       
-      // Set status back to failed if no recipients
       await supabase
         .from('email_campaigns')
         .update({ 
@@ -143,15 +136,6 @@ serve(async (req) => {
       )
     }
 
-    // Log sample recipients for verification
-    console.log('📧 Sample recipients:', recipients.slice(0, 5));
-    console.log('📧 Last recipients:', recipients.slice(-5));
-
-    // Add artificial delay to show preparation progress (1-3 seconds based on email count)
-    const processingDelay = Math.min(Math.max(recipients.length * 50, 1000), 5000); // 50ms per email, min 1s, max 5s
-    console.log(`⏳ Processing delay: ${processingDelay}ms for ${recipients.length} recipients`);
-    await new Promise(resolve => setTimeout(resolve, processingDelay));
-
     // Get rotation configuration
     const config = campaign.config || {}
     const fromNames = config.rotation?.useFromNameRotation && config.rotation.fromNames?.length > 0 
@@ -165,66 +149,110 @@ serve(async (req) => {
     console.log('🔄 Rotation setup:', {
       fromNamesCount: fromNames.length,
       subjectsCount: subjects.length,
-      useFromRotation: config.rotation?.useFromNameRotation,
-      useSubjectRotation: config.rotation?.useSubjectRotation,
       totalRecipients: recipients.length
     })
 
-    // Prepare ALL emails with proper rotation
-    console.log(`🔧 PREPARING ALL ${recipients.length} EMAILS...`);
-    const preparedEmails = []
-    const batchSize = 1000; // Process in batches to avoid memory issues
-    
-    for (let batchStart = 0; batchStart < recipients.length; batchStart += batchSize) {
-      const batchEnd = Math.min(batchStart + batchSize, recipients.length);
-      const currentBatch = recipients.slice(batchStart, batchEnd);
+    // For large lists (>1000), we'll store a lightweight preparation instead of full email objects
+    // This prevents memory overflow and database timeout issues
+    if (recipients.length > 1000) {
+      console.log(`📦 LARGE LIST DETECTED: ${recipients.length} emails - using lightweight preparation`)
       
-      console.log(`📦 Processing batch ${Math.floor(batchStart/batchSize) + 1}: emails ${batchStart + 1} to ${batchEnd}`);
-      
-      for (let i = 0; i < currentBatch.length; i++) {
-        const globalIndex = batchStart + i; // Global index for rotation
-        const recipient = currentBatch[i];
-        
-        // Apply rotation logic using global index
-        const fromNameIndex = globalIndex % fromNames.length
-        const subjectIndex = globalIndex % subjects.length
-        
-        const finalFromName = fromNames[fromNameIndex]
-        const finalSubject = subjects[subjectIndex]
+      // Store only the essential data needed for sending
+      const lightweightPreparation = {
+        recipientCount: recipients.length,
+        recipients: recipients, // Store the parsed recipient list
+        fromNames: fromNames,
+        subjects: subjects,
+        preparedAt: new Date().toISOString(),
+        preparationType: 'lightweight'
+      }
 
-        preparedEmails.push({
-          to: recipient,
-          from_name: finalFromName,
-          subject: finalSubject,
-          html_content: campaign.html_content,
-          text_content: campaign.text_content,
-          prepared_at: new Date().toISOString()
+      const { error: updateError } = await supabase
+        .from('email_campaigns')
+        .update({
+          status: 'prepared',
+          prepared_emails: lightweightPreparation,
+          total_recipients: recipients.length,
+          error_message: null
         })
+        .eq('id', campaignId)
+
+      if (updateError) {
+        console.error('❌ Failed to update campaign:', updateError)
+        
+        await supabase
+          .from('email_campaigns')
+          .update({ 
+            status: 'failed',
+            error_message: `Failed to update campaign: ${updateError.message}`
+          })
+          .eq('id', campaignId)
+        
+        return new Response(
+          JSON.stringify({ error: 'Failed to update campaign' }),
+          { 
+            status: 500, 
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          }
+        )
       }
-      
-      // Log progress every 1000 emails
-      if ((batchEnd % 1000 === 0) || batchEnd === recipients.length) {
-        console.log(`📈 Progress: ${batchEnd}/${recipients.length} emails prepared (${Math.round((batchEnd/recipients.length)*100)}%)`);
-      }
+
+      console.log(`✅ LIGHTWEIGHT PREPARATION COMPLETE: ${recipients.length} emails ready`)
+
+      return new Response(
+        JSON.stringify({ 
+          success: true,
+          message: `Campaign prepared successfully with ${recipients.length} emails (lightweight mode)`,
+          emailCount: recipients.length,
+          preparationType: 'lightweight',
+          preparationComplete: true
+        }),
+        { 
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        }
+      )
     }
 
-    console.log(`✅ PREPARATION COMPLETE: ${preparedEmails.length} emails fully prepared with rotation applied`);
+    // For smaller lists (<= 1000), prepare full email objects as before
+    console.log(`🔧 PREPARING ${recipients.length} EMAILS (full preparation)...`);
+    const preparedEmails = []
+    
+    for (let i = 0; i < recipients.length; i++) {
+      const recipient = recipients[i];
+      
+      // Apply rotation logic
+      const fromNameIndex = i % fromNames.length
+      const subjectIndex = i % subjects.length
+      
+      const finalFromName = fromNames[fromNameIndex]
+      const finalSubject = subjects[subjectIndex]
 
-    // Update campaign with ALL prepared emails
+      preparedEmails.push({
+        to: recipient,
+        from_name: finalFromName,
+        subject: finalSubject,
+        html_content: campaign.html_content,
+        text_content: campaign.text_content,
+        prepared_at: new Date().toISOString()
+      })
+    }
+
+    console.log(`✅ FULL PREPARATION COMPLETE: ${preparedEmails.length} emails fully prepared`);
+
+    // Update campaign with prepared emails
     const { error: updateError } = await supabase
       .from('email_campaigns')
       .update({
         status: 'prepared',
         prepared_emails: preparedEmails,
         total_recipients: recipients.length,
-        error_message: null // Clear any previous error message
+        error_message: null
       })
       .eq('id', campaignId)
 
     if (updateError) {
       console.error('❌ Failed to update campaign:', updateError)
       
-      // Set status back to failed
       await supabase
         .from('email_campaigns')
         .update({ 
@@ -242,17 +270,14 @@ serve(async (req) => {
       )
     }
 
-    console.log(`🎉 CAMPAIGN FULLY PREPARED: ${preparedEmails.length} emails ready for instant sending`)
+    console.log(`🎉 CAMPAIGN FULLY PREPARED: ${preparedEmails.length} emails ready for sending`)
 
     return new Response(
       JSON.stringify({ 
         success: true,
         message: `Campaign prepared successfully with ${preparedEmails.length} emails`,
         emailCount: preparedEmails.length,
-        rotationApplied: {
-          fromNames: fromNames.length > 1,
-          subjects: subjects.length > 1
-        },
+        preparationType: 'full',
         preparationComplete: true
       }),
       { 
