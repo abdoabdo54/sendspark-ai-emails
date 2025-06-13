@@ -47,10 +47,9 @@ const CampaignHistory = () => {
           toast.success('Campaign prepared successfully');
           break;
         case 'send':
-          // CRITICAL FIX: Use the restored sending mechanism with proper config
           const campaign = campaigns.find(c => c.id === campaignId);
           if (campaign) {
-            console.log('🚀 CRITICAL: Dispatching campaign with full config:', {
+            console.log('🚀 CRITICAL: Dispatching campaign with PRESERVED config:', {
               id: campaignId,
               config: campaign.config,
               sendingMode: campaign.config?.sendingMode,
@@ -58,7 +57,7 @@ const CampaignHistory = () => {
               selectedAccounts: campaign.config?.selectedAccounts
             });
             
-            // RESTORED: Proper campaign dispatch with all settings
+            // CRITICAL: Use the EXACT saved configuration from the database
             await dispatchCampaign({
               from_name: campaign.from_name,
               subject: campaign.subject,
@@ -66,9 +65,11 @@ const CampaignHistory = () => {
               html_content: campaign.html_content,
               text_content: campaign.text_content,
               send_method: campaign.send_method,
-              config: campaign.config // CRITICAL: Pass the full config
+              config: campaign.config // CRITICAL: This preserves ALL user selections
             });
-            toast.success('Campaign sent successfully!');
+            
+            // SINGLE SUCCESS TOAST - NO DOUBLE POPUPS
+            toast.success('🚀 Campaign sent successfully!');
           } else {
             throw new Error('Campaign not found');
           }
@@ -134,13 +135,13 @@ const CampaignHistory = () => {
                         Sent: {campaign.sent_count}
                       </p>
                       
-                      {/* CRITICAL FIX: Show actual saved configuration */}
+                      {/* FIXED: Show EXACT saved configuration */}
                       {campaign.config && (
                         <div className="text-xs text-slate-500 mt-2 space-y-1">
                           <div className="flex gap-4">
                             <span>📧 Accounts: {campaign.config.selectedAccounts?.length || 0} selected</span>
                             <span>⚡ Mode: {campaign.config.sendingMode || 'controlled'}</span>
-                            <span>🔄 Dispatch: {campaign.config.dispatchMethod || 'parallel'}</span>
+                            <span>🔄 Method: {campaign.config.dispatchMethod || 'parallel'}</span>
                           </div>
                           {campaign.config.rotation?.useFromNameRotation && (
                             <div>🔄 FROM rotation: {campaign.config.rotation.fromNames?.length || 0} variants</div>
@@ -185,6 +186,7 @@ const CampaignHistory = () => {
                       <Button
                         size="sm"
                         onClick={() => handleAction('send', campaign.id)}
+                        className="bg-green-600 hover:bg-green-700"
                       >
                         <Zap className="w-4 h-4 mr-1" />
                         Send Now

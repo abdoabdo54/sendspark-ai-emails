@@ -49,17 +49,18 @@ const CompactAccountSelector: React.FC<CompactAccountSelectorProps> = ({
   const handleDeselectAll = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    console.log('🔴 Deselect All clicked - forcing empty selection');
+    console.log('🔴 CRITICAL FIX: Deselect All clicked - forcing immediate clear');
     
-    // CRITICAL FIX: Call onAccountsChange directly with empty array
-    // This prevents any race conditions or auto-reselection
+    // CRITICAL FIX: Force immediate clear without any callbacks that might re-select
     onAccountsChange([]);
     
-    // Also call the callback for consistency
-    onDeselectAll();
-    
-    // Close the popover to prevent further interactions
+    // Close popover immediately to prevent UI conflicts
     setIsOpen(false);
+    
+    // Also call the callback but after the main change
+    setTimeout(() => {
+      onDeselectAll();
+    }, 50);
   };
 
   const hasWarnings = activeAccounts.length === 0 || enabledFunctions.length === 0;
@@ -124,12 +125,12 @@ const CompactAccountSelector: React.FC<CompactAccountSelectorProps> = ({
                 <Button 
                   variant="outline" 
                   size="sm" 
-                  className="flex-1"
+                  className="flex-1 bg-red-50 hover:bg-red-100 border-red-200"
                   onClick={handleDeselectAll}
                   type="button"
                 >
                   <X className="w-3 h-3 mr-1" />
-                  Deselect All
+                  Clear All
                 </Button>
               </div>
             </div>

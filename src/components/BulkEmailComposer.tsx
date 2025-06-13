@@ -11,7 +11,7 @@ import { Switch } from '@/components/ui/switch';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Rocket, ExternalLink, Calculator, Mail, Eye, Zap, Clock, RotateCcw, Target, Plus } from 'lucide-react';
-import { toast } from '@/hooks/use-toast';
+import { toast } from 'sonner';
 import { useSimpleOrganizations } from '@/contexts/SimpleOrganizationContext';
 import { useCampaignSender } from '@/hooks/useCampaignSender';
 import { useEmailAccounts } from '@/hooks/useEmailAccounts';
@@ -151,19 +151,13 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
 
     const emailList = emails.join(', ');
     setRecipients(emailList);
-    toast({
-      title: "Success",
-      description: `Imported ${emails.length} email addresses`
-    });
+    toast.success(`Imported ${emails.length} email addresses`);
   };
 
   const handleGoogleSheetsImport = (data: string[]) => {
     const emailList = data.join(', ');
     setRecipients(emailList);
-    toast({
-      title: "Success", 
-      description: `Imported ${data.length} email addresses from Google Sheets`
-    });
+    toast.success(`Imported ${data.length} email addresses from Google Sheets`);
   };
 
   const handleSelectAllAccounts = () => {
@@ -173,98 +167,58 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
   };
 
   const handleDeselectAllAccounts = () => {
-    console.log('🔴 Deselect All Accounts called - clearing selection');
+    console.log('🔴 Deselect All Accounts called - clearing selection completely');
     setSelectedAccounts([]);
   };
 
   const validateForm = () => {
     if (!fromName.trim() && !useFromRotation) {
-      toast({
-        title: "Validation Error",
-        description: "From name is required or enable rotation with variations",
-        variant: "destructive"
-      });
+      toast.error("From name is required or enable rotation with variations");
       return false;
     }
 
     if (!subject.trim() && !useSubjectRotation) {
-      toast({
-        title: "Validation Error", 
-        description: "Subject is required or enable rotation with variations",
-        variant: "destructive"
-      });
+      toast.error("Subject is required or enable rotation with variations");
       return false;
     }
 
     if (useFromRotation && !fromNameVariations.trim()) {
-      toast({
-        title: "Validation Error",
-        description: "From name variations are required when rotation is enabled",
-        variant: "destructive"
-      });
+      toast.error("From name variations are required when rotation is enabled");
       return false;
     }
 
     if (useSubjectRotation && !subjectVariations.trim()) {
-      toast({
-        title: "Validation Error",
-        description: "Subject variations are required when rotation is enabled",
-        variant: "destructive"
-      });
+      toast.error("Subject variations are required when rotation is enabled");
       return false;
     }
 
     if (!recipients.trim()) {
-      toast({
-        title: "Validation Error",
-        description: "Recipients are required", 
-        variant: "destructive"
-      });
+      toast.error("Recipients are required");
       return false;
     }
 
     if (!htmlContent.trim() && !textContent.trim()) {
-      toast({
-        title: "Validation Error",
-        description: "Email content is required",
-        variant: "destructive"
-      });
+      toast.error("Email content is required");
       return false;
     }
 
     if (!hasFunctions) {
-      toast({
-        title: "Validation Error",
-        description: "No Cloud Functions available. Please add functions in Function Manager.",
-        variant: "destructive"
-      });
+      toast.error("No Cloud Functions available. Please add functions in Function Manager.");
       return false;
     }
 
     if (!hasAccounts) {
-      toast({
-        title: "Validation Error",
-        description: "Please select at least one email account.",
-        variant: "destructive"
-      });
+      toast.error("Please select at least one email account.");
       return false;
     }
 
     if (useTestAfter && !testAfterEmail.trim()) {
-      toast({
-        title: "Validation Error",
-        description: "Test-After email address is required when Test-After is enabled",
-        variant: "destructive"
-      });
+      toast.error("Test-After email address is required when Test-After is enabled");
       return false;
     }
 
     if (useCustomConfig && (customFunctionCount <= 0 || customAccountCount <= 0)) {
-      toast({
-        title: "Validation Error",
-        description: "Custom function and account counts must be greater than 0",
-        variant: "destructive"
-      });
+      toast.error("Custom function and account counts must be greater than 0");
       return false;
     }
 
@@ -353,10 +307,8 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
       // Call onSend which should now only CREATE the campaign as draft
       await onSend(campaignData);
       
-      toast({
-        title: "✅ Campaign Created",
-        description: `Campaign created successfully with ${finalRecipients.length} recipients. Go to Campaign History to prepare and send.`
-      });
+      // SINGLE SUCCESS TOAST - NO DOUBLE POPUPS
+      toast.success(`✅ Campaign created successfully with ${finalRecipients.length} recipients. Go to Campaign History to prepare and send.`);
 
       // Clear form after successful creation
       setFromName('');
@@ -371,11 +323,7 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
 
     } catch (error: any) {
       console.error('Campaign creation failed:', error);
-      toast({
-        title: "❌ Campaign Creation Failed",
-        description: error.message || 'Unknown error occurred',
-        variant: "destructive"
-      });
+      toast.error(`❌ Campaign Creation Failed: ${error.message || 'Unknown error occurred'}`);
     } finally {
       setIsSubmitting(false);
     }
@@ -423,17 +371,17 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
               </Button>
             </div>
 
-            {/* Enhanced SmartConfig - UPGRADED */}
+            {/* UPGRADED SmartConfig Engine */}
             <Card>
               <CardHeader className="pb-3">
                 <CardTitle className="text-sm flex items-center gap-2">
                   <Calculator className="w-4 h-4" />
-                  Smart Configuration Engine - UPGRADED
+                  Smart Configuration Engine - FULLY UPGRADED ⚡
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="flex items-center justify-between">
-                  <Label htmlFor="useCustomConfig">Use Manual Configuration</Label>
+                  <Label htmlFor="useCustomConfig">Use Manual Configuration Override</Label>
                   <Switch
                     id="useCustomConfig"
                     checked={useCustomConfig}
@@ -443,9 +391,10 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
                 
                 {useCustomConfig && (
                   <div className="space-y-4 p-4 border rounded-lg bg-blue-50">
+                    <div className="text-sm font-semibold text-blue-800 mb-3">⚙️ Manual Override Configuration</div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
-                        <Label htmlFor="customFunctionCount">Number of Functions to Use</Label>
+                        <Label htmlFor="customFunctionCount">Functions to Use</Label>
                         <Input
                           id="customFunctionCount"
                           type="number"
@@ -461,7 +410,7 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
                       </div>
                       
                       <div>
-                        <Label htmlFor="customAccountCount">Number of Accounts to Use</Label>
+                        <Label htmlFor="customAccountCount">Accounts to Use</Label>
                         <Input
                           id="customAccountCount"
                           type="number"
@@ -481,7 +430,7 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
                       <Alert className="border-green-200 bg-green-50">
                         <Zap className="h-4 w-4" />
                         <AlertDescription className="text-green-800 text-sm">
-                          <strong>Estimated Performance:</strong> {estimatedTime}
+                          <strong>Real-time Performance Estimation:</strong> {estimatedTime}
                         </AlertDescription>
                       </Alert>
                     )}
@@ -493,11 +442,11 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
                     <Calculator className="h-4 w-4" />
                     <AlertDescription>
                       <div className="text-blue-800 text-sm">
-                        <strong>SmartConfig Active:</strong> Optimized for {smartConfig.emailVolume?.toLocaleString()} emails
+                        <strong>🚀 SmartConfig Auto-Optimization Active:</strong> Optimized for {smartConfig.emailVolume?.toLocaleString()} emails
                         <br />
                         <span className="text-xs">
-                          Recommended: {smartConfig.recommendedFunctions} functions, {smartConfig.recommendedAccounts} accounts
-                          • Est. time: {smartConfig.estimatedTime}
+                          AI Recommended: {smartConfig.recommendedFunctions} functions, {smartConfig.recommendedAccounts} accounts
+                          • Estimated delivery time: {smartConfig.estimatedTime}
                         </span>
                       </div>
                     </AlertDescription>
@@ -577,7 +526,7 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
                 <Alert className="border-blue-200 bg-blue-50">
                   <Target className="h-4 w-4" />
                   <AlertDescription className="text-blue-800 text-xs">
-                    Current: <strong>{sendingMode === 'zero-delay' ? 'Zero Delay (Max Speed)' : sendingMode === 'fast' ? 'Fast' : 'Controlled'}</strong> + <strong>{dispatchMethod === 'parallel' ? 'Parallel (All functions)' : dispatchMethod === 'round-robin' ? 'Round Robin (Rotate accounts)' : 'Sequential'}</strong>
+                    Current Selection: <strong>{sendingMode === 'zero-delay' ? 'Zero Delay (Max Speed)' : sendingMode === 'fast' ? 'Fast' : 'Controlled'}</strong> + <strong>{dispatchMethod === 'parallel' ? 'Parallel (All functions)' : dispatchMethod === 'round-robin' ? 'Round Robin (Rotate accounts)' : 'Sequential'}</strong>
                   </AlertDescription>
                 </Alert>
               </CardContent>

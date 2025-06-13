@@ -69,7 +69,7 @@ export const useCampaignSender = (organizationId?: string) => {
 
   const sendCampaign = async (campaignData: CampaignData) => {
     try {
-      console.log('🚀 CRITICAL: Starting campaign dispatch with config:', campaignData.config);
+      console.log('🚀 CRITICAL: Starting campaign dispatch with PRESERVED config:', campaignData.config);
       
       // Parse recipients
       const recipients = campaignData.recipients
@@ -81,9 +81,9 @@ export const useCampaignSender = (organizationId?: string) => {
         throw new Error('No valid recipients found');
       }
 
-      // CRITICAL FIX: Get selected accounts from config properly
+      // CRITICAL FIX: Get selected accounts from PRESERVED config
       const selectedAccountIds = campaignData.config?.selectedAccounts || [];
-      console.log('📧 CRITICAL: Selected account IDs from config:', selectedAccountIds);
+      console.log('📧 CRITICAL: Selected account IDs from PRESERVED config:', selectedAccountIds);
       
       const selectedAccounts = accounts.filter(account => 
         selectedAccountIds.includes(account.id) && account.is_active
@@ -116,11 +116,11 @@ export const useCampaignSender = (organizationId?: string) => {
 
       console.log('📊 Campaign created with ID:', campaign.id);
 
-      // CRITICAL FIX: Calculate slicing strategy with proper config
+      // CRITICAL FIX: Calculate slicing strategy with PRESERVED config
       const slices = calculateCampaignSlicing(recipients, campaignData.config);
       console.log(`📈 CRITICAL: Campaign split into ${slices.length} parallel slices`);
 
-      // CRITICAL FIX: Use custom account count if specified
+      // CRITICAL FIX: Use custom account count if specified in PRESERVED config
       const accountsToUse = campaignData.config.useCustomConfig && campaignData.config.customAccountCount
         ? Math.min(campaignData.config.customAccountCount, selectedAccounts.length)
         : selectedAccounts.length;
@@ -138,7 +138,7 @@ export const useCampaignSender = (organizationId?: string) => {
         config: account.config
       }));
 
-      // CRITICAL FIX: Dispatch to Google Cloud Functions with proper config
+      // CRITICAL FIX: Dispatch to Google Cloud Functions with PRESERVED config
       const dispatchPromises = slices.map(async (slice, index) => {
         const payload = {
           campaignId: campaign.id,
@@ -154,8 +154,8 @@ export const useCampaignSender = (organizationId?: string) => {
             text_content: campaignData.text_content,
             config: {
               ...campaignData.config,
-              // CRITICAL: Pass sending configuration to GCF
-              sendingMode: campaignData.config.sendingMode || 'zero-delay',
+              // CRITICAL: Pass PRESERVED sending configuration to GCF
+              sendingMode: campaignData.config.sendingMode || 'controlled',
               dispatchMethod: campaignData.config.dispatchMethod || 'parallel'
             }
           },
@@ -163,7 +163,7 @@ export const useCampaignSender = (organizationId?: string) => {
           organizationId
         };
 
-        console.log(`🎯 CRITICAL: Dispatching slice ${index + 1} to ${slice.functionName} with config:`, {
+        console.log(`🎯 CRITICAL: Dispatching slice ${index + 1} to ${slice.functionName} with PRESERVED config:`, {
           recipients: slice.limit,
           sendingMode: payload.campaignData.config.sendingMode,
           dispatchMethod: payload.campaignData.config.dispatchMethod,
