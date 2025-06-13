@@ -32,7 +32,8 @@ const CompactAccountSelector: React.FC<CompactAccountSelectorProps> = ({
   const enabledFunctions = functions.filter(func => func.enabled);
   const selectedCount = selectedAccounts.length;
 
-  const handleAccountToggle = (accountId: string) =>onAccountsChange(
+  const handleAccountToggle = (accountId: string) => {
+    onAccountsChange(
       selectedAccounts.includes(accountId)
         ? selectedAccounts.filter(id => id !== accountId)
         : [...selectedAccounts, accountId]
