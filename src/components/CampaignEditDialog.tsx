@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -20,17 +21,15 @@ import { toast } from '@/hooks/use-toast';
 interface CampaignEditDialogProps {
   campaign: Campaign;
   trigger?: React.ReactNode;
-  open?: boolean;
-  onClose?: () => void;
 }
 
-const CampaignEditDialog = ({ campaign, trigger, open: controlledOpen, onClose }: CampaignEditDialogProps) => {
+const CampaignEditDialog = ({ campaign, trigger }: CampaignEditDialogProps) => {
   const { currentOrganization } = useSimpleOrganizations();
   const { updateCampaign } = useCampaigns(currentOrganization?.id);
   const { accounts } = useEmailAccounts(currentOrganization?.id);
   const { functions } = useGcfFunctions(currentOrganization?.id);
 
-  const [internalOpen, setInternalOpen] = useState(false);
+  const [open, setOpen] = useState(false);
   const [fromName, setFromName] = useState(campaign.from_name);
   const [subject, setSubject] = useState(campaign.subject);
   const [recipients, setRecipients] = useState(campaign.recipients);
@@ -60,14 +59,6 @@ const CampaignEditDialog = ({ campaign, trigger, open: controlledOpen, onClose }
 
   const activeAccounts = accounts.filter(account => account.is_active);
   const enabledFunctions = functions.filter(func => func.enabled);
-
-  const isControlled = controlledOpen !== undefined;
-  const open = isControlled ? controlledOpen : internalOpen;
-  const setOpen = isControlled ? (value: boolean) => {
-    if (!value && onClose) {
-      onClose();
-    }
-  } : setInternalOpen;
 
   const handleAccountToggle = (accountId: string) => {
     setSelectedAccounts(prev => 
@@ -183,11 +174,14 @@ const CampaignEditDialog = ({ campaign, trigger, open: controlledOpen, onClose }
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      {trigger && (
-        <DialogTrigger asChild>
-          {trigger}
-        </DialogTrigger>
-      )}
+      <DialogTrigger asChild>
+        {trigger || (
+          <Button variant="outline" size="sm" className="flex items-center gap-2">
+            <Edit className="w-4 h-4" />
+            Edit
+          </Button>
+        )}
+      </DialogTrigger>
       <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Edit Campaign</DialogTitle>

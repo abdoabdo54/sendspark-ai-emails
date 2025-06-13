@@ -146,12 +146,6 @@ export const useCampaigns = (organizationId?: string) => {
     try {
       console.log('🔧 REAL PREPARATION: Starting campaign preparation for:', campaignId);
       
-      // Update campaign status to 'preparing' first
-      await updateCampaign(campaignId, { 
-        status: 'preparing',
-        prepared_emails: []
-      });
-      
       // Call the prepare-campaign edge function for REAL preparation
       const { data, error } = await supabase.functions.invoke('prepare-campaign', {
         body: { campaignId }
@@ -159,13 +153,6 @@ export const useCampaigns = (organizationId?: string) => {
 
       if (error) {
         console.error('❌ Preparation error:', error);
-        
-        // Update campaign status to failed if preparation fails
-        await updateCampaign(campaignId, { 
-          status: 'failed',
-          error_message: error.message 
-        });
-        
         throw error;
       }
 
@@ -174,6 +161,11 @@ export const useCampaigns = (organizationId?: string) => {
       // Refresh campaigns to show updated status
       await fetchCampaigns();
       
+      toast({
+        title: "Success",
+        description: data.message || "Campaign prepared successfully"
+      });
+
       return data;
     } catch (error: any) {
       console.error('Error preparing campaign:', error);
@@ -182,6 +174,12 @@ export const useCampaigns = (organizationId?: string) => {
       await updateCampaign(campaignId, { 
         status: 'failed',
         error_message: error.message 
+      });
+      
+      toast({
+        title: "Error",
+        description: `Failed to prepare campaign: ${error.message}`,
+        variant: "destructive"
       });
       
       throw error;
