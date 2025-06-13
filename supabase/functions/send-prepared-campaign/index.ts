@@ -55,7 +55,7 @@ serve(async (req) => {
       )
     }
 
-    if (campaign.status !== 'prepared') {
+    if (campaign.status !== 'prepared' && campaign.status !== 'sending') {
       console.error('❌ Campaign not prepared:', campaign.status)
       return new Response(
         JSON.stringify({ error: 'Campaign must be prepared before sending' }),
@@ -81,49 +81,29 @@ serve(async (req) => {
     // Get the slice of prepared emails for this function
     const emailsToSend = preparedEmails.slice(slice.skip, slice.skip + slice.limit)
     
-    console.log(`📧 Processing ${emailsToSend.length} prepared emails with ${accounts.length} accounts`)
+    console.log(`📧 Processing ${emailsToSend.length} PRE-PREPARED emails with ${accounts.length} accounts`)
 
     let sentCount = 0
     const errors = []
 
-    // Process emails with rotation logic
+    // Process emails with account rotation (emails are already prepared with subject/from rotation)
     for (let i = 0; i < emailsToSend.length; i++) {
       const email = emailsToSend[i]
       const accountIndex = i % accounts.length // Rotate accounts
       const account = accounts[accountIndex]
 
       try {
-        // Apply rotation logic from campaign config
-        let finalFromName = email.from_name
-        let finalSubject = email.subject
-
-        // FROM name rotation
-        if (campaignData.config?.rotation?.useFromNameRotation && 
-            campaignData.config.rotation.fromNames?.length > 0) {
-          const rotationIndex = i % campaignData.config.rotation.fromNames.length
-          finalFromName = campaignData.config.rotation.fromNames[rotationIndex]
-          console.log(`🔄 FROM rotation: Using "${finalFromName}" (index ${rotationIndex})`)
-        }
-
-        // Subject rotation
-        if (campaignData.config?.rotation?.useSubjectRotation && 
-            campaignData.config.rotation.subjects?.length > 0) {
-          const rotationIndex = i % campaignData.config.rotation.subjects.length
-          finalSubject = campaignData.config.rotation.subjects[rotationIndex]
-          console.log(`🔄 Subject rotation: Using "${finalSubject}" (index ${rotationIndex})`)
-        }
-
         // Apply sending delay based on mode (unless zero-delay)
         if (campaignData.config.sendingMode !== 'zero-delay' && i > 0) {
           const delay = campaignData.config.sendingMode === 'fast' ? 500 : 2000
           await new Promise(resolve => setTimeout(resolve, delay))
         }
 
-        // Send email using the selected account
+        // Send email using the selected account with PRE-PREPARED data
         const emailPayload = {
           to: email.to,
-          from_name: finalFromName,
-          subject: finalSubject,
+          from_name: email.from_name, // Already rotated during preparation
+          subject: email.subject,     // Already rotated during preparation
           html_content: email.html_content,
           text_content: email.text_content,
           account: account,
@@ -131,6 +111,7 @@ serve(async (req) => {
         }
 
         console.log(`📤 Sending email ${i + 1}/${emailsToSend.length} via ${account.name} to ${email.to}`)
+        console.log(`   FROM: "${email.from_name}" | SUBJECT: "${email.subject}"`)
 
         // Here you would call your actual email sending service
         // For now, we'll simulate success

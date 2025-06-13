@@ -158,13 +158,15 @@ export const useCampaigns = (organizationId?: string) => {
 
       console.log('✅ Campaign prepared successfully:', data);
       
-      // Update local state
+      // Refresh campaigns to show updated status
       await fetchCampaigns();
       
       toast({
         title: "Success",
         description: data.message || "Campaign prepared successfully"
       });
+
+      return data;
     } catch (error: any) {
       console.error('Error preparing campaign:', error);
       
@@ -179,6 +181,8 @@ export const useCampaigns = (organizationId?: string) => {
         description: `Failed to prepare campaign: ${error.message}`,
         variant: "destructive"
       });
+      
+      throw error;
     }
   };
 

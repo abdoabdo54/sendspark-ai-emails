@@ -15,6 +15,8 @@ serve(async (req) => {
   try {
     const { campaignId } = await req.json()
 
+    console.log('🔧 REAL PREPARATION: Starting preparation for campaign:', campaignId)
+
     if (!campaignId) {
       return new Response(
         JSON.stringify({ error: 'Campaign ID is required' }),
@@ -38,6 +40,7 @@ serve(async (req) => {
       .single()
 
     if (campaignError || !campaign) {
+      console.error('❌ Campaign not found:', campaignError)
       return new Response(
         JSON.stringify({ error: 'Campaign not found' }),
         { 
@@ -47,8 +50,28 @@ serve(async (req) => {
       )
     }
 
+    if (campaign.status !== 'draft') {
+      console.error('❌ Campaign not in draft status:', campaign.status)
+      return new Response(
+        JSON.stringify({ error: 'Campaign must be in draft status to prepare' }),
+        { 
+          status: 400, 
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        }
+      )
+    }
+
+    console.log('📧 Processing campaign:', {
+      id: campaignId,
+      subject: campaign.subject,
+      config: campaign.config
+    })
+
     // Parse recipients
-    const recipients = campaign.recipients.split(',').map(email => email.trim()).filter(email => email)
+    const recipients = campaign.recipients
+      .split(',')
+      .map(email => email.trim())
+      .filter(email => email && email.includes('@'))
 
     if (recipients.length === 0) {
       return new Response(
@@ -60,71 +83,64 @@ serve(async (req) => {
       )
     }
 
-    // Prepare emails with tracking
-    const baseUrl = supabaseUrl.replace('.supabase.co', '.supabase.co/functions/v1')
+    console.log(`📊 Found ${recipients.length} valid recipients`)
+
+    // Prepare emails with rotation applied
+    const preparedEmails = []
+    const config = campaign.config || {}
+
+    // Get rotation arrays
+    const fromNames = config.rotation?.useFromNameRotation && config.rotation.fromNames?.length > 0 
+      ? config.rotation.fromNames 
+      : [campaign.from_name]
     
-    const preparedEmails = recipients.map(email => {
-      let htmlContent = campaign.html_content || ''
-      let textContent = campaign.text_content || ''
+    const subjects = config.rotation?.useSubjectRotation && config.rotation.subjects?.length > 0 
+      ? config.rotation.subjects 
+      : [campaign.subject]
 
-      // Add tracking pixel to HTML content
-      const trackingPixel = `<img src="${baseUrl}/track-open?campaign=${campaignId}&email=${encodeURIComponent(email)}" width="1" height="1" style="display:none;" alt="" />`
-      
-      if (htmlContent) {
-        // Add tracking pixel before closing body tag, or at the end if no body tag
-        if (htmlContent.includes('</body>')) {
-          htmlContent = htmlContent.replace('</body>', `${trackingPixel}</body>`)
-        } else {
-          htmlContent += trackingPixel
-        }
-
-        // Replace links with tracking links
-        htmlContent = htmlContent.replace(
-          /href="([^"]+)"/g,
-          (match, url) => {
-            if (url.startsWith('mailto:') || url.startsWith('#')) {
-              return match // Don't track mailto or anchor links
-            }
-            const trackingUrl = `${baseUrl}/track-click?campaign=${campaignId}&email=${encodeURIComponent(email)}&url=${encodeURIComponent(url)}`
-            return `href="${trackingUrl}"`
-          }
-        )
-      }
-
-      // Add unsubscribe link
-      const unsubscribeUrl = `${baseUrl}/track-unsubscribe?campaign=${campaignId}&email=${encodeURIComponent(email)}`
-      const unsubscribeText = `\n\nTo unsubscribe from future emails, click here: ${unsubscribeUrl}`
-      const unsubscribeHtml = `<br><br><small><a href="${unsubscribeUrl}">Unsubscribe from future emails</a></small>`
-
-      if (textContent) {
-        textContent += unsubscribeText
-      }
-      if (htmlContent) {
-        htmlContent += unsubscribeHtml
-      }
-
-      return {
-        to: email,
-        subject: campaign.subject,
-        from_name: campaign.from_name,
-        html_content: htmlContent,
-        text_content: textContent,
-        send_method: campaign.send_method
-      }
+    console.log('🔄 Rotation setup:', {
+      fromNamesCount: fromNames.length,
+      subjectsCount: subjects.length,
+      useFromRotation: config.rotation?.useFromNameRotation,
+      useSubjectRotation: config.rotation?.useSubjectRotation
     })
+
+    // Prepare each email with proper rotation
+    for (let i = 0; i < recipients.length; i++) {
+      const recipient = recipients[i]
+      
+      // Apply rotation logic
+      const fromNameIndex = i % fromNames.length
+      const subjectIndex = i % subjects.length
+      
+      const finalFromName = fromNames[fromNameIndex]
+      const finalSubject = subjects[subjectIndex]
+
+      console.log(`📧 Email ${i + 1}: ${recipient} - FROM: "${finalFromName}" (${fromNameIndex}) - SUBJECT: "${finalSubject}" (${subjectIndex})`)
+
+      preparedEmails.push({
+        to: recipient,
+        from_name: finalFromName,
+        subject: finalSubject,
+        html_content: campaign.html_content,
+        text_content: campaign.text_content,
+        prepared_at: new Date().toISOString()
+      })
+    }
 
     // Update campaign with prepared emails
     const { error: updateError } = await supabase
       .from('email_campaigns')
       .update({
-        prepared_emails: preparedEmails,
         status: 'prepared',
-        total_recipients: recipients.length
+        prepared_emails: preparedEmails,
+        total_recipients: recipients.length,
+        updated_at: new Date().toISOString()
       })
       .eq('id', campaignId)
 
     if (updateError) {
-      console.error('Error updating campaign:', updateError)
+      console.error('❌ Failed to update campaign:', updateError)
       return new Response(
         JSON.stringify({ error: 'Failed to update campaign' }),
         { 
@@ -134,11 +150,17 @@ serve(async (req) => {
       )
     }
 
+    console.log(`✅ Campaign prepared successfully: ${preparedEmails.length} emails ready`)
+
     return new Response(
       JSON.stringify({ 
-        success: true, 
-        prepared_count: preparedEmails.length,
-        message: `Campaign prepared with ${preparedEmails.length} emails ready to send`
+        success: true,
+        message: `Campaign prepared successfully with ${preparedEmails.length} emails`,
+        emailCount: preparedEmails.length,
+        rotationApplied: {
+          fromNames: fromNames.length > 1,
+          subjects: subjects.length > 1
+        }
       }),
       { 
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
@@ -146,9 +168,9 @@ serve(async (req) => {
     )
 
   } catch (error) {
-    console.error('Error in prepare-campaign:', error)
+    console.error('❌ Error in prepare-campaign:', error)
     return new Response(
-      JSON.stringify({ error: 'Internal server error' }),
+      JSON.stringify({ error: 'Internal server error', details: error.message }),
       { 
         status: 500, 
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }

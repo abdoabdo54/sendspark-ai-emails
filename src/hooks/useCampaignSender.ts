@@ -1,4 +1,3 @@
-
 import { useGcfFunctions } from './useGcfFunctions';
 import { useEmailAccounts } from './useEmailAccounts';
 import { supabase } from '@/integrations/supabase/client';
@@ -78,30 +77,6 @@ export const useCampaignSender = (organizationId?: string) => {
     try {
       console.log('🚀 SENDING: Starting prepared campaign dispatch:', campaignData.config);
       
-      // Parse recipients
-      const recipients = campaignData.recipients
-        .split(',')
-        .map(email => email.trim())
-        .filter(email => email);
-
-      if (recipients.length === 0) {
-        throw new Error('No valid recipients found');
-      }
-
-      // Get selected accounts from config
-      const selectedAccountIds = campaignData.config?.selectedAccounts || [];
-      console.log('📧 Selected account IDs from config:', selectedAccountIds);
-      
-      const selectedAccounts = accounts.filter(account => 
-        selectedAccountIds.includes(account.id) && account.is_active
-      );
-
-      console.log('📧 Active accounts for sending:', selectedAccounts.length, selectedAccounts.map(a => ({ id: a.id, name: a.name })));
-
-      if (selectedAccounts.length === 0) {
-        throw new Error('No valid accounts selected');
-      }
-
       // Find existing prepared campaign
       const { data: existingCampaigns, error: findError } = await supabase
         .from('email_campaigns')
@@ -124,6 +99,11 @@ export const useCampaignSender = (organizationId?: string) => {
 
       const campaign = existingCampaigns[0];
       console.log('📊 Found prepared campaign with ID:', campaign.id);
+      console.log('📧 Prepared emails count:', campaign.prepared_emails?.length || 0);
+
+      if (!campaign.prepared_emails || campaign.prepared_emails.length === 0) {
+        throw new Error('Campaign has no prepared emails. Please prepare the campaign again.');
+      }
 
       // Update campaign status to sending
       const { error: updateError } = await supabase
@@ -136,8 +116,25 @@ export const useCampaignSender = (organizationId?: string) => {
         throw new Error(`Failed to update campaign status: ${updateError.message}`);
       }
 
-      // Calculate proper slicing strategy
-      const slices = calculateCampaignSlicing(recipients, campaignData.config);
+      // Get selected accounts from config
+      const selectedAccountIds = campaignData.config?.selectedAccounts || [];
+      console.log('📧 Selected account IDs from config:', selectedAccountIds);
+      
+      const selectedAccounts = accounts.filter(account => 
+        selectedAccountIds.includes(account.id) && account.is_active
+      );
+
+      console.log('📧 Active accounts for sending:', selectedAccounts.length, selectedAccounts.map(a => ({ id: a.id, name: a.name })));
+
+      if (selectedAccounts.length === 0) {
+        throw new Error('No valid accounts selected');
+      }
+
+      // Use prepared emails count for distribution
+      const totalEmails = campaign.prepared_emails.length;
+      
+      // Calculate proper slicing strategy using prepared email count
+      const slices = calculateCampaignSlicing(campaign.prepared_emails, campaignData.config);
       console.log(`📈 Campaign distributed across ${slices.length} functions`);
 
       // Use custom account count if specified
@@ -149,11 +146,10 @@ export const useCampaignSender = (organizationId?: string) => {
       
       console.log(`📧 Using ${accountsForSending.length} accounts:`, accountsForSending.map(a => a.name));
 
-      // Configure accounts based on sending mode
+      // Configure accounts based on sending mode (ZERO DELAY = NO LIMITS)
       const gcfAccounts = accountsForSending.map(account => {
         const cleanConfig = { ...account.config };
         
-        // Configure based on sending mode
         if (campaignData.config.sendingMode === 'zero-delay') {
           // ZERO DELAY = NO LIMITS AT ALL
           delete cleanConfig.emails_per_hour;
