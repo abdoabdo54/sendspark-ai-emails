@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -249,6 +248,7 @@ const CampaignHistory = () => {
       {editingCampaign && (
         <CampaignEditDialog
           campaign={editingCampaign}
+          open={!!editingCampaign}
           onClose={() => setEditingCampaign(null)}
         />
       )}
