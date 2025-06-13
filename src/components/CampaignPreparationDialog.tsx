@@ -20,7 +20,7 @@ const CampaignPreparationDialog = ({
 }: CampaignPreparationDialogProps) => {
   return (
     <Dialog open={open} onOpenChange={() => {}}>
-      <DialogContent className="max-w-3xl" hideCloseButton>
+      <DialogContent className="max-w-3xl">
         <DialogHeader>
           <DialogTitle className="text-center">Campaign Preparation</DialogTitle>
         </DialogHeader>

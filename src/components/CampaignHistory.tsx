@@ -176,19 +176,10 @@ const CampaignHistory = () => {
                           size="sm"
                           onClick={() => handlePrepareCampaign(campaign)}
                           className="flex items-center gap-1"
-                          disabled={campaign.status === 'preparing'}
+                          disabled={false}
                         >
-                          {campaign.status === 'preparing' ? (
-                            <>
-                              <Loader2 className="w-3 h-3 animate-spin" />
-                              Preparing...
-                            </>
-                          ) : (
-                            <>
-                              <Settings className="w-3 h-3" />
-                              Prepare
-                            </>
-                          )}
+                          <Settings className="w-3 h-3" />
+                          Prepare
                         </Button>
                       )}
                       
@@ -257,9 +248,8 @@ const CampaignHistory = () => {
       {/* Campaign Edit Dialog */}
       {editingCampaign && (
         <CampaignEditDialog
-          open={!!editingCampaign}
-          onOpenChange={() => setEditingCampaign(null)}
           campaign={editingCampaign}
+          onClose={() => setEditingCampaign(null)}
         />
       )}
 
