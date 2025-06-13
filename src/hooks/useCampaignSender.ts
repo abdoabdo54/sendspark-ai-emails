@@ -134,11 +134,18 @@ export const useCampaignSender = (organizationId?: string) => {
 
       const campaign = existingCampaigns[0];
       console.log('📊 Found prepared campaign with ID:', campaign.id);
+      console.log('📧 Prepared emails data type:', Array.isArray(campaign.prepared_emails) ? 'Array' : typeof campaign.prepared_emails);
+      console.log('📧 Prepared emails length:', Array.isArray(campaign.prepared_emails) ? campaign.prepared_emails.length : 'Not an array');
+
+      // FIXED: Better validation of prepared emails
+      if (!campaign.prepared_emails || !Array.isArray(campaign.prepared_emails) || campaign.prepared_emails.length === 0) {
+        throw new Error('Campaign has no prepared emails. Please prepare the campaign again.');
+      }
 
       // Safe type conversion for prepared_emails
       const preparedEmails = convertToPreparedEmails(campaign.prepared_emails);
       
-      console.log('📧 Prepared emails count:', preparedEmails.length);
+      console.log('📧 Valid prepared emails count:', preparedEmails.length);
 
       if (preparedEmails.length === 0) {
         throw new Error('Campaign has no prepared emails. Please prepare the campaign again.');

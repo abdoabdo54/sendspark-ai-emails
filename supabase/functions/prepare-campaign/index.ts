@@ -148,25 +148,30 @@ serve(async (req) => {
       await new Promise(resolve => setTimeout(resolve, processingDelay));
     }
 
-    // NEW APPROACH: Store preparation metadata instead of individual emails
-    // This avoids JSON size limits and memory issues
-    const preparationData = {
-      totalRecipients: recipients.length,
-      recipientList: recipients, // Store the parsed list
-      fromNames: fromNames,
-      subjects: subjects,
-      preparedAt: new Date().toISOString(),
-      preparationMethod: recipients.length > 500 ? 'batch' : 'individual'
-    }
+    // FIXED: Create proper prepared emails array in the format expected by useCampaignSender
+    const preparedEmails = recipients.map((email, index) => {
+      const fromNameIndex = index % fromNames.length;
+      const subjectIndex = index % subjects.length;
+      
+      return {
+        to: email,
+        from_name: fromNames[fromNameIndex],
+        subject: subjects[subjectIndex],
+        html_content: campaign.html_content || '',
+        text_content: campaign.text_content || '',
+        prepared_at: new Date().toISOString()
+      };
+    });
 
-    console.log(`✅ PREPARATION COMPLETE: ${recipients.length} emails processed using ${preparationData.preparationMethod} method`);
+    console.log(`✅ PREPARATION COMPLETE: ${recipients.length} emails processed`);
+    console.log(`📧 Sample prepared email:`, preparedEmails[0]);
 
-    // Update campaign with preparation data
+    // Update campaign with prepared emails array
     const { error: updateError } = await supabase
       .from('email_campaigns')
       .update({
         status: 'prepared',
-        prepared_emails: preparationData,
+        prepared_emails: preparedEmails, // Store the actual prepared emails array
         total_recipients: recipients.length,
         error_message: null
       })
@@ -199,7 +204,6 @@ serve(async (req) => {
         success: true,
         message: `Campaign prepared successfully with ${recipients.length} emails`,
         emailCount: recipients.length,
-        preparationMethod: preparationData.preparationMethod,
         preparationComplete: true
       }),
       { 
