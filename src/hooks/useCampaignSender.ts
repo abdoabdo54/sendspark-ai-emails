@@ -22,6 +22,31 @@ interface PreparedEmail {
   prepared_at: string;
 }
 
+// Type guard function to check if Json array contains PreparedEmail objects
+const isPreparedEmailArray = (arr: any[]): arr is PreparedEmail[] => {
+  return arr.length > 0 && 
+         typeof arr[0] === 'object' && 
+         arr[0] !== null &&
+         'to' in arr[0] && 
+         'from_name' in arr[0] && 
+         'subject' in arr[0];
+};
+
+// Safe conversion function for Json to PreparedEmail array
+const convertToPreparedEmails = (jsonData: any): PreparedEmail[] => {
+  if (!Array.isArray(jsonData)) {
+    console.warn('Expected array but got:', typeof jsonData);
+    return [];
+  }
+  
+  if (!isPreparedEmailArray(jsonData)) {
+    console.warn('Array does not contain PreparedEmail objects');
+    return [];
+  }
+  
+  return jsonData;
+};
+
 export const useCampaignSender = (organizationId?: string) => {
   const { functions } = useGcfFunctions(organizationId);
   const { accounts } = useEmailAccounts(organizationId);
@@ -111,15 +136,7 @@ export const useCampaignSender = (organizationId?: string) => {
       console.log('📊 Found prepared campaign with ID:', campaign.id);
 
       // Safe type conversion for prepared_emails
-      let preparedEmails: PreparedEmail[] = [];
-      try {
-        if (Array.isArray(campaign.prepared_emails)) {
-          preparedEmails = (campaign.prepared_emails as unknown as PreparedEmail[]);
-        }
-      } catch (error) {
-        console.error('❌ Error parsing prepared emails:', error);
-        throw new Error('Invalid prepared emails format');
-      }
+      const preparedEmails = convertToPreparedEmails(campaign.prepared_emails);
       
       console.log('📧 Prepared emails count:', preparedEmails.length);
 
@@ -202,18 +219,24 @@ export const useCampaignSender = (organizationId?: string) => {
 
       // Dispatch to ALL selected functions with prepared data
       const dispatchPromises = slices.map(async (slice, index) => {
+        // IMPORTANT: Convert prepared emails to simple recipient strings for Google Cloud Function
+        const recipientStrings = slice.recipients.map(email => email.to);
+        
+        // Use the FIRST prepared email's data for the campaign (since all prepared emails share same base content)
+        const firstEmail = slice.recipients[0];
+        
         const payload = {
           campaignId: campaign.id,
           slice: {
             skip: slice.skip,
             limit: slice.limit,
-            recipients: slice.recipients
+            recipients: recipientStrings // Send simple strings, not objects
           },
           campaignData: {
-            from_name: campaignData.from_name,
-            subject: campaignData.subject,
-            html_content: campaignData.html_content,
-            text_content: campaignData.text_content,
+            from_name: firstEmail.from_name, // Use prepared from_name
+            subject: firstEmail.subject,     // Use prepared subject  
+            html_content: firstEmail.html_content,
+            text_content: firstEmail.text_content,
             config: {
               ...campaignData.config,
               sendingMode: campaignData.config.sendingMode,
@@ -227,6 +250,7 @@ export const useCampaignSender = (organizationId?: string) => {
         };
 
         console.log(`🎯 DISPATCHING to ${slice.functionName}: ${slice.limit} emails with ${campaignData.config.sendingMode} mode`);
+        console.log(`📧 SAMPLE DATA: FROM "${firstEmail.from_name}" | SUBJECT "${firstEmail.subject}"`);
 
         try {
           const response = await fetch(slice.functionUrl, {
