@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
@@ -45,7 +44,6 @@ export const useCampaigns = (organizationId?: string) => {
 
       if (error) throw error;
       
-      // Type-safe conversion from database to Campaign interface
       const typedCampaigns: Campaign[] = (data || []).map(campaign => ({
         ...campaign,
         config: campaign.config || {},
@@ -146,16 +144,39 @@ export const useCampaigns = (organizationId?: string) => {
 
   const prepareCampaign = async (campaignId: string) => {
     try {
-      await updateCampaign(campaignId, { status: 'prepared' });
+      console.log('🔧 REAL PREPARATION: Starting campaign preparation for:', campaignId);
+      
+      // Call the prepare-campaign edge function for REAL preparation
+      const { data, error } = await supabase.functions.invoke('prepare-campaign', {
+        body: { campaignId }
+      });
+
+      if (error) {
+        console.error('❌ Preparation error:', error);
+        throw error;
+      }
+
+      console.log('✅ Campaign prepared successfully:', data);
+      
+      // Update local state
+      await fetchCampaigns();
+      
       toast({
         title: "Success",
-        description: "Campaign prepared successfully"
+        description: data.message || "Campaign prepared successfully"
       });
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error preparing campaign:', error);
+      
+      // Update campaign status to failed if preparation fails
+      await updateCampaign(campaignId, { 
+        status: 'failed',
+        error_message: error.message 
+      });
+      
       toast({
         title: "Error",
-        description: "Failed to prepare campaign",
+        description: `Failed to prepare campaign: ${error.message}`,
         variant: "destructive"
       });
     }
@@ -256,10 +277,14 @@ export const useCampaigns = (organizationId?: string) => {
 
   const sendCampaign = async (campaignId: string, config?: any) => {
     try {
-      // Get campaign details
       const campaign = campaigns.find(c => c.id === campaignId);
       if (!campaign) {
         throw new Error('Campaign not found');
+      }
+
+      // Check if campaign is prepared
+      if (campaign.status !== 'prepared') {
+        throw new Error('Campaign must be prepared before sending');
       }
 
       // For now, we'll use the existing send-campaign function

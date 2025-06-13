@@ -38,19 +38,18 @@ export const useCampaignSender = (organizationId?: string) => {
 
     const totalRecipients = recipients.length;
     
-    // CRITICAL FIX: Properly use the custom function count from config
+    // Use custom function count from config if specified
     const functionsToUse = config.useCustomConfig && config.customFunctionCount 
       ? Math.min(config.customFunctionCount, enabledFunctions.length)
       : enabledFunctions.length;
     
-    console.log(`📊 CRITICAL DISTRIBUTION: Using ${functionsToUse} functions for ${totalRecipients} emails`);
+    console.log(`📊 DISTRIBUTION: Using ${functionsToUse} functions for ${totalRecipients} emails`);
     
-    // FIXED: Ensure minimum 1 email per function, otherwise reduce function count
-    const minEmailsPerFunction = 1;
+    // Ensure minimum 1 email per function, otherwise reduce function count
     const actualFunctionsToUse = Math.min(functionsToUse, totalRecipients);
     const emailsPerFunction = Math.ceil(totalRecipients / actualFunctionsToUse);
     
-    console.log(`📈 CRITICAL: ${totalRecipients} emails distributed across ${actualFunctionsToUse} functions (${emailsPerFunction} each)`);
+    console.log(`📈 FINAL: ${totalRecipients} emails distributed across ${actualFunctionsToUse} functions (${emailsPerFunction} each)`);
     
     // Create slices for the actual number of functions that will be used
     const functionsToUseList = enabledFunctions.slice(0, actualFunctionsToUse);
@@ -77,7 +76,7 @@ export const useCampaignSender = (organizationId?: string) => {
 
   const sendCampaign = async (campaignData: CampaignData) => {
     try {
-      console.log('🚀 CRITICAL: Starting campaign dispatch with ZERO DELAY CONFIG:', campaignData.config);
+      console.log('🚀 SENDING: Starting prepared campaign dispatch:', campaignData.config);
       
       // Parse recipients
       const recipients = campaignData.recipients
@@ -89,59 +88,72 @@ export const useCampaignSender = (organizationId?: string) => {
         throw new Error('No valid recipients found');
       }
 
-      // CRITICAL FIX: Get selected accounts from PRESERVED config
+      // Get selected accounts from config
       const selectedAccountIds = campaignData.config?.selectedAccounts || [];
-      console.log('📧 CRITICAL: Selected account IDs from config:', selectedAccountIds);
+      console.log('📧 Selected account IDs from config:', selectedAccountIds);
       
       const selectedAccounts = accounts.filter(account => 
         selectedAccountIds.includes(account.id) && account.is_active
       );
 
-      console.log('📧 CRITICAL: Active accounts for sending:', selectedAccounts.length, selectedAccounts.map(a => ({ id: a.id, name: a.name })));
+      console.log('📧 Active accounts for sending:', selectedAccounts.length, selectedAccounts.map(a => ({ id: a.id, name: a.name })));
 
       if (selectedAccounts.length === 0) {
         throw new Error('No valid accounts selected');
       }
 
-      // Create campaign in database with SENDING status
-      const { data: campaign, error: campaignError } = await supabase
+      // Find existing prepared campaign
+      const { data: existingCampaigns, error: findError } = await supabase
         .from('email_campaigns')
-        .insert([{
-          ...campaignData,
-          organization_id: organizationId,
-          status: 'sending',
-          total_recipients: recipients.length,
-          sent_count: 0,
-          prepared_emails: recipients
-        }])
-        .select()
-        .single();
+        .select('*')
+        .eq('organization_id', organizationId)
+        .eq('from_name', campaignData.from_name)
+        .eq('subject', campaignData.subject)
+        .eq('status', 'prepared')
+        .order('created_at', { ascending: false })
+        .limit(1);
 
-      if (campaignError) {
-        console.error('❌ Campaign creation error:', campaignError);
-        throw new Error(`Failed to create campaign: ${campaignError.message}`);
+      if (findError) {
+        console.error('❌ Error finding prepared campaign:', findError);
+        throw new Error(`Failed to find prepared campaign: ${findError.message}`);
       }
 
-      console.log('📊 Campaign created with ID:', campaign.id);
+      if (!existingCampaigns || existingCampaigns.length === 0) {
+        throw new Error('No prepared campaign found. Please prepare the campaign first.');
+      }
 
-      // CRITICAL FIX: Calculate proper slicing strategy
+      const campaign = existingCampaigns[0];
+      console.log('📊 Found prepared campaign with ID:', campaign.id);
+
+      // Update campaign status to sending
+      const { error: updateError } = await supabase
+        .from('email_campaigns')
+        .update({ status: 'sending' })
+        .eq('id', campaign.id);
+
+      if (updateError) {
+        console.error('❌ Failed to update campaign status:', updateError);
+        throw new Error(`Failed to update campaign status: ${updateError.message}`);
+      }
+
+      // Calculate proper slicing strategy
       const slices = calculateCampaignSlicing(recipients, campaignData.config);
-      console.log(`📈 CRITICAL: Campaign distributed across ${slices.length} functions`);
+      console.log(`📈 Campaign distributed across ${slices.length} functions`);
 
-      // CRITICAL FIX: Use custom account count if specified
+      // Use custom account count if specified
       const accountsToUse = campaignData.config.useCustomConfig && campaignData.config.customAccountCount
         ? Math.min(campaignData.config.customAccountCount, selectedAccounts.length)
         : selectedAccounts.length;
       
       const accountsForSending = selectedAccounts.slice(0, accountsToUse);
       
-      console.log(`📧 CRITICAL: Using ${accountsForSending.length} accounts:`, accountsForSending.map(a => a.name));
+      console.log(`📧 Using ${accountsForSending.length} accounts:`, accountsForSending.map(a => a.name));
 
-      // CRITICAL FIX: Remove ALL rate limiting for accounts based on sending mode
+      // Configure accounts based on sending mode
       const gcfAccounts = accountsForSending.map(account => {
         const cleanConfig = { ...account.config };
         
-        // FORCE REMOVE ALL RATE LIMITING based on sending mode
+        // Configure based on sending mode
         if (campaignData.config.sendingMode === 'zero-delay') {
           // ZERO DELAY = NO LIMITS AT ALL
           delete cleanConfig.emails_per_hour;
@@ -173,7 +185,7 @@ export const useCampaignSender = (organizationId?: string) => {
         };
       });
 
-      // CRITICAL FIX: Dispatch to ALL selected functions with proper configuration
+      // Dispatch to ALL selected functions with prepared data
       const dispatchPromises = slices.map(async (slice, index) => {
         const payload = {
           campaignId: campaign.id,
@@ -189,7 +201,6 @@ export const useCampaignSender = (organizationId?: string) => {
             text_content: campaignData.text_content,
             config: {
               ...campaignData.config,
-              // CRITICAL: Force zero delay configuration to Cloud Functions
               sendingMode: campaignData.config.sendingMode,
               dispatchMethod: campaignData.config.dispatchMethod,
               zeroDelayMode: campaignData.config.sendingMode === 'zero-delay',
@@ -201,13 +212,6 @@ export const useCampaignSender = (organizationId?: string) => {
         };
 
         console.log(`🎯 DISPATCHING to ${slice.functionName}: ${slice.limit} emails with ${campaignData.config.sendingMode} mode`);
-        console.log(`🔧 Function ${index + 1} config:`, {
-          recipients: slice.limit,
-          sendingMode: payload.campaignData.config.sendingMode,
-          zeroDelayMode: payload.campaignData.config.zeroDelayMode,
-          accounts: payload.accounts.length,
-          functionUrl: slice.functionUrl
-        });
 
         try {
           const response = await fetch(slice.functionUrl, {
@@ -270,7 +274,7 @@ export const useCampaignSender = (organizationId?: string) => {
       };
 
     } catch (error) {
-      console.error('❌ CRITICAL: Campaign dispatch failed:', error);
+      console.error('❌ Campaign dispatch failed:', error);
       throw error;
     }
   };
