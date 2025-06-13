@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Progress } from "@/components/ui/progress";
 import { CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
 import { useCampaigns } from '@/hooks/useCampaigns';
@@ -21,8 +21,15 @@ const CampaignPreparationProgress: React.FC<CampaignPreparationProgressProps> = 
   const [emailCount, setEmailCount] = useState(0);
   const [estimatedTime, setEstimatedTime] = useState(0);
   const { prepareCampaign, campaigns } = useCampaigns();
+  const preparationStarted = useRef(false);
 
   useEffect(() => {
+    // Prevent multiple simultaneous preparation calls
+    if (preparationStarted.current) {
+      return;
+    }
+    preparationStarted.current = true;
+
     const startPreparation = async () => {
       try {
         console.log('🔧 Starting REAL campaign preparation for:', campaignId);
@@ -54,7 +61,7 @@ const CampaignPreparationProgress: React.FC<CampaignPreparationProgressProps> = 
           timeEstimate = 8; // 8 seconds for large lists
           setMessage(`Preparing ${estimatedCount} emails (this may take up to 8 seconds)...`);
         } else {
-          timeEstimate = 3; // 3 seconds for smaller lists
+          timeEstimate = Math.max(3, Math.ceil(estimatedCount * 0.5)); // At least 3 seconds, 0.5s per email
           setMessage(`Preparing ${estimatedCount} emails...`);
         }
         
@@ -63,14 +70,14 @@ const CampaignPreparationProgress: React.FC<CampaignPreparationProgressProps> = 
         // Start realistic progress simulation
         const progressInterval = setInterval(() => {
           setProgress(prev => {
-            if (prev < 90) {
+            if (prev < 85) {
               // Slower progress for large lists
-              const increment = estimatedCount > 1000 ? Math.random() * 3 + 1 : Math.random() * 8 + 3;
-              return Math.min(prev + increment, 90);
+              const increment = estimatedCount > 1000 ? Math.random() * 2 + 1 : Math.random() * 5 + 2;
+              return Math.min(prev + increment, 85);
             }
             return prev;
           });
-        }, estimatedCount > 1000 ? 800 : 600); // Slower updates for large lists
+        }, estimatedCount > 1000 ? 1000 : 600); // Slower updates for large lists
         
         // Call the REAL preparation function
         const result = await prepareCampaign(campaignId);
@@ -85,10 +92,10 @@ const CampaignPreparationProgress: React.FC<CampaignPreparationProgressProps> = 
         setStatus('completed');
         setMessage(`Successfully prepared ${estimatedCount} emails!`);
         
-        // Wait 3 seconds to show completion before closing
+        // Wait 2 seconds to show completion before closing
         setTimeout(() => {
           onComplete();
-        }, 3000);
+        }, 2000);
         
       } catch (error: any) {
         console.error('❌ Preparation failed:', error);

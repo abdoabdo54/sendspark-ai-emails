@@ -50,7 +50,7 @@ serve(async (req) => {
       )
     }
 
-    // Allow preparation for draft and failed campaigns (to allow re-preparation)
+    // Only allow preparation for draft and failed campaigns
     if (campaign.status !== 'draft' && campaign.status !== 'failed') {
       console.error('❌ Campaign status not suitable for preparation:', campaign.status)
       return new Response(
@@ -69,16 +69,6 @@ serve(async (req) => {
       config: campaign.config,
       recipientsLength: campaign.recipients?.length || 0
     })
-
-    // Set status to preparing at the start
-    const { error: statusError } = await supabase
-      .from('email_campaigns')
-      .update({ status: 'preparing' })
-      .eq('id', campaignId)
-
-    if (statusError) {
-      console.error('❌ Failed to set preparing status:', statusError)
-    }
 
     // Enhanced recipient parsing to handle multiple formats
     const rawRecipients = campaign.recipients || '';
@@ -151,6 +141,14 @@ serve(async (req) => {
       subjectsCount: subjects.length,
       totalRecipients: recipients.length
     })
+
+    // Add realistic processing delay based on email count
+    const processingDelay = Math.min(recipients.length * 0.1, 5000); // Max 5 seconds
+    console.log(`⏳ Processing delay: ${processingDelay}ms for ${recipients.length} emails`);
+    
+    if (processingDelay > 0) {
+      await new Promise(resolve => setTimeout(resolve, processingDelay));
+    }
 
     // For large lists (>1000), we'll store a lightweight preparation instead of full email objects
     // This prevents memory overflow and database timeout issues
