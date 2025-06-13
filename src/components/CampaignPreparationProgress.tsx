@@ -19,12 +19,11 @@ const CampaignPreparationProgress: React.FC<CampaignPreparationProgressProps> = 
   const [status, setStatus] = useState<'preparing' | 'completed' | 'error'>('preparing');
   const [message, setMessage] = useState('Starting preparation...');
   const [emailCount, setEmailCount] = useState(0);
-  const [estimatedTime, setEstimatedTime] = useState(0);
   const { prepareCampaign, campaigns } = useCampaigns();
   const preparationStarted = useRef(false);
 
   useEffect(() => {
-    // Prevent multiple simultaneous preparation calls
+    // Prevent multiple calls
     if (preparationStarted.current) {
       return;
     }
@@ -32,67 +31,52 @@ const CampaignPreparationProgress: React.FC<CampaignPreparationProgressProps> = 
 
     const startPreparation = async () => {
       try {
-        console.log('🔧 Starting REAL campaign preparation for:', campaignId);
+        console.log('🔧 Starting campaign preparation for:', campaignId);
         
-        // Find the campaign to get recipient count for progress estimation
+        // Find the campaign to estimate recipient count
         const campaign = campaigns.find(c => c.id === campaignId);
         const recipientText = campaign?.recipients || '';
         
-        // Estimate recipient count for progress calculation
+        // Quick estimate for progress display
         let estimatedCount = 0;
-        if (recipientText.includes(',')) {
-          estimatedCount = recipientText.split(',').length;
-        } else if (recipientText.includes('\n')) {
-          estimatedCount = recipientText.split('\n').length;
-        } else if (recipientText.includes(';')) {
-          estimatedCount = recipientText.split(';').length;
+        if (recipientText.includes(',') || recipientText.includes('\n') || recipientText.includes(';')) {
+          const separators = [',', '\n', ';'];
+          for (const sep of separators) {
+            if (recipientText.includes(sep)) {
+              estimatedCount = Math.max(estimatedCount, recipientText.split(sep).length);
+            }
+          }
         } else if (recipientText.trim()) {
           estimatedCount = 1;
         }
         
         setEmailCount(estimatedCount);
+        setMessage(`Preparing ${estimatedCount.toLocaleString()} emails...`);
         
-        // Calculate estimated time based on email count
-        let timeEstimate = 0;
-        if (estimatedCount > 5000) {
-          timeEstimate = 15; // 15 seconds for very large lists
-          setMessage(`Preparing ${estimatedCount} emails (large list - this may take up to 15 seconds)...`);
-        } else if (estimatedCount > 1000) {
-          timeEstimate = 8; // 8 seconds for large lists
-          setMessage(`Preparing ${estimatedCount} emails (this may take up to 8 seconds)...`);
-        } else {
-          timeEstimate = Math.max(3, Math.ceil(estimatedCount * 0.5)); // At least 3 seconds, 0.5s per email
-          setMessage(`Preparing ${estimatedCount} emails...`);
-        }
-        
-        setEstimatedTime(timeEstimate);
-        
-        // Start realistic progress simulation
+        // Start progress animation
         const progressInterval = setInterval(() => {
           setProgress(prev => {
-            if (prev < 85) {
-              // Slower progress for large lists
-              const increment = estimatedCount > 1000 ? Math.random() * 2 + 1 : Math.random() * 5 + 2;
-              return Math.min(prev + increment, 85);
+            if (prev < 80) {
+              return prev + Math.random() * 15 + 5;
             }
             return prev;
           });
-        }, estimatedCount > 1000 ? 1000 : 600); // Slower updates for large lists
+        }, 500);
         
-        // Call the REAL preparation function
+        // Call the preparation function
         const result = await prepareCampaign(campaignId);
         
-        // Clear the progress simulation
+        // Clear progress interval
         clearInterval(progressInterval);
         
         console.log('✅ Preparation completed:', result);
         
-        // Set completion state
+        // Show completion
         setProgress(100);
         setStatus('completed');
-        setMessage(`Successfully prepared ${estimatedCount} emails!`);
+        setMessage(`Successfully prepared ${result.emailCount || estimatedCount} emails!`);
         
-        // Wait 2 seconds to show completion before closing
+        // Auto-close after showing completion
         setTimeout(() => {
           onComplete();
         }, 2000);
@@ -142,11 +126,6 @@ const CampaignPreparationProgress: React.FC<CampaignPreparationProgressProps> = 
         {emailCount > 0 && (
           <div className="text-center text-sm text-gray-500">
             Processing {emailCount.toLocaleString()} email recipients
-            {estimatedTime > 5 && (
-              <div className="text-xs text-orange-600 mt-1">
-                Large lists may take up to {estimatedTime} seconds to process
-              </div>
-            )}
           </div>
         )}
       </div>

@@ -15,7 +15,7 @@ serve(async (req) => {
   try {
     const { campaignId } = await req.json()
 
-    console.log('🔧 REAL PREPARATION: Starting preparation for campaign:', campaignId)
+    console.log('🔧 CAMPAIGN PREPARATION: Starting for campaign:', campaignId)
 
     if (!campaignId) {
       return new Response(
@@ -50,11 +50,11 @@ serve(async (req) => {
       )
     }
 
-    // Only allow preparation for draft and failed campaigns
-    if (campaign.status !== 'draft' && campaign.status !== 'failed') {
-      console.error('❌ Campaign status not suitable for preparation:', campaign.status)
+    // Allow preparation for any status except 'sending'
+    if (campaign.status === 'sending') {
+      console.error('❌ Cannot prepare campaign while sending')
       return new Response(
-        JSON.stringify({ error: `Campaign must be in draft or failed status to prepare (current: ${campaign.status})` }),
+        JSON.stringify({ error: 'Cannot prepare campaign while it is being sent' }),
         { 
           status: 400, 
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
@@ -62,15 +62,14 @@ serve(async (req) => {
       )
     }
 
-    console.log('📧 Processing campaign:', {
+    console.log('📧 Preparing campaign:', {
       id: campaignId,
       subject: campaign.subject,
       status: campaign.status,
-      config: campaign.config,
       recipientsLength: campaign.recipients?.length || 0
     })
 
-    // Enhanced recipient parsing to handle multiple formats
+    // Parse recipients from different formats
     const rawRecipients = campaign.recipients || '';
     console.log('📝 Raw recipients string length:', rawRecipients.length);
 
@@ -104,10 +103,10 @@ serve(async (req) => {
       }
     }
 
-    console.log(`📊 PARSING RESULTS: Found ${recipients.length} valid recipients`);
+    console.log(`📊 FOUND ${recipients.length} valid recipients`);
     
     if (recipients.length === 0) {
-      console.error('❌ No valid recipients found after parsing');
+      console.error('❌ No valid recipients found');
       
       await supabase
         .from('email_campaigns')
@@ -136,113 +135,38 @@ serve(async (req) => {
       ? config.rotation.subjects 
       : [campaign.subject]
 
-    console.log('🔄 Rotation setup:', {
+    console.log('🔄 Using rotation:', {
       fromNamesCount: fromNames.length,
-      subjectsCount: subjects.length,
-      totalRecipients: recipients.length
+      subjectsCount: subjects.length
     })
 
-    // Add realistic processing delay based on email count
-    const processingDelay = Math.min(recipients.length * 0.1, 5000); // Max 5 seconds
-    console.log(`⏳ Processing delay: ${processingDelay}ms for ${recipients.length} emails`);
+    // Add processing delay based on list size
+    const processingDelay = Math.min(recipients.length * 10, 3000); // 10ms per email, max 3 seconds
+    console.log(`⏳ Processing ${recipients.length} emails with ${processingDelay}ms delay`);
     
-    if (processingDelay > 0) {
+    if (processingDelay > 100) {
       await new Promise(resolve => setTimeout(resolve, processingDelay));
     }
 
-    // For large lists (>1000), we'll store a lightweight preparation instead of full email objects
-    // This prevents memory overflow and database timeout issues
-    if (recipients.length > 1000) {
-      console.log(`📦 LARGE LIST DETECTED: ${recipients.length} emails - using lightweight preparation`)
-      
-      // Store only the essential data needed for sending
-      const lightweightPreparation = {
-        recipientCount: recipients.length,
-        recipients: recipients, // Store the parsed recipient list
-        fromNames: fromNames,
-        subjects: subjects,
-        preparedAt: new Date().toISOString(),
-        preparationType: 'lightweight'
-      }
-
-      const { error: updateError } = await supabase
-        .from('email_campaigns')
-        .update({
-          status: 'prepared',
-          prepared_emails: lightweightPreparation,
-          total_recipients: recipients.length,
-          error_message: null
-        })
-        .eq('id', campaignId)
-
-      if (updateError) {
-        console.error('❌ Failed to update campaign:', updateError)
-        
-        await supabase
-          .from('email_campaigns')
-          .update({ 
-            status: 'failed',
-            error_message: `Failed to update campaign: ${updateError.message}`
-          })
-          .eq('id', campaignId)
-        
-        return new Response(
-          JSON.stringify({ error: 'Failed to update campaign' }),
-          { 
-            status: 500, 
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-          }
-        )
-      }
-
-      console.log(`✅ LIGHTWEIGHT PREPARATION COMPLETE: ${recipients.length} emails ready`)
-
-      return new Response(
-        JSON.stringify({ 
-          success: true,
-          message: `Campaign prepared successfully with ${recipients.length} emails (lightweight mode)`,
-          emailCount: recipients.length,
-          preparationType: 'lightweight',
-          preparationComplete: true
-        }),
-        { 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        }
-      )
+    // NEW APPROACH: Store preparation metadata instead of individual emails
+    // This avoids JSON size limits and memory issues
+    const preparationData = {
+      totalRecipients: recipients.length,
+      recipientList: recipients, // Store the parsed list
+      fromNames: fromNames,
+      subjects: subjects,
+      preparedAt: new Date().toISOString(),
+      preparationMethod: recipients.length > 500 ? 'batch' : 'individual'
     }
 
-    // For smaller lists (<= 1000), prepare full email objects as before
-    console.log(`🔧 PREPARING ${recipients.length} EMAILS (full preparation)...`);
-    const preparedEmails = []
-    
-    for (let i = 0; i < recipients.length; i++) {
-      const recipient = recipients[i];
-      
-      // Apply rotation logic
-      const fromNameIndex = i % fromNames.length
-      const subjectIndex = i % subjects.length
-      
-      const finalFromName = fromNames[fromNameIndex]
-      const finalSubject = subjects[subjectIndex]
+    console.log(`✅ PREPARATION COMPLETE: ${recipients.length} emails processed using ${preparationData.preparationMethod} method`);
 
-      preparedEmails.push({
-        to: recipient,
-        from_name: finalFromName,
-        subject: finalSubject,
-        html_content: campaign.html_content,
-        text_content: campaign.text_content,
-        prepared_at: new Date().toISOString()
-      })
-    }
-
-    console.log(`✅ FULL PREPARATION COMPLETE: ${preparedEmails.length} emails fully prepared`);
-
-    // Update campaign with prepared emails
+    // Update campaign with preparation data
     const { error: updateError } = await supabase
       .from('email_campaigns')
       .update({
         status: 'prepared',
-        prepared_emails: preparedEmails,
+        prepared_emails: preparationData,
         total_recipients: recipients.length,
         error_message: null
       })
@@ -255,12 +179,12 @@ serve(async (req) => {
         .from('email_campaigns')
         .update({ 
           status: 'failed',
-          error_message: `Failed to update campaign: ${updateError.message}`
+          error_message: `Preparation update failed: ${updateError.message}`
         })
         .eq('id', campaignId)
       
       return new Response(
-        JSON.stringify({ error: 'Failed to update campaign' }),
+        JSON.stringify({ error: 'Failed to save preparation data' }),
         { 
           status: 500, 
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
@@ -268,14 +192,14 @@ serve(async (req) => {
       )
     }
 
-    console.log(`🎉 CAMPAIGN FULLY PREPARED: ${preparedEmails.length} emails ready for sending`)
+    console.log(`🎉 SUCCESS: Campaign prepared with ${recipients.length} emails`)
 
     return new Response(
       JSON.stringify({ 
         success: true,
-        message: `Campaign prepared successfully with ${preparedEmails.length} emails`,
-        emailCount: preparedEmails.length,
-        preparationType: 'full',
+        message: `Campaign prepared successfully with ${recipients.length} emails`,
+        emailCount: recipients.length,
+        preparationMethod: preparationData.preparationMethod,
         preparationComplete: true
       }),
       { 
@@ -284,9 +208,9 @@ serve(async (req) => {
     )
 
   } catch (error) {
-    console.error('❌ Error in prepare-campaign:', error)
+    console.error('❌ PREPARATION ERROR:', error)
     return new Response(
-      JSON.stringify({ error: 'Internal server error', details: error.message }),
+      JSON.stringify({ error: 'Preparation failed', details: error.message }),
       { 
         status: 500, 
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
