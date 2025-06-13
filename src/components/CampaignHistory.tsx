@@ -42,14 +42,23 @@ const CampaignHistory = () => {
     try {
       switch (action) {
         case 'prepare':
+          console.log('🔧 Preparing campaign:', campaignId);
           await prepareCampaign(campaignId);
           toast.success('Campaign prepared successfully');
           break;
         case 'send':
-          // Use the restored sending mechanism
+          // CRITICAL FIX: Use the restored sending mechanism with proper config
           const campaign = campaigns.find(c => c.id === campaignId);
           if (campaign) {
-            console.log('🚀 Dispatching campaign via Google Cloud Functions:', campaignId);
+            console.log('🚀 CRITICAL: Dispatching campaign with full config:', {
+              id: campaignId,
+              config: campaign.config,
+              sendingMode: campaign.config?.sendingMode,
+              dispatchMethod: campaign.config?.dispatchMethod,
+              selectedAccounts: campaign.config?.selectedAccounts
+            });
+            
+            // RESTORED: Proper campaign dispatch with all settings
             await dispatchCampaign({
               from_name: campaign.from_name,
               subject: campaign.subject,
@@ -57,9 +66,11 @@ const CampaignHistory = () => {
               html_content: campaign.html_content,
               text_content: campaign.text_content,
               send_method: campaign.send_method,
-              config: campaign.config
+              config: campaign.config // CRITICAL: Pass the full config
             });
             toast.success('Campaign sent successfully!');
+          } else {
+            throw new Error('Campaign not found');
           }
           break;
         case 'pause':
@@ -82,7 +93,7 @@ const CampaignHistory = () => {
           break;
       }
     } catch (error) {
-      console.error('Action failed:', error);
+      console.error('❌ Action failed:', error);
       toast.error(`Action failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   };
@@ -123,15 +134,22 @@ const CampaignHistory = () => {
                         Sent: {campaign.sent_count}
                       </p>
                       
-                      {/* Show selected accounts and rotation info */}
-                      {campaign.config?.selectedAccounts && (
-                        <div className="text-xs text-slate-500 mt-2">
-                          <div>Accounts: {campaign.config.selectedAccounts.length} selected</div>
+                      {/* CRITICAL FIX: Show actual saved configuration */}
+                      {campaign.config && (
+                        <div className="text-xs text-slate-500 mt-2 space-y-1">
+                          <div className="flex gap-4">
+                            <span>📧 Accounts: {campaign.config.selectedAccounts?.length || 0} selected</span>
+                            <span>⚡ Mode: {campaign.config.sendingMode || 'controlled'}</span>
+                            <span>🔄 Dispatch: {campaign.config.dispatchMethod || 'parallel'}</span>
+                          </div>
                           {campaign.config.rotation?.useFromNameRotation && (
-                            <div>FROM rotation: {campaign.config.rotation.fromNames?.length || 0} variants</div>
+                            <div>🔄 FROM rotation: {campaign.config.rotation.fromNames?.length || 0} variants</div>
                           )}
                           {campaign.config.rotation?.useSubjectRotation && (
-                            <div>Subject rotation: {campaign.config.rotation.subjects?.length || 0} variants</div>
+                            <div>🔄 Subject rotation: {campaign.config.rotation.subjects?.length || 0} variants</div>
+                          )}
+                          {campaign.config.testAfter?.enabled && (
+                            <div>🎯 Test-After: {campaign.config.testAfter.email} every {campaign.config.testAfter.count} emails</div>
                           )}
                         </div>
                       )}

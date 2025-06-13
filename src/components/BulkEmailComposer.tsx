@@ -42,7 +42,7 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
   const [selectedAccounts, setSelectedAccounts] = useState<string[]>([]);
   
   // Sending configuration
-  const [sendingMode, setSendingMode] = useState<'controlled' | 'fast' | 'zero-delay'>('controlled');
+  const [sendingMode, setSendingMode] = useState<'controlled' | 'fast' | 'zero-delay'>('zero-delay');
   const [dispatchMethod, setDispatchMethod] = useState<'parallel' | 'round-robin' | 'sequential'>('parallel');
   
   // Rotation configuration
@@ -60,7 +60,7 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
   const [trackingEnabled, setTrackingEnabled] = useState(false);
   const [htmlPreviewOpen, setHtmlPreviewOpen] = useState(false);
 
-  // SmartConfig state - upgraded to be dynamic
+  // SmartConfig state
   const [smartConfig, setSmartConfig] = useState<any>(null);
   const [useCustomConfig, setUseCustomConfig] = useState(false);
   const [customFunctionCount, setCustomFunctionCount] = useState<number>(1);
@@ -74,20 +74,13 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
   const activeAccounts = accounts.filter(account => account.is_active);
   const hasAccounts = selectedAccounts.length > 0;
 
-  // Auto-select all accounts when they load
-  useEffect(() => {
-    if (activeAccounts.length > 0 && selectedAccounts.length === 0) {
-      setSelectedAccounts(activeAccounts.map(account => account.id));
-    }
-  }, [activeAccounts]);
-
   // Initialize custom config with available resources
   useEffect(() => {
     if (functions.length > 0 && customFunctionCount === 1) {
-      setCustomFunctionCount(Math.min(functions.length, 3)); // Default to 3 or max available
+      setCustomFunctionCount(Math.min(functions.length, 3));
     }
     if (selectedAccounts.length > 0 && customAccountCount === 1) {
-      setCustomAccountCount(Math.min(selectedAccounts.length, 2)); // Default to 2 or max selected
+      setCustomAccountCount(Math.min(selectedAccounts.length, 2));
     }
   }, [functions.length, selectedAccounts.length]);
 
@@ -98,13 +91,14 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
       if (savedConfig) {
         const config = JSON.parse(savedConfig);
         setSmartConfig(config);
+        console.log('📊 SmartConfig loaded:', config);
       }
     } catch (error) {
       console.error('Error loading smart config:', error);
     }
   }, []);
 
-  // Dynamic estimation calculation - UPGRADED
+  // Dynamic estimation calculation
   useEffect(() => {
     if (recipientCount > 0) {
       const functionsToUse = useCustomConfig ? customFunctionCount : functions.length;
@@ -117,19 +111,18 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
         
         switch (sendingMode) {
           case 'zero-delay':
-            throughputPerSecond = 1000; // Very fast
+            throughputPerSecond = 1000;
             estimatedSeconds = Math.ceil(emailsPerFunction / throughputPerSecond);
             break;
           case 'fast':
-            throughputPerSecond = 200; // Fast
+            throughputPerSecond = 200;
             estimatedSeconds = Math.ceil(emailsPerFunction / throughputPerSecond);
             break;
           default:
-            throughputPerSecond = 50; // Controlled
+            throughputPerSecond = 50;
             estimatedSeconds = Math.ceil(emailsPerFunction / throughputPerSecond);
         }
         
-        // Format time nicely
         let timeDisplay;
         if (estimatedSeconds < 60) {
           timeDisplay = `${estimatedSeconds}s`;
@@ -174,11 +167,13 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
   };
 
   const handleSelectAllAccounts = () => {
-    setSelectedAccounts(activeAccounts.map(account => account.id));
+    console.log('🟢 Select All Accounts called - selecting all active accounts');
+    const allActiveIds = activeAccounts.map(account => account.id);
+    setSelectedAccounts(allActiveIds);
   };
 
   const handleDeselectAllAccounts = () => {
-    console.log('BulkEmailComposer: handleDeselectAllAccounts called');
+    console.log('🔴 Deselect All Accounts called - clearing selection');
     setSelectedAccounts([]);
   };
 
@@ -280,7 +275,7 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
     e.preventDefault();
     
     if (isSubmitting) {
-      console.log('Already submitting, preventing duplicate');
+      console.log('🚫 Already submitting, preventing duplicate');
       return;
     }
     
@@ -312,13 +307,13 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
         }
         
         finalRecipients = newRecipientsList;
-        console.log(`Test-After: Injected ${Math.ceil(finalRecipients.length / (testAfterCount + 1))} test emails`);
+        console.log(`📧 Test-After: Injected ${Math.ceil(finalRecipients.length / (testAfterCount + 1))} test emails`);
       }
 
       const config = {
         sendingMode,
         dispatchMethod,
-        selectedAccounts,
+        selectedAccounts: [...selectedAccounts],
         useCustomConfig,
         customFunctionCount: useCustomConfig ? customFunctionCount : functions.length,
         customAccountCount: useCustomConfig ? customAccountCount : selectedAccounts.length,
@@ -340,6 +335,8 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
         },
         smartConfig
       };
+
+      console.log('📝 CRITICAL: Saving campaign config:', config);
 
       const campaignData = {
         from_name: useFromRotation ? fromNameVariations.split(',')[0].trim() : fromName,
@@ -370,6 +367,7 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
       setFromNameVariations('');
       setSubjectVariations('');
       setTestAfterEmail('');
+      setSelectedAccounts([]);
 
     } catch (error: any) {
       console.error('Campaign creation failed:', error);
@@ -430,7 +428,7 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
               <CardHeader className="pb-3">
                 <CardTitle className="text-sm flex items-center gap-2">
                   <Calculator className="w-4 h-4" />
-                  Smart Configuration Engine
+                  Smart Configuration Engine - UPGRADED
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -522,7 +520,10 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
                     <Label className="text-sm font-medium">Sending Mode</Label>
                     <RadioGroup 
                       value={sendingMode} 
-                      onValueChange={(value: 'controlled' | 'fast' | 'zero-delay') => setSendingMode(value)}
+                      onValueChange={(value: 'controlled' | 'fast' | 'zero-delay') => {
+                        console.log('🎯 Sending Mode changed to:', value);
+                        setSendingMode(value);
+                      }}
                     >
                       <div className="flex items-center space-x-2">
                         <RadioGroupItem value="controlled" id="controlled" />
@@ -542,7 +543,7 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
                         <RadioGroupItem value="zero-delay" id="zero-delay" />
                         <Label htmlFor="zero-delay" className="flex items-center gap-1 text-sm">
                           <Rocket className="w-3 h-3" />
-                          Zero Delay (Max Speed)
+                          Zero Delay (Max Speed) ⚡
                         </Label>
                       </div>
                     </RadioGroup>
@@ -552,15 +553,18 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
                     <Label className="text-sm font-medium">Dispatch Method</Label>
                     <RadioGroup 
                       value={dispatchMethod} 
-                      onValueChange={(value: 'parallel' | 'round-robin' | 'sequential') => setDispatchMethod(value)}
+                      onValueChange={(value: 'parallel' | 'round-robin' | 'sequential') => {
+                        console.log('🎯 Dispatch Method changed to:', value);
+                        setDispatchMethod(value);
+                      }}
                     >
                       <div className="flex items-center space-x-2">
                         <RadioGroupItem value="parallel" id="parallel" />
-                        <Label htmlFor="parallel" className="text-sm">Parallel (All functions)</Label>
+                        <Label htmlFor="parallel" className="text-sm">Parallel (All functions) 🚀</Label>
                       </div>
                       <div className="flex items-center space-x-2">
                         <RadioGroupItem value="round-robin" id="round-robin" />
-                        <Label htmlFor="round-robin" className="text-sm">Round Robin</Label>
+                        <Label htmlFor="round-robin" className="text-sm">Round Robin (Rotate accounts)</Label>
                       </div>
                       <div className="flex items-center space-x-2">
                         <RadioGroupItem value="sequential" id="sequential" />
@@ -569,6 +573,13 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
                     </RadioGroup>
                   </div>
                 </div>
+                
+                <Alert className="border-blue-200 bg-blue-50">
+                  <Target className="h-4 w-4" />
+                  <AlertDescription className="text-blue-800 text-xs">
+                    Current: <strong>{sendingMode === 'zero-delay' ? 'Zero Delay (Max Speed)' : sendingMode === 'fast' ? 'Fast' : 'Controlled'}</strong> + <strong>{dispatchMethod === 'parallel' ? 'Parallel (All functions)' : dispatchMethod === 'round-robin' ? 'Round Robin (Rotate accounts)' : 'Sequential'}</strong>
+                  </AlertDescription>
+                </Alert>
               </CardContent>
             </Card>
 
@@ -744,7 +755,7 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
               <CardHeader className="pb-3">
                 <CardTitle className="text-sm flex items-center gap-2">
                   <Target className="w-4 h-4" />
-                  Test-After Configuration (Auto-Inject Method)
+                  Test-After Configuration (Auto-Inject Method - RESTORED)
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -791,7 +802,7 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
                   <Alert className="border-blue-200 bg-blue-50">
                     <Target className="h-4 w-4" />
                     <AlertDescription className="text-blue-800 text-xs">
-                      Test emails will be automatically injected into the recipient list every {testAfterCount} emails. This uses the old reliable method of direct list injection.
+                      ✅ RESTORED: Test emails will be automatically injected into the recipient list every {testAfterCount} emails. This uses the old reliable method of direct list injection.
                     </AlertDescription>
                   </Alert>
                 )}
@@ -828,6 +839,10 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
                   <span className="text-green-800 text-sm">
                     <strong>✅ Ready to Create Campaign</strong>
                     {estimatedTime && ` • Estimated send time: ${estimatedTime}`}
+                    <br />
+                    <span className="text-xs">
+                      Selected: {selectedAccounts.length} accounts • {sendingMode} mode • {dispatchMethod} dispatch
+                    </span>
                   </span>
                 ) : (
                   <div className="text-yellow-800 text-sm">

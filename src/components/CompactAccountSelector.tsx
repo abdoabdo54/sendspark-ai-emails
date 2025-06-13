@@ -42,18 +42,24 @@ const CompactAccountSelector: React.FC<CompactAccountSelectorProps> = ({
   const handleSelectAll = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    console.log('🔵 Select All clicked - calling onSelectAll');
     onSelectAll();
-    console.log('Select all clicked, activeAccounts:', activeAccounts.length);
   };
 
   const handleDeselectAll = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    console.log('Deselect all clicked - forcing empty array');
-    // Directly call with empty array to prevent any race conditions
+    console.log('🔴 Deselect All clicked - forcing empty selection');
+    
+    // CRITICAL FIX: Call onAccountsChange directly with empty array
+    // This prevents any race conditions or auto-reselection
     onAccountsChange([]);
-    // Also call the prop function for consistency
+    
+    // Also call the callback for consistency
     onDeselectAll();
+    
+    // Close the popover to prevent further interactions
+    setIsOpen(false);
   };
 
   const hasWarnings = activeAccounts.length === 0 || enabledFunctions.length === 0;

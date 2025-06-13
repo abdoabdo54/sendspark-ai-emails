@@ -37,10 +37,20 @@ export const useCampaignSender = (organizationId?: string) => {
     }
 
     const totalRecipients = recipients.length;
-    const emailsPerFunction = Math.ceil(totalRecipients / enabledFunctions.length);
     
-    // Create slices for each function
-    const slices = enabledFunctions.map((func, index) => {
+    // CRITICAL FIX: Use custom config if provided, otherwise use all functions
+    const functionsToUse = config.useCustomConfig && config.customFunctionCount 
+      ? Math.min(config.customFunctionCount, enabledFunctions.length)
+      : enabledFunctions.length;
+    
+    const emailsPerFunction = Math.ceil(totalRecipients / functionsToUse);
+    
+    console.log(`📊 CRITICAL: Slicing ${totalRecipients} emails across ${functionsToUse} functions (${emailsPerFunction} each)`);
+    
+    // Create slices for the specified number of functions
+    const functionsToUseList = enabledFunctions.slice(0, functionsToUse);
+    
+    const slices = functionsToUseList.map((func, index) => {
       const skip = index * emailsPerFunction;
       const limit = Math.min(emailsPerFunction, totalRecipients - skip);
       
@@ -59,7 +69,7 @@ export const useCampaignSender = (organizationId?: string) => {
 
   const sendCampaign = async (campaignData: CampaignData) => {
     try {
-      console.log('🚀 Starting Google Cloud Functions campaign dispatch...');
+      console.log('🚀 CRITICAL: Starting campaign dispatch with config:', campaignData.config);
       
       // Parse recipients
       const recipients = campaignData.recipients
@@ -71,17 +81,21 @@ export const useCampaignSender = (organizationId?: string) => {
         throw new Error('No valid recipients found');
       }
 
-      // Get selected accounts from config
+      // CRITICAL FIX: Get selected accounts from config properly
       const selectedAccountIds = campaignData.config?.selectedAccounts || [];
+      console.log('📧 CRITICAL: Selected account IDs from config:', selectedAccountIds);
+      
       const selectedAccounts = accounts.filter(account => 
         selectedAccountIds.includes(account.id) && account.is_active
       );
+
+      console.log('📧 CRITICAL: Filtered active accounts:', selectedAccounts.length, selectedAccounts.map(a => ({ id: a.id, name: a.name })));
 
       if (selectedAccounts.length === 0) {
         throw new Error('No valid accounts selected');
       }
 
-      // Create campaign in database
+      // Create campaign in database with SENDING status
       const { data: campaign, error: campaignError } = await supabase
         .from('email_campaigns')
         .insert([{
@@ -96,18 +110,27 @@ export const useCampaignSender = (organizationId?: string) => {
         .single();
 
       if (campaignError) {
-        console.error('Campaign creation error:', campaignError);
+        console.error('❌ Campaign creation error:', campaignError);
         throw new Error(`Failed to create campaign: ${campaignError.message}`);
       }
 
       console.log('📊 Campaign created with ID:', campaign.id);
 
-      // Calculate slicing strategy
+      // CRITICAL FIX: Calculate slicing strategy with proper config
       const slices = calculateCampaignSlicing(recipients, campaignData.config);
-      console.log(`📈 Campaign split into ${slices.length} parallel slices`);
+      console.log(`📈 CRITICAL: Campaign split into ${slices.length} parallel slices`);
+
+      // CRITICAL FIX: Use custom account count if specified
+      const accountsToUse = campaignData.config.useCustomConfig && campaignData.config.customAccountCount
+        ? Math.min(campaignData.config.customAccountCount, selectedAccounts.length)
+        : selectedAccounts.length;
+      
+      const accountsForSending = selectedAccounts.slice(0, accountsToUse);
+      
+      console.log(`📧 CRITICAL: Using ${accountsForSending.length} accounts for sending:`, accountsForSending.map(a => a.name));
 
       // Prepare accounts for Google Cloud Functions format
-      const gcfAccounts = selectedAccounts.map(account => ({
+      const gcfAccounts = accountsForSending.map(account => ({
         id: account.id,
         name: account.name,
         email: account.email,
@@ -115,7 +138,7 @@ export const useCampaignSender = (organizationId?: string) => {
         config: account.config
       }));
 
-      // Dispatch to all Google Cloud Functions in parallel
+      // CRITICAL FIX: Dispatch to Google Cloud Functions with proper config
       const dispatchPromises = slices.map(async (slice, index) => {
         const payload = {
           campaignId: campaign.id,
@@ -129,13 +152,23 @@ export const useCampaignSender = (organizationId?: string) => {
             subject: campaignData.subject,
             html_content: campaignData.html_content,
             text_content: campaignData.text_content,
-            config: campaignData.config
+            config: {
+              ...campaignData.config,
+              // CRITICAL: Pass sending configuration to GCF
+              sendingMode: campaignData.config.sendingMode || 'zero-delay',
+              dispatchMethod: campaignData.config.dispatchMethod || 'parallel'
+            }
           },
           accounts: gcfAccounts,
           organizationId
         };
 
-        console.log(`🎯 Dispatching slice ${index + 1} to ${slice.functionName} (${slice.limit} emails)`);
+        console.log(`🎯 CRITICAL: Dispatching slice ${index + 1} to ${slice.functionName} with config:`, {
+          recipients: slice.limit,
+          sendingMode: payload.campaignData.config.sendingMode,
+          dispatchMethod: payload.campaignData.config.dispatchMethod,
+          accounts: payload.accounts.length
+        });
 
         try {
           const response = await fetch(slice.functionUrl, {
@@ -152,10 +185,10 @@ export const useCampaignSender = (organizationId?: string) => {
           }
 
           const result = await response.json();
-          console.log(`✅ Slice ${index + 1} completed successfully:`, result);
+          console.log(`✅ CRITICAL: Slice ${index + 1} completed successfully:`, result);
           return result;
         } catch (error) {
-          console.error(`❌ Slice ${index + 1} failed:`, error);
+          console.error(`❌ CRITICAL: Slice ${index + 1} failed:`, error);
           throw error;
         }
       });
@@ -167,7 +200,7 @@ export const useCampaignSender = (organizationId?: string) => {
       const successful = results.filter(r => r.status === 'fulfilled').length;
       const failed = results.filter(r => r.status === 'rejected').length;
 
-      console.log(`📈 Campaign dispatch complete: ${successful} successful, ${failed} failed`);
+      console.log(`📈 CRITICAL: Campaign dispatch complete: ${successful} successful, ${failed} failed`);
 
       // Update campaign status based on results
       const finalStatus = failed === 0 ? 'sent' : (successful > 0 ? 'sent' : 'failed');
@@ -195,7 +228,7 @@ export const useCampaignSender = (organizationId?: string) => {
       };
 
     } catch (error) {
-      console.error('❌ Campaign dispatch failed:', error);
+      console.error('❌ CRITICAL: Campaign dispatch failed:', error);
       throw error;
     }
   };
