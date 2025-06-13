@@ -110,10 +110,16 @@ export const useCampaignSender = (organizationId?: string) => {
       const campaign = existingCampaigns[0];
       console.log('📊 Found prepared campaign with ID:', campaign.id);
 
-      // Type guard for prepared_emails
-      const preparedEmails = Array.isArray(campaign.prepared_emails) 
-        ? campaign.prepared_emails as PreparedEmail[]
-        : [];
+      // Safe type conversion for prepared_emails
+      let preparedEmails: PreparedEmail[] = [];
+      try {
+        if (Array.isArray(campaign.prepared_emails)) {
+          preparedEmails = (campaign.prepared_emails as unknown as PreparedEmail[]);
+        }
+      } catch (error) {
+        console.error('❌ Error parsing prepared emails:', error);
+        throw new Error('Invalid prepared emails format');
+      }
       
       console.log('📧 Prepared emails count:', preparedEmails.length);
 
