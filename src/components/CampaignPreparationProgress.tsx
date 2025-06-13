@@ -45,16 +45,16 @@ const CampaignPreparationProgress: React.FC<CampaignPreparationProgressProps> = 
         setEmailCount(estimatedCount);
         setMessage(`Preparing ${estimatedCount} emails...`);
         
-        // Simulate progress during actual preparation
+        // Start progress simulation with slower, more realistic timing
         const progressInterval = setInterval(() => {
           setProgress(prev => {
-            if (prev < 90) {
-              const increment = Math.random() * 15 + 5; // Random increment between 5-20
-              return Math.min(prev + increment, 90);
+            if (prev < 85) {
+              const increment = Math.random() * 8 + 3; // Random increment between 3-11
+              return Math.min(prev + increment, 85);
             }
             return prev;
           });
-        }, 800); // Update every 800ms to show realistic progress
+        }, 1200); // Update every 1.2 seconds for more realistic feel
         
         // Call the REAL preparation function
         const result = await prepareCampaign(campaignId);
@@ -69,10 +69,10 @@ const CampaignPreparationProgress: React.FC<CampaignPreparationProgressProps> = 
         setStatus('completed');
         setMessage(`Successfully prepared ${estimatedCount} emails!`);
         
-        // Wait 2 seconds to show completion before closing
+        // Wait 3 seconds to show completion before closing
         setTimeout(() => {
           onComplete();
-        }, 2000);
+        }, 3000);
         
       } catch (error: any) {
         console.error('❌ Preparation failed:', error);
@@ -126,6 +126,12 @@ const CampaignPreparationProgress: React.FC<CampaignPreparationProgressProps> = 
       {status === 'completed' && (
         <div className="text-center text-sm text-green-600">
           Campaign is now ready to send!
+        </div>
+      )}
+      
+      {status === 'error' && (
+        <div className="text-center text-sm text-red-600">
+          Please check the campaign details and try again.
         </div>
       )}
     </div>

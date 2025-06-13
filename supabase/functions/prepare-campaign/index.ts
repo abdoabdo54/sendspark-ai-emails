@@ -50,10 +50,11 @@ serve(async (req) => {
       )
     }
 
-    if (campaign.status !== 'draft') {
-      console.error('❌ Campaign not in draft status:', campaign.status)
+    // Allow preparation for draft and failed campaigns (to allow re-preparation)
+    if (campaign.status !== 'draft' && campaign.status !== 'failed') {
+      console.error('❌ Campaign status not suitable for preparation:', campaign.status)
       return new Response(
-        JSON.stringify({ error: 'Campaign must be in draft status to prepare' }),
+        JSON.stringify({ error: `Campaign must be in draft or failed status to prepare (current: ${campaign.status})` }),
         { 
           status: 400, 
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
@@ -64,9 +65,20 @@ serve(async (req) => {
     console.log('📧 Processing campaign:', {
       id: campaignId,
       subject: campaign.subject,
+      status: campaign.status,
       config: campaign.config,
       recipientsLength: campaign.recipients?.length || 0
     })
+
+    // Set status to preparing at the start
+    const { error: statusError } = await supabase
+      .from('email_campaigns')
+      .update({ status: 'preparing' })
+      .eq('id', campaignId)
+
+    if (statusError) {
+      console.error('❌ Failed to set preparing status:', statusError)
+    }
 
     // Enhanced recipient parsing to handle multiple formats
     const rawRecipients = campaign.recipients || '';
@@ -112,6 +124,16 @@ serve(async (req) => {
     
     if (recipients.length === 0) {
       console.error('❌ No valid recipients found after parsing');
+      
+      // Set status back to failed if no recipients
+      await supabase
+        .from('email_campaigns')
+        .update({ 
+          status: 'failed',
+          error_message: 'No valid recipients found'
+        })
+        .eq('id', campaignId)
+      
       return new Response(
         JSON.stringify({ error: 'No valid recipients found' }),
         { 
@@ -124,6 +146,11 @@ serve(async (req) => {
     // Log sample recipients for verification
     console.log('📧 Sample recipients:', recipients.slice(0, 5));
     console.log('📧 Last recipients:', recipients.slice(-5));
+
+    // Add artificial delay to show preparation progress (1-3 seconds based on email count)
+    const processingDelay = Math.min(Math.max(recipients.length * 50, 1000), 5000); // 50ms per email, min 1s, max 5s
+    console.log(`⏳ Processing delay: ${processingDelay}ms for ${recipients.length} recipients`);
+    await new Promise(resolve => setTimeout(resolve, processingDelay));
 
     // Get rotation configuration
     const config = campaign.config || {}
@@ -189,12 +216,23 @@ serve(async (req) => {
       .update({
         status: 'prepared',
         prepared_emails: preparedEmails,
-        total_recipients: recipients.length
+        total_recipients: recipients.length,
+        error_message: null // Clear any previous error message
       })
       .eq('id', campaignId)
 
     if (updateError) {
       console.error('❌ Failed to update campaign:', updateError)
+      
+      // Set status back to failed
+      await supabase
+        .from('email_campaigns')
+        .update({ 
+          status: 'failed',
+          error_message: `Failed to update campaign: ${updateError.message}`
+        })
+        .eq('id', campaignId)
+      
       return new Response(
         JSON.stringify({ error: 'Failed to update campaign' }),
         { 
