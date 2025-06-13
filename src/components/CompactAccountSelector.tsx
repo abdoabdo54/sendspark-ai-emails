@@ -43,12 +43,14 @@ const CompactAccountSelector: React.FC<CompactAccountSelectorProps> = ({
     e.preventDefault();
     e.stopPropagation();
     onSelectAll();
+    console.log('Select all clicked, activeAccounts:', activeAccounts.length);
   };
 
   const handleDeselectAll = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
     onDeselectAll();
+    console.log('Deselect all clicked, clearing selection');
   };
 
   const hasWarnings = activeAccounts.length === 0 || enabledFunctions.length === 0;
@@ -137,7 +139,7 @@ const CompactAccountSelector: React.FC<CompactAccountSelectorProps> = ({
                     >
                       <Checkbox
                         checked={selectedAccounts.includes(account.id)}
-                        onChange={() => handleAccountToggle(account.id)}
+                        onCheckedChange={() => handleAccountToggle(account.id)}
                       />
                       <div className="flex-1 min-w-0">
                         <div className="text-sm font-medium truncate">

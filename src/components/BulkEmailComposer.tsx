@@ -28,7 +28,7 @@ interface BulkEmailComposerProps {
 const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
   const navigate = useNavigate();
   const { currentOrganization } = useSimpleOrganizations();
-  const { functions, hasFunctions, sendCampaign } = useCampaignSender(currentOrganization?.id);
+  const { functions, hasFunctions } = useCampaignSender(currentOrganization?.id);
   const { accounts } = useEmailAccounts(currentOrganization?.id);
   
   // Form state
@@ -60,9 +60,15 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
   const [trackingEnabled, setTrackingEnabled] = useState(false);
   const [htmlPreviewOpen, setHtmlPreviewOpen] = useState(false);
 
-  // SmartConfig state
+  // SmartConfig state - made more dynamic
   const [smartConfig, setSmartConfig] = useState<any>(null);
+  const [customFunctionCount, setCustomFunctionCount] = useState<number>(0);
+  const [customAccountCount, setCustomAccountCount] = useState<number>(0);
+  const [useCustomConfig, setUseCustomConfig] = useState(false);
   const [estimatedTime, setEstimatedTime] = useState('');
+
+  // Prevent double submission
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const recipientCount = recipients.split(',').filter(email => email.trim()).length;
   const activeAccounts = accounts.filter(account => account.is_active);
@@ -88,28 +94,35 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
     }
   }, []);
 
-  // Calculate estimated time
+  // Dynamic estimation calculation
   useEffect(() => {
-    if (recipientCount > 0 && functions.length > 0) {
-      const emailsPerFunction = Math.ceil(recipientCount / functions.length);
-      let estimatedSeconds;
+    if (recipientCount > 0) {
+      const functionsToUse = useCustomConfig ? customFunctionCount : functions.length;
+      const accountsToUse = useCustomConfig ? customAccountCount : selectedAccounts.length;
       
-      switch (sendingMode) {
-        case 'zero-delay':
-          estimatedSeconds = Math.ceil(emailsPerFunction / 1000);
-          break;
-        case 'fast':
-          estimatedSeconds = Math.ceil(emailsPerFunction / 200);
-          break;
-        default:
-          estimatedSeconds = Math.ceil(emailsPerFunction / 50);
+      if (functionsToUse > 0) {
+        const emailsPerFunction = Math.ceil(recipientCount / functionsToUse);
+        let estimatedSeconds;
+        
+        switch (sendingMode) {
+          case 'zero-delay':
+            estimatedSeconds = Math.ceil(emailsPerFunction / 1000);
+            break;
+          case 'fast':
+            estimatedSeconds = Math.ceil(emailsPerFunction / 200);
+            break;
+          default:
+            estimatedSeconds = Math.ceil(emailsPerFunction / 50);
+        }
+        
+        setEstimatedTime(`~${estimatedSeconds} seconds (${functionsToUse} functions, ${accountsToUse} accounts)`);
+      } else {
+        setEstimatedTime('');
       }
-      
-      setEstimatedTime(`~${estimatedSeconds} seconds`);
     } else {
       setEstimatedTime('');
     }
-  }, [recipientCount, functions.length, sendingMode]);
+  }, [recipientCount, functions.length, selectedAccounts.length, sendingMode, useCustomConfig, customFunctionCount, customAccountCount]);
 
   const handleCSVImport = (data: Array<{ [key: string]: any }>) => {
     const emails = data.map(row => {
@@ -226,64 +239,104 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
       return false;
     }
 
+    if (useCustomConfig && (customFunctionCount <= 0 || customAccountCount <= 0)) {
+      toast({
+        title: "Validation Error",
+        description: "Custom function and account counts must be greater than 0",
+        variant: "destructive"
+      });
+      return false;
+    }
+
     return true;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
+    if (isSubmitting) {
+      console.log('Already submitting, preventing duplicate');
+      return;
+    }
+    
     if (!validateForm()) return;
 
-    const config = {
-      sendingMode,
-      dispatchMethod,
-      selectedAccounts,
-      rotation: {
-        fromName: useFromRotation,
-        subject: useSubjectRotation,
-        fromNameVariations: useFromRotation ? fromNameVariations.split(',').map(s => s.trim()) : [],
-        subjectVariations: useSubjectRotation ? subjectVariations.split(',').map(s => s.trim()) : []
-      },
-      testAfter: {
-        enabled: useTestAfter,
-        email: testAfterEmail,
-        count: testAfterCount
-      },
-      tracking: {
-        enabled: trackingEnabled,
-        trackOpens: trackingEnabled,
-        trackClicks: trackingEnabled
-      },
-      smartConfig
-    };
-
-    const campaignData = {
-      from_name: useFromRotation ? fromNameVariations.split(',')[0].trim() : fromName,
-      subject: useSubjectRotation ? subjectVariations.split(',')[0].trim() : subject,
-      recipients,
-      html_content: htmlContent,
-      text_content: textContent,
-      send_method: 'parallel_gcf',
-      config
-    };
+    setIsSubmitting(true);
 
     try {
-      console.log('🚀 Starting campaign with parallel dispatch...');
-      const result = await sendCampaign(campaignData);
+      // Prepare recipients list with test-after emails included
+      let finalRecipients = recipients.split(',').map(email => email.trim()).filter(email => email);
+      
+      // Add test-after emails if enabled
+      if (useTestAfter && testAfterEmail.trim()) {
+        const testEmailsToAdd = Math.floor(finalRecipients.length / testAfterCount);
+        for (let i = 1; i <= testEmailsToAdd; i++) {
+          const insertIndex = i * testAfterCount;
+          if (insertIndex < finalRecipients.length) {
+            finalRecipients.splice(insertIndex, 0, testAfterEmail.trim());
+          }
+        }
+        // Add test email at the end if not already added
+        if (testEmailsToAdd === 0 || finalRecipients.length % testAfterCount === 0) {
+          finalRecipients.push(testAfterEmail.trim());
+        }
+      }
+
+      const config = {
+        sendingMode,
+        dispatchMethod,
+        selectedAccounts,
+        useCustomConfig,
+        customFunctionCount: useCustomConfig ? customFunctionCount : functions.length,
+        customAccountCount: useCustomConfig ? customAccountCount : selectedAccounts.length,
+        rotation: {
+          fromName: useFromRotation,
+          subject: useSubjectRotation,
+          fromNameVariations: useFromRotation ? fromNameVariations.split(',').map(s => s.trim()) : [],
+          subjectVariations: useSubjectRotation ? subjectVariations.split(',').map(s => s.trim()) : []
+        },
+        testAfter: {
+          enabled: useTestAfter,
+          email: testAfterEmail,
+          count: testAfterCount
+        },
+        tracking: {
+          enabled: trackingEnabled,
+          trackOpens: trackingEnabled,
+          trackClicks: trackingEnabled
+        },
+        smartConfig
+      };
+
+      const campaignData = {
+        from_name: useFromRotation ? fromNameVariations.split(',')[0].trim() : fromName,
+        subject: useSubjectRotation ? subjectVariations.split(',')[0].trim() : subject,
+        recipients: finalRecipients.join(', '),
+        html_content: htmlContent,
+        text_content: textContent,
+        send_method: 'parallel_gcf',
+        config
+      };
+
+      console.log('🚀 Launching campaign with data:', campaignData);
+      
+      // Call onSend which will handle the campaign dispatch
+      await onSend(campaignData);
       
       toast({
-        title: "✅ Campaign Dispatched",
-        description: `Campaign sent to ${result.totalSlices} Cloud Functions in ${dispatchMethod} mode`
+        title: "✅ Campaign Launched",
+        description: `Campaign dispatched successfully with ${finalRecipients.length} recipients`
       });
 
-      onSend(campaignData);
     } catch (error: any) {
-      console.error('Campaign failed:', error);
+      console.error('Campaign launch failed:', error);
       toast({
         title: "❌ Campaign Failed",
-        description: error.message,
+        description: error.message || 'Unknown error occurred',
         variant: "destructive"
       });
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -329,22 +382,71 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
               </Button>
             </div>
 
-            {/* SmartConfig Status */}
-            {smartConfig && (
-              <Alert className="border-blue-200 bg-blue-50">
-                <Calculator className="h-4 w-4" />
-                <AlertDescription>
-                  <div className="text-blue-800 text-sm">
-                    <strong>SmartConfig Active:</strong> Optimized for {smartConfig.emailVolume?.toLocaleString()} emails
-                    <br />
-                    <span className="text-xs">
-                      Recommended: {smartConfig.recommendedFunctions} functions, {smartConfig.recommendedAccounts} accounts
-                      • Est. time: {smartConfig.estimatedTime}
-                    </span>
+            {/* Enhanced SmartConfig */}
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <Calculator className="w-4 h-4" />
+                  Dynamic Configuration
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="useCustomConfig">Use Custom Configuration</Label>
+                  <Switch
+                    id="useCustomConfig"
+                    checked={useCustomConfig}
+                    onCheckedChange={setUseCustomConfig}
+                  />
+                </div>
+                
+                {useCustomConfig && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <Label htmlFor="customFunctionCount">Number of Functions</Label>
+                      <Input
+                        id="customFunctionCount"
+                        type="number"
+                        min="1"
+                        max={functions.length}
+                        value={customFunctionCount}
+                        onChange={(e) => setCustomFunctionCount(parseInt(e.target.value) || 1)}
+                        placeholder={`Max: ${functions.length}`}
+                      />
+                    </div>
+                    
+                    <div>
+                      <Label htmlFor="customAccountCount">Number of Accounts</Label>
+                      <Input
+                        id="customAccountCount"
+                        type="number"
+                        min="1"
+                        max={selectedAccounts.length}
+                        value={customAccountCount}
+                        onChange={(e) => setCustomAccountCount(parseInt(e.target.value) || 1)}
+                        placeholder={`Max: ${selectedAccounts.length}`}
+                      />
+                    </div>
                   </div>
-                </AlertDescription>
-              </Alert>
-            )}
+                )}
+
+                {smartConfig && !useCustomConfig && (
+                  <Alert className="border-blue-200 bg-blue-50">
+                    <Calculator className="h-4 w-4" />
+                    <AlertDescription>
+                      <div className="text-blue-800 text-sm">
+                        <strong>SmartConfig Active:</strong> Optimized for {smartConfig.emailVolume?.toLocaleString()} emails
+                        <br />
+                        <span className="text-xs">
+                          Recommended: {smartConfig.recommendedFunctions} functions, {smartConfig.recommendedAccounts} accounts
+                          • Est. time: {smartConfig.estimatedTime}
+                        </span>
+                      </div>
+                    </AlertDescription>
+                  </Alert>
+                )}
+              </CardContent>
+            </Card>
 
             {/* Sending Mode & Dispatch Method */}
             <Card>
@@ -587,7 +689,7 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="flex items-center justify-between">
-                  <Label htmlFor="useTestAfter" className="text-sm">Enable Test-After</Label>
+                  <Label htmlFor="useTestAfter" className="text-sm">Enable Test-After (Auto-inject)</Label>
                   <Switch
                     id="useTestAfter"
                     checked={useTestAfter}
@@ -611,7 +713,7 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
                     </div>
                     
                     <div>
-                      <Label htmlFor="testAfterCount" className="text-sm">Test Every X Emails</Label>
+                      <Label htmlFor="testAfterCount" className="text-sm">Inject Every X Emails</Label>
                       <Input
                         id="testAfterCount"
                         type="number"
@@ -623,6 +725,15 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
                       />
                     </div>
                   </div>
+                )}
+                
+                {useTestAfter && (
+                  <Alert className="border-blue-200 bg-blue-50">
+                    <Target className="h-4 w-4" />
+                    <AlertDescription className="text-blue-800 text-xs">
+                      Test emails will be automatically injected into the recipient list every {testAfterCount} emails to monitor deliverability.
+                    </AlertDescription>
+                  </Alert>
                 )}
               </CardContent>
             </Card>
@@ -675,13 +786,13 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
               type="submit" 
               className="w-full" 
               size="lg"
-              disabled={!hasFunctions || !hasAccounts}
+              disabled={!hasFunctions || !hasAccounts || isSubmitting}
             >
               <Rocket className="w-4 h-4 mr-2" />
-              Launch {dispatchMethod.charAt(0).toUpperCase() + dispatchMethod.slice(1)} Campaign
-              {estimatedTime && (
+              {isSubmitting ? 'Launching...' : `Launch ${dispatchMethod.charAt(0).toUpperCase() + dispatchMethod.slice(1)} Campaign`}
+              {estimatedTime && !isSubmitting && (
                 <Badge variant="secondary" className="ml-2 text-xs">
-                  {estimatedTime}
+                  {estimatedTime.split('(')[0].trim()}
                 </Badge>
               )}
             </Button>
