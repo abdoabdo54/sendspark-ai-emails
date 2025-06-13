@@ -1,3 +1,4 @@
+
 import { useGcfFunctions } from './useGcfFunctions';
 import { useEmailAccounts } from './useEmailAccounts';
 import { supabase } from '@/integrations/supabase/client';
@@ -10,6 +11,15 @@ export interface CampaignData {
   text_content: string;
   send_method: string;
   config: any;
+}
+
+interface PreparedEmail {
+  to: string;
+  from_name: string;
+  subject: string;
+  html_content: string;
+  text_content: string;
+  prepared_at: string;
 }
 
 export const useCampaignSender = (organizationId?: string) => {
@@ -28,34 +38,34 @@ export const useCampaignSender = (organizationId?: string) => {
     };
   };
 
-  const calculateCampaignSlicing = (recipients: string[], config: any) => {
+  const calculateCampaignSlicing = (preparedEmails: PreparedEmail[], config: any) => {
     const { functions: enabledFunctions } = getAvailableResources();
     
     if (enabledFunctions.length === 0) {
       throw new Error('No enabled Cloud Functions available');
     }
 
-    const totalRecipients = recipients.length;
+    const totalEmails = preparedEmails.length;
     
     // Use custom function count from config if specified
     const functionsToUse = config.useCustomConfig && config.customFunctionCount 
       ? Math.min(config.customFunctionCount, enabledFunctions.length)
       : enabledFunctions.length;
     
-    console.log(`📊 DISTRIBUTION: Using ${functionsToUse} functions for ${totalRecipients} emails`);
+    console.log(`📊 DISTRIBUTION: Using ${functionsToUse} functions for ${totalEmails} emails`);
     
     // Ensure minimum 1 email per function, otherwise reduce function count
-    const actualFunctionsToUse = Math.min(functionsToUse, totalRecipients);
-    const emailsPerFunction = Math.ceil(totalRecipients / actualFunctionsToUse);
+    const actualFunctionsToUse = Math.min(functionsToUse, totalEmails);
+    const emailsPerFunction = Math.ceil(totalEmails / actualFunctionsToUse);
     
-    console.log(`📈 FINAL: ${totalRecipients} emails distributed across ${actualFunctionsToUse} functions (${emailsPerFunction} each)`);
+    console.log(`📈 FINAL: ${totalEmails} emails distributed across ${actualFunctionsToUse} functions (${emailsPerFunction} each)`);
     
     // Create slices for the actual number of functions that will be used
     const functionsToUseList = enabledFunctions.slice(0, actualFunctionsToUse);
     
     const slices = functionsToUseList.map((func, index) => {
       const skip = index * emailsPerFunction;
-      const limit = Math.min(emailsPerFunction, totalRecipients - skip);
+      const limit = Math.min(emailsPerFunction, totalEmails - skip);
       
       return {
         functionId: func.id,
@@ -63,7 +73,7 @@ export const useCampaignSender = (organizationId?: string) => {
         functionName: func.name,
         skip,
         limit,
-        recipients: recipients.slice(skip, skip + limit)
+        recipients: preparedEmails.slice(skip, skip + limit)
       };
     }).filter(slice => slice.limit > 0);
 
@@ -99,9 +109,15 @@ export const useCampaignSender = (organizationId?: string) => {
 
       const campaign = existingCampaigns[0];
       console.log('📊 Found prepared campaign with ID:', campaign.id);
-      console.log('📧 Prepared emails count:', campaign.prepared_emails?.length || 0);
 
-      if (!campaign.prepared_emails || campaign.prepared_emails.length === 0) {
+      // Type guard for prepared_emails
+      const preparedEmails = Array.isArray(campaign.prepared_emails) 
+        ? campaign.prepared_emails as PreparedEmail[]
+        : [];
+      
+      console.log('📧 Prepared emails count:', preparedEmails.length);
+
+      if (preparedEmails.length === 0) {
         throw new Error('Campaign has no prepared emails. Please prepare the campaign again.');
       }
 
@@ -130,11 +146,8 @@ export const useCampaignSender = (organizationId?: string) => {
         throw new Error('No valid accounts selected');
       }
 
-      // Use prepared emails count for distribution
-      const totalEmails = campaign.prepared_emails.length;
-      
-      // Calculate proper slicing strategy using prepared email count
-      const slices = calculateCampaignSlicing(campaign.prepared_emails, campaignData.config);
+      // Calculate proper slicing strategy using prepared emails
+      const slices = calculateCampaignSlicing(preparedEmails, campaignData.config);
       console.log(`📈 Campaign distributed across ${slices.length} functions`);
 
       // Use custom account count if specified
