@@ -49,8 +49,8 @@ const CompactAccountSelector: React.FC<CompactAccountSelectorProps> = ({
   const handleDeselectAll = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    console.log('Deselect all clicked - calling onDeselectAll');
     onDeselectAll();
-    console.log('Deselect all clicked, clearing selection');
   };
 
   const hasWarnings = activeAccounts.length === 0 || enabledFunctions.length === 0;
