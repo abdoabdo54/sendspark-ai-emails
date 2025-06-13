@@ -53,6 +53,7 @@ const EmailComposer = ({ activeTab = 'bulk' }: EmailComposerProps) => {
 
       if (newCampaign) {
         console.log('✅ Campaign created successfully:', newCampaign.id);
+        // SINGLE SUCCESS TOAST - NO DOUBLE POPUPS
         toast.success(`Campaign "${campaignData.subject}" created successfully! Go to Campaign History to prepare and send.`);
       } else {
         throw new Error('Failed to create campaign');

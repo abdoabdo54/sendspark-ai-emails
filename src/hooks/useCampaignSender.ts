@@ -167,7 +167,8 @@ export const useCampaignSender = (organizationId?: string) => {
           recipients: slice.limit,
           sendingMode: payload.campaignData.config.sendingMode,
           dispatchMethod: payload.campaignData.config.dispatchMethod,
-          accounts: payload.accounts.length
+          accounts: payload.accounts.length,
+          functionUrl: slice.functionUrl
         });
 
         try {
@@ -181,6 +182,7 @@ export const useCampaignSender = (organizationId?: string) => {
 
           if (!response.ok) {
             const errorText = await response.text();
+            console.error(`❌ CRITICAL: Function ${slice.functionName} returned ${response.status}: ${errorText}`);
             throw new Error(`Google Cloud Function ${slice.functionName} returned ${response.status}: ${errorText}`);
           }
 

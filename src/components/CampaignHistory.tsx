@@ -54,7 +54,9 @@ const CampaignHistory = () => {
               config: campaign.config,
               sendingMode: campaign.config?.sendingMode,
               dispatchMethod: campaign.config?.dispatchMethod,
-              selectedAccounts: campaign.config?.selectedAccounts
+              selectedAccounts: campaign.config?.selectedAccounts,
+              customFunctionCount: campaign.config?.customFunctionCount,
+              customAccountCount: campaign.config?.customAccountCount
             });
             
             // CRITICAL: Use the EXACT saved configuration from the database
@@ -135,14 +137,30 @@ const CampaignHistory = () => {
                         Sent: {campaign.sent_count}
                       </p>
                       
-                      {/* FIXED: Show EXACT saved configuration */}
+                      {/* FIXED: Show EXACT saved configuration with proper display */}
                       {campaign.config && (
                         <div className="text-xs text-slate-500 mt-2 space-y-1">
-                          <div className="flex gap-4">
+                          <div className="flex gap-4 flex-wrap">
                             <span>📧 Accounts: {campaign.config.selectedAccounts?.length || 0} selected</span>
-                            <span>⚡ Mode: {campaign.config.sendingMode || 'controlled'}</span>
-                            <span>🔄 Method: {campaign.config.dispatchMethod || 'parallel'}</span>
+                            <span>⚡ Mode: {
+                              campaign.config.sendingMode === 'zero-delay' ? 'Zero Delay (Max Speed)' :
+                              campaign.config.sendingMode === 'fast' ? 'Fast (0.5s delay)' :
+                              campaign.config.sendingMode === 'controlled' ? 'Controlled (2s delay)' :
+                              campaign.config.sendingMode || 'controlled'
+                            }</span>
+                            <span>🔄 Method: {
+                              campaign.config.dispatchMethod === 'parallel' ? 'Parallel (All functions)' :
+                              campaign.config.dispatchMethod === 'round-robin' ? 'Round Robin (Rotate accounts)' :
+                              campaign.config.dispatchMethod === 'sequential' ? 'Sequential' :
+                              campaign.config.dispatchMethod || 'parallel'
+                            }</span>
                           </div>
+                          {campaign.config.useCustomConfig && (
+                            <div className="flex gap-4">
+                              <span>🎯 Custom Functions: {campaign.config.customFunctionCount || 'auto'}</span>
+                              <span>📬 Custom Accounts: {campaign.config.customAccountCount || 'auto'}</span>
+                            </div>
+                          )}
                           {campaign.config.rotation?.useFromNameRotation && (
                             <div>🔄 FROM rotation: {campaign.config.rotation.fromNames?.length || 0} variants</div>
                           )}

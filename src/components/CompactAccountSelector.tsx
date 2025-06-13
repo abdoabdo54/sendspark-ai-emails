@@ -32,11 +32,11 @@ const CompactAccountSelector: React.FC<CompactAccountSelectorProps> = ({
   const enabledFunctions = functions.filter(func => func.enabled);
   const selectedCount = selectedAccounts.length;
 
-  const handleAccountToggle = (accountId: string) => {
-    const newSelection = selectedAccounts.includes(accountId)
-      ? selectedAccounts.filter(id => id !== accountId)
-      : [...selectedAccounts, accountId];
-    onAccountsChange(newSelection);
+  const handleAccountToggle = (accountId: string) =>onAccountsChange(
+      selectedAccounts.includes(accountId)
+        ? selectedAccounts.filter(id => id !== accountId)
+        : [...selectedAccounts, accountId]
+    );
   };
 
   const handleSelectAll = (e: React.MouseEvent) => {
@@ -60,7 +60,7 @@ const CompactAccountSelector: React.FC<CompactAccountSelectorProps> = ({
     // Also call the callback but after the main change
     setTimeout(() => {
       onDeselectAll();
-    }, 50);
+    }, 10);
   };
 
   const hasWarnings = activeAccounts.length === 0 || enabledFunctions.length === 0;
