@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -7,15 +8,20 @@ interface CampaignPreparationDialogProps {
   isOpen: boolean;
   onClose: () => void;
   campaignId: string;
+  onComplete?: () => void;
 }
 
 const CampaignPreparationDialog: React.FC<CampaignPreparationDialogProps> = ({
   isOpen,
   onClose,
-  campaignId
+  campaignId,
+  onComplete
 }) => {
   const handleComplete = () => {
     console.log('✅ Preparation completed successfully');
+    if (onComplete) {
+      onComplete();
+    }
     onClose();
   };
 

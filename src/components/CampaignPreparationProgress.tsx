@@ -19,7 +19,7 @@ const CampaignPreparationProgress: React.FC<CampaignPreparationProgressProps> = 
   const [status, setStatus] = useState<'preparing' | 'completed' | 'error'>('preparing');
   const [message, setMessage] = useState('Starting preparation...');
   const [emailCount, setEmailCount] = useState(0);
-  const { prepareCampaign, campaigns } = useCampaigns();
+  const { prepareCampaign, campaigns, refetch } = useCampaigns();
   const preparationStarted = useRef(false);
 
   useEffect(() => {
@@ -56,12 +56,12 @@ const CampaignPreparationProgress: React.FC<CampaignPreparationProgressProps> = 
         // Start progress animation
         const progressInterval = setInterval(() => {
           setProgress(prev => {
-            if (prev < 80) {
-              return prev + Math.random() * 15 + 5;
+            if (prev < 85) {
+              return prev + Math.random() * 10 + 3;
             }
             return prev;
           });
-        }, 500);
+        }, 300);
         
         // Call the preparation function
         const result = await prepareCampaign(campaignId);
@@ -71,15 +71,18 @@ const CampaignPreparationProgress: React.FC<CampaignPreparationProgressProps> = 
         
         console.log('✅ Preparation completed:', result);
         
+        // CRITICAL: Force refresh campaigns to show updated status
+        await refetch();
+        
         // Show completion
         setProgress(100);
         setStatus('completed');
         setMessage(`Successfully prepared ${result.emailCount || estimatedCount} emails!`);
         
-        // Auto-close after showing completion
+        // Auto-close after showing completion and refreshing
         setTimeout(() => {
           onComplete();
-        }, 2000);
+        }, 1500);
         
       } catch (error: any) {
         console.error('❌ Preparation failed:', error);
@@ -90,7 +93,7 @@ const CampaignPreparationProgress: React.FC<CampaignPreparationProgressProps> = 
     };
 
     startPreparation();
-  }, [campaignId, prepareCampaign, campaigns, onComplete, onError]);
+  }, [campaignId, prepareCampaign, campaigns, onComplete, onError, refetch]);
 
   return (
     <div className="space-y-4">
@@ -132,7 +135,7 @@ const CampaignPreparationProgress: React.FC<CampaignPreparationProgressProps> = 
 
       {status === 'completed' && (
         <div className="text-center text-sm text-green-600">
-          Campaign is now ready to send!
+          Campaign is now ready to send! UI will refresh automatically.
         </div>
       )}
       

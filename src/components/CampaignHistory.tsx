@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -21,11 +21,21 @@ const CampaignHistory = () => {
     pauseCampaign, 
     resumeCampaign,
     duplicateCampaign,
-    deleteCampaign 
+    deleteCampaign,
+    refetch
   } = useCampaigns(currentOrganization?.id);
   
   const { sendCampaign: dispatchCampaign } = useCampaignSender(currentOrganization?.id);
   const [preparingCampaignId, setPreparingCampaignId] = useState<string | null>(null);
+
+  // Auto-refresh campaigns every 3 seconds to show status updates
+  useEffect(() => {
+    const interval = setInterval(() => {
+      refetch();
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, [refetch]);
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -70,6 +80,11 @@ const CampaignHistory = () => {
             });
             
             toast.success('🚀 Campaign sent successfully!');
+            
+            // Force refresh after sending
+            setTimeout(() => {
+              refetch();
+            }, 1000);
           } else {
             throw new Error('Campaign not found');
           }
@@ -97,6 +112,14 @@ const CampaignHistory = () => {
       console.error('❌ Action failed:', error);
       toast.error(`Action failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
+  };
+
+  const handlePreparationComplete = () => {
+    setPreparingCampaignId(null);
+    // Force refresh campaigns to show updated status
+    setTimeout(() => {
+      refetch();
+    }, 500);
   };
 
   if (loading) {
@@ -279,6 +302,7 @@ const CampaignHistory = () => {
           isOpen={true}
           onClose={() => setPreparingCampaignId(null)}
           campaignId={preparingCampaignId}
+          onComplete={handlePreparationComplete}
         />
       )}
     </div>
