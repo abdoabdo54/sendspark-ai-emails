@@ -38,17 +38,22 @@ export const useCampaignSender = (organizationId?: string) => {
 
     const totalRecipients = recipients.length;
     
-    // CRITICAL FIX: Use custom config if provided, otherwise use all functions
+    // CRITICAL FIX: Properly use the custom function count from config
     const functionsToUse = config.useCustomConfig && config.customFunctionCount 
       ? Math.min(config.customFunctionCount, enabledFunctions.length)
       : enabledFunctions.length;
     
-    const emailsPerFunction = Math.ceil(totalRecipients / functionsToUse);
+    console.log(`📊 CRITICAL DISTRIBUTION: Using ${functionsToUse} functions for ${totalRecipients} emails`);
     
-    console.log(`📊 CRITICAL: Slicing ${totalRecipients} emails across ${functionsToUse} functions (${emailsPerFunction} each)`);
+    // FIXED: Ensure minimum 1 email per function, otherwise reduce function count
+    const minEmailsPerFunction = 1;
+    const actualFunctionsToUse = Math.min(functionsToUse, totalRecipients);
+    const emailsPerFunction = Math.ceil(totalRecipients / actualFunctionsToUse);
     
-    // Create slices for the specified number of functions
-    const functionsToUseList = enabledFunctions.slice(0, functionsToUse);
+    console.log(`📈 CRITICAL: ${totalRecipients} emails distributed across ${actualFunctionsToUse} functions (${emailsPerFunction} each)`);
+    
+    // Create slices for the actual number of functions that will be used
+    const functionsToUseList = enabledFunctions.slice(0, actualFunctionsToUse);
     
     const slices = functionsToUseList.map((func, index) => {
       const skip = index * emailsPerFunction;
@@ -64,12 +69,15 @@ export const useCampaignSender = (organizationId?: string) => {
       };
     }).filter(slice => slice.limit > 0);
 
+    console.log(`🎯 FINAL DISTRIBUTION: ${slices.length} functions will be used:`, 
+      slices.map(s => `${s.functionName}(${s.limit} emails)`));
+
     return slices;
   };
 
   const sendCampaign = async (campaignData: CampaignData) => {
     try {
-      console.log('🚀 CRITICAL: Starting campaign dispatch with PRESERVED config:', campaignData.config);
+      console.log('🚀 CRITICAL: Starting campaign dispatch with ZERO DELAY CONFIG:', campaignData.config);
       
       // Parse recipients
       const recipients = campaignData.recipients
@@ -83,13 +91,13 @@ export const useCampaignSender = (organizationId?: string) => {
 
       // CRITICAL FIX: Get selected accounts from PRESERVED config
       const selectedAccountIds = campaignData.config?.selectedAccounts || [];
-      console.log('📧 CRITICAL: Selected account IDs from PRESERVED config:', selectedAccountIds);
+      console.log('📧 CRITICAL: Selected account IDs from config:', selectedAccountIds);
       
       const selectedAccounts = accounts.filter(account => 
         selectedAccountIds.includes(account.id) && account.is_active
       );
 
-      console.log('📧 CRITICAL: Filtered active accounts:', selectedAccounts.length, selectedAccounts.map(a => ({ id: a.id, name: a.name })));
+      console.log('📧 CRITICAL: Active accounts for sending:', selectedAccounts.length, selectedAccounts.map(a => ({ id: a.id, name: a.name })));
 
       if (selectedAccounts.length === 0) {
         throw new Error('No valid accounts selected');
@@ -116,29 +124,56 @@ export const useCampaignSender = (organizationId?: string) => {
 
       console.log('📊 Campaign created with ID:', campaign.id);
 
-      // CRITICAL FIX: Calculate slicing strategy with PRESERVED config
+      // CRITICAL FIX: Calculate proper slicing strategy
       const slices = calculateCampaignSlicing(recipients, campaignData.config);
-      console.log(`📈 CRITICAL: Campaign split into ${slices.length} parallel slices`);
+      console.log(`📈 CRITICAL: Campaign distributed across ${slices.length} functions`);
 
-      // CRITICAL FIX: Use custom account count if specified in PRESERVED config
+      // CRITICAL FIX: Use custom account count if specified
       const accountsToUse = campaignData.config.useCustomConfig && campaignData.config.customAccountCount
         ? Math.min(campaignData.config.customAccountCount, selectedAccounts.length)
         : selectedAccounts.length;
       
       const accountsForSending = selectedAccounts.slice(0, accountsToUse);
       
-      console.log(`📧 CRITICAL: Using ${accountsForSending.length} accounts for sending:`, accountsForSending.map(a => a.name));
+      console.log(`📧 CRITICAL: Using ${accountsForSending.length} accounts:`, accountsForSending.map(a => a.name));
 
-      // Prepare accounts for Google Cloud Functions format
-      const gcfAccounts = accountsForSending.map(account => ({
-        id: account.id,
-        name: account.name,
-        email: account.email,
-        type: account.type,
-        config: account.config
-      }));
+      // CRITICAL FIX: Remove ALL rate limiting for accounts based on sending mode
+      const gcfAccounts = accountsForSending.map(account => {
+        const cleanConfig = { ...account.config };
+        
+        // FORCE REMOVE ALL RATE LIMITING based on sending mode
+        if (campaignData.config.sendingMode === 'zero-delay') {
+          // ZERO DELAY = NO LIMITS AT ALL
+          delete cleanConfig.emails_per_hour;
+          delete cleanConfig.emails_per_second;
+          delete cleanConfig.delay_in_seconds;
+          delete cleanConfig.rate_limit_enabled;
+          cleanConfig.zero_delay_mode = true;
+          console.log(`🚀 ZERO DELAY: Removed ALL rate limits for ${account.name}`);
+        } else if (campaignData.config.sendingMode === 'fast') {
+          // FAST = Minimal delays
+          cleanConfig.emails_per_hour = 7200; // 2 per second
+          cleanConfig.delay_in_seconds = 0.5;
+          cleanConfig.rate_limit_enabled = false;
+          console.log(`⚡ FAST MODE: Minimal delays for ${account.name}`);
+        } else {
+          // CONTROLLED = Standard rates
+          cleanConfig.emails_per_hour = 3600; // 1 per second
+          cleanConfig.delay_in_seconds = 1;
+          cleanConfig.rate_limit_enabled = true;
+          console.log(`🔧 CONTROLLED: Standard rates for ${account.name}`);
+        }
 
-      // CRITICAL FIX: Dispatch to Google Cloud Functions with PRESERVED config
+        return {
+          id: account.id,
+          name: account.name,
+          email: account.email,
+          type: account.type,
+          config: cleanConfig
+        };
+      });
+
+      // CRITICAL FIX: Dispatch to ALL selected functions with proper configuration
       const dispatchPromises = slices.map(async (slice, index) => {
         const payload = {
           campaignId: campaign.id,
@@ -154,19 +189,22 @@ export const useCampaignSender = (organizationId?: string) => {
             text_content: campaignData.text_content,
             config: {
               ...campaignData.config,
-              // CRITICAL: Pass PRESERVED sending configuration to GCF
-              sendingMode: campaignData.config.sendingMode || 'controlled',
-              dispatchMethod: campaignData.config.dispatchMethod || 'parallel'
+              // CRITICAL: Force zero delay configuration to Cloud Functions
+              sendingMode: campaignData.config.sendingMode,
+              dispatchMethod: campaignData.config.dispatchMethod,
+              zeroDelayMode: campaignData.config.sendingMode === 'zero-delay',
+              bypassRateLimits: campaignData.config.sendingMode === 'zero-delay'
             }
           },
           accounts: gcfAccounts,
           organizationId
         };
 
-        console.log(`🎯 CRITICAL: Dispatching slice ${index + 1} to ${slice.functionName} with PRESERVED config:`, {
+        console.log(`🎯 DISPATCHING to ${slice.functionName}: ${slice.limit} emails with ${campaignData.config.sendingMode} mode`);
+        console.log(`🔧 Function ${index + 1} config:`, {
           recipients: slice.limit,
           sendingMode: payload.campaignData.config.sendingMode,
-          dispatchMethod: payload.campaignData.config.dispatchMethod,
+          zeroDelayMode: payload.campaignData.config.zeroDelayMode,
           accounts: payload.accounts.length,
           functionUrl: slice.functionUrl
         });
@@ -182,27 +220,27 @@ export const useCampaignSender = (organizationId?: string) => {
 
           if (!response.ok) {
             const errorText = await response.text();
-            console.error(`❌ CRITICAL: Function ${slice.functionName} returned ${response.status}: ${errorText}`);
-            throw new Error(`Google Cloud Function ${slice.functionName} returned ${response.status}: ${errorText}`);
+            console.error(`❌ Function ${slice.functionName} failed: ${response.status} - ${errorText}`);
+            throw new Error(`Function ${slice.functionName} returned ${response.status}: ${errorText}`);
           }
 
           const result = await response.json();
-          console.log(`✅ CRITICAL: Slice ${index + 1} completed successfully:`, result);
+          console.log(`✅ Function ${slice.functionName} completed:`, result);
           return result;
         } catch (error) {
-          console.error(`❌ CRITICAL: Slice ${index + 1} failed:`, error);
+          console.error(`❌ Function ${slice.functionName} error:`, error);
           throw error;
         }
       });
 
-      // Wait for all slices to complete
+      // Wait for ALL functions to complete
       const results = await Promise.allSettled(dispatchPromises);
       
-      // Count successful vs failed slices
+      // Count successful vs failed functions
       const successful = results.filter(r => r.status === 'fulfilled').length;
       const failed = results.filter(r => r.status === 'rejected').length;
 
-      console.log(`📈 CRITICAL: Campaign dispatch complete: ${successful} successful, ${failed} failed`);
+      console.log(`📈 DISPATCH COMPLETE: ${successful} functions succeeded, ${failed} functions failed`);
 
       // Update campaign status based on results
       const finalStatus = failed === 0 ? 'sent' : (successful > 0 ? 'sent' : 'failed');
@@ -222,8 +260,10 @@ export const useCampaignSender = (organizationId?: string) => {
         totalSlices: slices.length,
         successful,
         failed,
+        functionsUsed: slices.map(s => s.functionName),
         results: results.map((result, index) => ({
           functionName: slices[index].functionName,
+          emailCount: slices[index].limit,
           status: result.status,
           ...(result.status === 'fulfilled' ? { data: result.value } : { error: result.reason?.message })
         }))
