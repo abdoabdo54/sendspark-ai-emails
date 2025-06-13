@@ -26,12 +26,15 @@ const CampaignPreparationProgress = ({
   const [startTime] = useState(Date.now());
   const [currentBatch, setCurrentBatch] = useState(1);
   const [totalBatches, setTotalBatches] = useState(Math.ceil(totalRecipients / 1000));
+  const [completionTimer, setCompletionTimer] = useState<number | null>(null);
 
   useEffect(() => {
     let intervalId: NodeJS.Timeout;
     
     const checkProgress = async () => {
       try {
+        console.log(`🔍 Checking progress for campaign: ${campaignId}`);
+        
         // Get campaign status and prepared emails count
         const { data: campaign, error } = await supabase
           .from('email_campaigns')
@@ -47,6 +50,8 @@ const CampaignPreparationProgress = ({
         if (campaign) {
           const preparedEmails = Array.isArray(campaign.prepared_emails) ? campaign.prepared_emails : [];
           const currentPreparedCount = preparedEmails.length;
+          
+          console.log(`📊 Progress: ${currentPreparedCount}/${totalRecipients} (${Math.round((currentPreparedCount / totalRecipients) * 100)}%)`);
           
           setPreparedCount(currentPreparedCount);
           setCurrentBatch(Math.ceil(currentPreparedCount / 1000));
@@ -66,13 +71,19 @@ const CampaignPreparationProgress = ({
           }
 
           // Check if preparation is complete
-          if (campaign.status === 'prepared') {
+          if (campaign.status === 'prepared' && !completionTimer) {
+            console.log('✅ Campaign preparation completed!');
             setStatus('completed');
             clearInterval(intervalId);
-            setTimeout(() => {
+            
+            // Show completion state for 3 seconds before closing
+            const timer = window.setTimeout(() => {
               onComplete();
-            }, 1500);
+            }, 3000);
+            setCompletionTimer(timer);
+            
           } else if (campaign.status === 'failed') {
+            console.log('❌ Campaign preparation failed!');
             setStatus('failed');
             clearInterval(intervalId);
           }
@@ -82,16 +93,19 @@ const CampaignPreparationProgress = ({
       }
     };
 
-    // Check immediately and then every 500ms for smooth updates
+    // Check immediately and then every 1.5 seconds (slower polling)
     checkProgress();
-    intervalId = setInterval(checkProgress, 500);
+    intervalId = setInterval(checkProgress, 1500);
 
     return () => {
       if (intervalId) {
         clearInterval(intervalId);
       }
+      if (completionTimer) {
+        clearTimeout(completionTimer);
+      }
     };
-  }, [campaignId, totalRecipients, startTime, onComplete]);
+  }, [campaignId, totalRecipients, startTime, onComplete, completionTimer]);
 
   const progressPercentage = Math.round((preparedCount / totalRecipients) * 100);
 
@@ -151,7 +165,7 @@ const CampaignPreparationProgress = ({
           <div className="space-y-1">
             <div className="text-sm text-muted-foreground">Time</div>
             <Badge variant="outline" className="text-xs">
-              {status === 'preparing' ? estimatedTimeRemaining : 
+              {status === 'preparing' ? estimatedTimeRemaining || 'Calculating...' : 
                status === 'completed' ? 'Completed' : 'Failed'}
             </Badge>
           </div>
@@ -177,7 +191,7 @@ const CampaignPreparationProgress = ({
           </div>
         )}
 
-        {/* Cancel Button */}
+        {/* Cancel Button - only show while preparing */}
         {status === 'preparing' && (
           <div className="flex justify-center pt-4">
             <Button 

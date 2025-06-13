@@ -19,7 +19,12 @@ const CampaignPreparationDialog = ({
   onCancel
 }: CampaignPreparationDialogProps) => {
   return (
-    <Dialog open={open} onOpenChange={() => {}}>
+    <Dialog open={open} onOpenChange={(isOpen) => {
+      // Only allow closing via cancel button or completion
+      if (!isOpen) {
+        onCancel();
+      }
+    }}>
       <DialogContent className="max-w-3xl">
         <DialogHeader>
           <DialogTitle className="text-center">Campaign Preparation</DialogTitle>

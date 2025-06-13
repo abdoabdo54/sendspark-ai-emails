@@ -1,17 +1,15 @@
+
 import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { 
   Play, 
-  Pause, 
   Copy, 
   Trash2, 
   Settings, 
   MoreHorizontal, 
   Eye,
-  Zap,
-  Clock,
   CheckCircle2,
   AlertCircle,
   Loader2
@@ -28,7 +26,7 @@ import { format } from 'date-fns';
 
 const CampaignHistory = () => {
   const { currentOrganization } = useSimpleOrganizations();
-  const { campaigns, loading, prepareCampaign, sendCampaign, deleteCampaign, duplicateCampaign } = useCampaigns(currentOrganization?.id);
+  const { campaigns, loading, prepareCampaign, deleteCampaign, duplicateCampaign } = useCampaigns(currentOrganization?.id);
   const { sendCampaign: dispatchCampaign } = useCampaignSender(currentOrganization?.id);
   
   const [editingCampaign, setEditingCampaign] = useState<any>(null);
@@ -41,7 +39,6 @@ const CampaignHistory = () => {
       case 'prepared': return 'bg-green-100 text-green-800';
       case 'sending': return 'bg-yellow-100 text-yellow-800';
       case 'sent': return 'bg-emerald-100 text-emerald-800';
-      case 'paused': return 'bg-orange-100 text-orange-800';
       case 'failed': return 'bg-red-100 text-red-800';
       default: return 'bg-gray-100 text-gray-800';
     }
@@ -52,9 +49,8 @@ const CampaignHistory = () => {
       case 'draft': return <Settings className="w-3 h-3" />;
       case 'preparing': return <Loader2 className="w-3 h-3 animate-spin" />;
       case 'prepared': return <CheckCircle2 className="w-3 h-3" />;
-      case 'sending': return <Zap className="w-3 h-3" />;
+      case 'sending': return <Loader2 className="w-3 h-3 animate-spin" />;
       case 'sent': return <CheckCircle2 className="w-3 h-3" />;
-      case 'paused': return <Pause className="w-3 h-3" />;
       case 'failed': return <AlertCircle className="w-3 h-3" />;
       default: return <Settings className="w-3 h-3" />;
     }
@@ -63,10 +59,7 @@ const CampaignHistory = () => {
   const handlePrepareCampaign = async (campaign: any) => {
     try {
       setPreparingCampaign(campaign.id);
-      
-      // Start preparation - this will show the progress dialog
       await prepareCampaign(campaign.id);
-      
     } catch (error: any) {
       console.error('Failed to prepare campaign:', error);
       toast.error(`Failed to prepare campaign: ${error.message}`);
@@ -81,8 +74,6 @@ const CampaignHistory = () => {
     }
 
     try {
-      console.log('🚀 Dispatching prepared campaign:', campaign.id);
-      
       const campaignData = {
         from_name: campaign.from_name,
         subject: campaign.subject,
@@ -95,7 +86,6 @@ const CampaignHistory = () => {
 
       await dispatchCampaign(campaignData);
       toast.success('Campaign dispatched successfully!');
-      
     } catch (error: any) {
       console.error('Failed to dispatch campaign:', error);
       toast.error(`Failed to dispatch campaign: ${error.message}`);
@@ -175,7 +165,6 @@ const CampaignHistory = () => {
                           size="sm"
                           onClick={() => handlePrepareCampaign(campaign)}
                           className="flex items-center gap-1"
-                          disabled={false}
                         >
                           <Settings className="w-3 h-3" />
                           Prepare
