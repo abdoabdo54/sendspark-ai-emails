@@ -49,7 +49,10 @@ const CompactAccountSelector: React.FC<CompactAccountSelectorProps> = ({
   const handleDeselectAll = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    console.log('Deselect all clicked - calling onDeselectAll');
+    console.log('Deselect all clicked - forcing empty array');
+    // Directly call with empty array to prevent any race conditions
+    onAccountsChange([]);
+    // Also call the prop function for consistency
     onDeselectAll();
   };
 
