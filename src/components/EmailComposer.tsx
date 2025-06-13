@@ -16,14 +16,8 @@ interface EmailComposerProps {
 const EmailComposer = ({ activeTab = 'bulk' }: EmailComposerProps) => {
   const { currentOrganization } = useSimpleOrganizations();
   const { sendCampaign, hasFunctions, hasAccounts } = useCampaignSender(currentOrganization?.id);
-  const [isProcessing, setIsProcessing] = useState(false);
 
   const handleBulkEmailSend = async (campaignData: any) => {
-    if (isProcessing) {
-      console.log('Campaign already processing, ignoring duplicate request');
-      return;
-    }
-
     if (!currentOrganization?.id) {
       toast.error('No organization selected');
       return;
@@ -44,8 +38,6 @@ const EmailComposer = ({ activeTab = 'bulk' }: EmailComposerProps) => {
       toast.error('No email accounts selected. Please select at least one account.');
       return;
     }
-
-    setIsProcessing(true);
 
     try {
       console.log('Creating and sending campaign with data:', campaignData);
@@ -85,8 +77,6 @@ const EmailComposer = ({ activeTab = 'bulk' }: EmailComposerProps) => {
     } catch (error) {
       console.error('Error sending campaign:', error);
       toast.error(`Campaign failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    } finally {
-      setIsProcessing(false);
     }
   };
 
