@@ -3,10 +3,12 @@ import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Play, Pause, Copy, Trash2, Edit, Clock } from 'lucide-react';
+import { Play, Pause, Copy, Trash2, Edit, Clock, Zap } from 'lucide-react';
 import { useCampaigns } from '@/hooks/useCampaigns';
+import { useCampaignSender } from '@/hooks/useCampaignSender';
 import { useSimpleOrganizations } from '@/contexts/SimpleOrganizationContext';
 import { format } from 'date-fns';
+import { toast } from 'sonner';
 import CampaignAnalyticsDropdown from './CampaignAnalyticsDropdown';
 import CampaignEditDialog from './CampaignEditDialog';
 
@@ -16,12 +18,13 @@ const CampaignHistory = () => {
     campaigns, 
     loading, 
     prepareCampaign, 
-    sendCampaign, 
     pauseCampaign, 
     resumeCampaign,
     duplicateCampaign,
     deleteCampaign 
   } = useCampaigns(currentOrganization?.id);
+  
+  const { sendCampaign: dispatchCampaign } = useCampaignSender(currentOrganization?.id);
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -30,6 +33,7 @@ const CampaignHistory = () => {
       case 'prepared': return 'bg-yellow-100 text-yellow-800';
       case 'paused': return 'bg-orange-100 text-orange-800';
       case 'failed': return 'bg-red-100 text-red-800';
+      case 'draft': return 'bg-gray-100 text-gray-800';
       default: return 'bg-gray-100 text-gray-800';
     }
   };
@@ -39,27 +43,47 @@ const CampaignHistory = () => {
       switch (action) {
         case 'prepare':
           await prepareCampaign(campaignId);
+          toast.success('Campaign prepared successfully');
           break;
         case 'send':
-          await sendCampaign(campaignId);
+          // Use the restored sending mechanism
+          const campaign = campaigns.find(c => c.id === campaignId);
+          if (campaign) {
+            console.log('🚀 Dispatching campaign via Google Cloud Functions:', campaignId);
+            await dispatchCampaign({
+              from_name: campaign.from_name,
+              subject: campaign.subject,
+              recipients: campaign.recipients,
+              html_content: campaign.html_content,
+              text_content: campaign.text_content,
+              send_method: campaign.send_method,
+              config: campaign.config
+            });
+            toast.success('Campaign sent successfully!');
+          }
           break;
         case 'pause':
           await pauseCampaign(campaignId);
+          toast.success('Campaign paused');
           break;
         case 'resume':
           await resumeCampaign(campaignId);
+          toast.success('Campaign resumed');
           break;
         case 'duplicate':
           await duplicateCampaign(campaignId);
+          toast.success('Campaign duplicated');
           break;
         case 'delete':
           if (confirm('Are you sure you want to delete this campaign?')) {
             await deleteCampaign(campaignId);
+            toast.success('Campaign deleted');
           }
           break;
       }
     } catch (error) {
       console.error('Action failed:', error);
+      toast.error(`Action failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   };
 
@@ -144,8 +168,8 @@ const CampaignHistory = () => {
                         size="sm"
                         onClick={() => handleAction('send', campaign.id)}
                       >
-                        <Play className="w-4 h-4 mr-1" />
-                        Send
+                        <Zap className="w-4 h-4 mr-1" />
+                        Send Now
                       </Button>
                     )}
                     
