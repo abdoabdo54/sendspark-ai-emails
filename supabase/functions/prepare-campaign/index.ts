@@ -128,14 +128,13 @@ serve(async (req) => {
       })
     }
 
-    // Update campaign with prepared emails
+    // Update campaign with prepared emails (REMOVED updated_at field that doesn't exist)
     const { error: updateError } = await supabase
       .from('email_campaigns')
       .update({
         status: 'prepared',
         prepared_emails: preparedEmails,
-        total_recipients: recipients.length,
-        updated_at: new Date().toISOString()
+        total_recipients: recipients.length
       })
       .eq('id', campaignId)
 
