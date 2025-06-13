@@ -1,5 +1,5 @@
 
-import React from 'react';
+import React, { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -11,13 +11,13 @@ import { format } from 'date-fns';
 import { toast } from 'sonner';
 import CampaignAnalyticsDropdown from './CampaignAnalyticsDropdown';
 import CampaignEditDialog from './CampaignEditDialog';
+import CampaignPreparationDialog from './CampaignPreparationDialog';
 
 const CampaignHistory = () => {
   const { currentOrganization } = useSimpleOrganizations();
   const { 
     campaigns, 
     loading, 
-    prepareCampaign, 
     pauseCampaign, 
     resumeCampaign,
     duplicateCampaign,
@@ -25,6 +25,7 @@ const CampaignHistory = () => {
   } = useCampaigns(currentOrganization?.id);
   
   const { sendCampaign: dispatchCampaign } = useCampaignSender(currentOrganization?.id);
+  const [preparingCampaignId, setPreparingCampaignId] = useState<string | null>(null);
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -42,9 +43,8 @@ const CampaignHistory = () => {
     try {
       switch (action) {
         case 'prepare':
-          console.log('🔧 Preparing campaign:', campaignId);
-          await prepareCampaign(campaignId);
-          toast.success('Campaign prepared successfully');
+          console.log('🔧 Starting campaign preparation:', campaignId);
+          setPreparingCampaignId(campaignId);
           break;
         case 'send':
           const campaign = campaigns.find(c => c.id === campaignId);
@@ -59,7 +59,6 @@ const CampaignHistory = () => {
               customAccountCount: campaign.config?.customAccountCount
             });
             
-            // CRITICAL: Use the EXACT saved configuration from the database
             await dispatchCampaign({
               from_name: campaign.from_name,
               subject: campaign.subject,
@@ -67,10 +66,9 @@ const CampaignHistory = () => {
               html_content: campaign.html_content,
               text_content: campaign.text_content,
               send_method: campaign.send_method,
-              config: campaign.config // CRITICAL: This preserves ALL user selections
+              config: campaign.config
             });
             
-            // SINGLE SUCCESS TOAST - NO DOUBLE POPUPS
             toast.success('🚀 Campaign sent successfully!');
           } else {
             throw new Error('Campaign not found');
@@ -137,7 +135,6 @@ const CampaignHistory = () => {
                         Sent: {campaign.sent_count}
                       </p>
                       
-                      {/* FIXED: Show EXACT saved configuration with proper display */}
                       {campaign.config && (
                         <div className="text-xs text-slate-500 mt-2 space-y-1">
                           <div className="flex gap-4 flex-wrap">
@@ -161,12 +158,6 @@ const CampaignHistory = () => {
                               <span>📬 Custom Accounts: {campaign.config.customAccountCount || 'auto'}</span>
                             </div>
                           )}
-                          {campaign.config.rotation?.useFromNameRotation && (
-                            <div>🔄 FROM rotation: {campaign.config.rotation.fromNames?.length || 0} variants</div>
-                          )}
-                          {campaign.config.rotation?.useSubjectRotation && (
-                            <div>🔄 Subject rotation: {campaign.config.rotation.subjects?.length || 0} variants</div>
-                          )}
                           {campaign.config.testAfter?.enabled && (
                             <div>🎯 Test-After: {campaign.config.testAfter.email} every {campaign.config.testAfter.count} emails</div>
                           )}
@@ -187,15 +178,16 @@ const CampaignHistory = () => {
                     </div>
                   </div>
 
-                  {/* Action Buttons */}
+                  {/* Action Buttons Row */}
                   <div className="flex flex-wrap gap-2">
                     {campaign.status === 'draft' && (
                       <Button
                         size="sm"
                         variant="outline"
                         onClick={() => handleAction('prepare', campaign.id)}
+                        className="flex items-center gap-1"
                       >
-                        <Clock className="w-4 h-4 mr-1" />
+                        <Clock className="w-4 h-4" />
                         Prepare
                       </Button>
                     )}
@@ -204,9 +196,9 @@ const CampaignHistory = () => {
                       <Button
                         size="sm"
                         onClick={() => handleAction('send', campaign.id)}
-                        className="bg-green-600 hover:bg-green-700"
+                        className="bg-green-600 hover:bg-green-700 flex items-center gap-1"
                       >
-                        <Zap className="w-4 h-4 mr-1" />
+                        <Zap className="w-4 h-4" />
                         Send Now
                       </Button>
                     )}
@@ -216,8 +208,9 @@ const CampaignHistory = () => {
                         size="sm"
                         variant="outline"
                         onClick={() => handleAction('pause', campaign.id)}
+                        className="flex items-center gap-1"
                       >
-                        <Pause className="w-4 h-4 mr-1" />
+                        <Pause className="w-4 h-4" />
                         Pause
                       </Button>
                     )}
@@ -226,8 +219,9 @@ const CampaignHistory = () => {
                       <Button
                         size="sm"
                         onClick={() => handleAction('resume', campaign.id)}
+                        className="flex items-center gap-1"
                       >
-                        <Play className="w-4 h-4 mr-1" />
+                        <Play className="w-4 h-4" />
                         Resume
                       </Button>
                     )}
@@ -236,8 +230,8 @@ const CampaignHistory = () => {
                       <CampaignEditDialog 
                         campaign={campaign}
                         trigger={
-                          <Button size="sm" variant="outline">
-                            <Edit className="w-4 h-4 mr-1" />
+                          <Button size="sm" variant="outline" className="flex items-center gap-1">
+                            <Edit className="w-4 h-4" />
                             Edit
                           </Button>
                         }
@@ -248,8 +242,9 @@ const CampaignHistory = () => {
                       size="sm"
                       variant="outline"
                       onClick={() => handleAction('duplicate', campaign.id)}
+                      className="flex items-center gap-1"
                     >
-                      <Copy className="w-4 h-4 mr-1" />
+                      <Copy className="w-4 h-4" />
                       Duplicate
                     </Button>
 
@@ -258,8 +253,9 @@ const CampaignHistory = () => {
                         size="sm"
                         variant="outline"
                         onClick={() => handleAction('delete', campaign.id)}
+                        className="flex items-center gap-1"
                       >
-                        <Trash2 className="w-4 h-4 mr-1" />
+                        <Trash2 className="w-4 h-4" />
                         Delete
                       </Button>
                     )}
@@ -276,6 +272,15 @@ const CampaignHistory = () => {
           )}
         </CardContent>
       </Card>
+
+      {/* Preparation Dialog */}
+      {preparingCampaignId && (
+        <CampaignPreparationDialog
+          isOpen={true}
+          onClose={() => setPreparingCampaignId(null)}
+          campaignId={preparingCampaignId}
+        />
+      )}
     </div>
   );
 };
