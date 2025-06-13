@@ -10,7 +10,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Switch } from '@/components/ui/switch';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Rocket, ExternalLink, Calculator, Mail, Eye, Zap, Clock, RotateCcw, Target, Plus } from 'lucide-react';
+import { Rocket, ExternalLink, Calculator, Mail, Eye, Zap, Clock, RotateCcw, Target } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { useSimpleOrganizations } from '@/contexts/SimpleOrganizationContext';
 import { useCampaignSender } from '@/hooks/useCampaignSender';
@@ -60,11 +60,11 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
   const [trackingEnabled, setTrackingEnabled] = useState(false);
   const [htmlPreviewOpen, setHtmlPreviewOpen] = useState(false);
 
-  // SmartConfig state - upgraded to be dynamic
+  // SmartConfig state - made more dynamic
   const [smartConfig, setSmartConfig] = useState<any>(null);
+  const [customFunctionCount, setCustomFunctionCount] = useState<number>(0);
+  const [customAccountCount, setCustomAccountCount] = useState<number>(0);
   const [useCustomConfig, setUseCustomConfig] = useState(false);
-  const [customFunctionCount, setCustomFunctionCount] = useState<number>(1);
-  const [customAccountCount, setCustomAccountCount] = useState<number>(1);
   const [estimatedTime, setEstimatedTime] = useState('');
 
   // Prevent double submission
@@ -81,16 +81,6 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
     }
   }, [activeAccounts]);
 
-  // Initialize custom config with available resources
-  useEffect(() => {
-    if (functions.length > 0 && customFunctionCount === 1) {
-      setCustomFunctionCount(Math.min(functions.length, 3)); // Default to 3 or max available
-    }
-    if (selectedAccounts.length > 0 && customAccountCount === 1) {
-      setCustomAccountCount(Math.min(selectedAccounts.length, 2)); // Default to 2 or max selected
-    }
-  }, [functions.length, selectedAccounts.length]);
-
   // Load SmartConfig on mount
   useEffect(() => {
     try {
@@ -104,7 +94,7 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
     }
   }, []);
 
-  // Dynamic estimation calculation - UPGRADED
+  // Dynamic estimation calculation
   useEffect(() => {
     if (recipientCount > 0) {
       const functionsToUse = useCustomConfig ? customFunctionCount : functions.length;
@@ -113,33 +103,19 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
       if (functionsToUse > 0) {
         const emailsPerFunction = Math.ceil(recipientCount / functionsToUse);
         let estimatedSeconds;
-        let throughputPerSecond;
         
         switch (sendingMode) {
           case 'zero-delay':
-            throughputPerSecond = 1000; // Very fast
-            estimatedSeconds = Math.ceil(emailsPerFunction / throughputPerSecond);
+            estimatedSeconds = Math.ceil(emailsPerFunction / 1000);
             break;
           case 'fast':
-            throughputPerSecond = 200; // Fast
-            estimatedSeconds = Math.ceil(emailsPerFunction / throughputPerSecond);
+            estimatedSeconds = Math.ceil(emailsPerFunction / 200);
             break;
           default:
-            throughputPerSecond = 50; // Controlled
-            estimatedSeconds = Math.ceil(emailsPerFunction / throughputPerSecond);
+            estimatedSeconds = Math.ceil(emailsPerFunction / 50);
         }
         
-        // Format time nicely
-        let timeDisplay;
-        if (estimatedSeconds < 60) {
-          timeDisplay = `${estimatedSeconds}s`;
-        } else if (estimatedSeconds < 3600) {
-          timeDisplay = `${Math.ceil(estimatedSeconds / 60)}m`;
-        } else {
-          timeDisplay = `${Math.ceil(estimatedSeconds / 3600)}h`;
-        }
-        
-        setEstimatedTime(`~${timeDisplay} (${functionsToUse} functions, ${accountsToUse} accounts, ${emailsPerFunction} emails/function)`);
+        setEstimatedTime(`~${estimatedSeconds} seconds (${functionsToUse} functions, ${accountsToUse} accounts)`);
       } else {
         setEstimatedTime('');
       }
@@ -178,7 +154,6 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
   };
 
   const handleDeselectAllAccounts = () => {
-    console.log('BulkEmailComposer: handleDeselectAllAccounts called');
     setSelectedAccounts([]);
   };
 
@@ -289,30 +264,22 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
     setIsSubmitting(true);
 
     try {
-      // Prepare recipients list with test-after emails included if enabled
+      // Prepare recipients list with test-after emails included
       let finalRecipients = recipients.split(',').map(email => email.trim()).filter(email => email);
       
-      // Add test-after emails if enabled - OLD WAY AS REQUESTED
+      // Add test-after emails if enabled
       if (useTestAfter && testAfterEmail.trim()) {
-        const testEmail = testAfterEmail.trim();
-        const newRecipientsList = [];
-        
-        for (let i = 0; i < finalRecipients.length; i++) {
-          newRecipientsList.push(finalRecipients[i]);
-          
-          // Add test email every testAfterCount emails
-          if ((i + 1) % testAfterCount === 0) {
-            newRecipientsList.push(testEmail);
+        const testEmailsToAdd = Math.floor(finalRecipients.length / testAfterCount);
+        for (let i = 1; i <= testEmailsToAdd; i++) {
+          const insertIndex = i * testAfterCount;
+          if (insertIndex < finalRecipients.length) {
+            finalRecipients.splice(insertIndex, 0, testAfterEmail.trim());
           }
         }
-        
-        // If we didn't add a test email at the end and there are recipients
-        if (finalRecipients.length % testAfterCount !== 0 && finalRecipients.length > 0) {
-          newRecipientsList.push(testEmail);
+        // Add test email at the end if not already added
+        if (testEmailsToAdd === 0 || finalRecipients.length % testAfterCount === 0) {
+          finalRecipients.push(testAfterEmail.trim());
         }
-        
-        finalRecipients = newRecipientsList;
-        console.log(`Test-After: Injected ${Math.ceil(finalRecipients.length / (testAfterCount + 1))} test emails`);
       }
 
       const config = {
@@ -323,10 +290,10 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
         customFunctionCount: useCustomConfig ? customFunctionCount : functions.length,
         customAccountCount: useCustomConfig ? customAccountCount : selectedAccounts.length,
         rotation: {
-          useFromNameRotation: useFromRotation,
-          useSubjectRotation: useSubjectRotation,
-          fromNames: useFromRotation ? fromNameVariations.split(',').map(s => s.trim()) : [],
-          subjects: useSubjectRotation ? subjectVariations.split(',').map(s => s.trim()) : []
+          fromName: useFromRotation,
+          subject: useSubjectRotation,
+          fromNameVariations: useFromRotation ? fromNameVariations.split(',').map(s => s.trim()) : [],
+          subjectVariations: useSubjectRotation ? subjectVariations.split(',').map(s => s.trim()) : []
         },
         testAfter: {
           enabled: useTestAfter,
@@ -351,30 +318,20 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
         config
       };
 
-      console.log('📝 Creating campaign (draft status) with data:', campaignData);
+      console.log('🚀 Launching campaign with data:', campaignData);
       
-      // Call onSend which should now only CREATE the campaign as draft
+      // Call onSend which will handle the campaign dispatch
       await onSend(campaignData);
       
       toast({
-        title: "✅ Campaign Created",
-        description: `Campaign created successfully with ${finalRecipients.length} recipients. Go to Campaign History to prepare and send.`
+        title: "✅ Campaign Launched",
+        description: `Campaign dispatched successfully with ${finalRecipients.length} recipients`
       });
 
-      // Clear form after successful creation
-      setFromName('');
-      setSubject('');
-      setRecipients('');
-      setHtmlContent('');
-      setTextContent('');
-      setFromNameVariations('');
-      setSubjectVariations('');
-      setTestAfterEmail('');
-
     } catch (error: any) {
-      console.error('Campaign creation failed:', error);
+      console.error('Campaign launch failed:', error);
       toast({
-        title: "❌ Campaign Creation Failed",
+        title: "❌ Campaign Failed",
         description: error.message || 'Unknown error occurred',
         variant: "destructive"
       });
@@ -389,7 +346,7 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
         <CardHeader className="pb-4">
           <CardTitle className="flex items-center gap-2 text-lg">
             <Mail className="w-5 h-5" />
-            Create Email Campaign
+            Advanced Parallel Email Campaign
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -425,17 +382,17 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
               </Button>
             </div>
 
-            {/* Enhanced SmartConfig - UPGRADED */}
+            {/* Enhanced SmartConfig */}
             <Card>
               <CardHeader className="pb-3">
                 <CardTitle className="text-sm flex items-center gap-2">
                   <Calculator className="w-4 h-4" />
-                  Smart Configuration Engine
+                  Dynamic Configuration
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="flex items-center justify-between">
-                  <Label htmlFor="useCustomConfig">Use Manual Configuration</Label>
+                  <Label htmlFor="useCustomConfig">Use Custom Configuration</Label>
                   <Switch
                     id="useCustomConfig"
                     checked={useCustomConfig}
@@ -444,49 +401,32 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
                 </div>
                 
                 {useCustomConfig && (
-                  <div className="space-y-4 p-4 border rounded-lg bg-blue-50">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <Label htmlFor="customFunctionCount">Number of Functions to Use</Label>
-                        <Input
-                          id="customFunctionCount"
-                          type="number"
-                          min="1"
-                          max={functions.length}
-                          value={customFunctionCount}
-                          onChange={(e) => setCustomFunctionCount(parseInt(e.target.value) || 1)}
-                          placeholder={`Max: ${functions.length}`}
-                        />
-                        <p className="text-xs text-gray-600 mt-1">
-                          Available: {functions.length} functions
-                        </p>
-                      </div>
-                      
-                      <div>
-                        <Label htmlFor="customAccountCount">Number of Accounts to Use</Label>
-                        <Input
-                          id="customAccountCount"
-                          type="number"
-                          min="1"
-                          max={selectedAccounts.length || 1}
-                          value={customAccountCount}
-                          onChange={(e) => setCustomAccountCount(parseInt(e.target.value) || 1)}
-                          placeholder={`Max: ${selectedAccounts.length}`}
-                        />
-                        <p className="text-xs text-gray-600 mt-1">
-                          Selected: {selectedAccounts.length} accounts
-                        </p>
-                      </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <Label htmlFor="customFunctionCount">Number of Functions</Label>
+                      <Input
+                        id="customFunctionCount"
+                        type="number"
+                        min="1"
+                        max={functions.length}
+                        value={customFunctionCount}
+                        onChange={(e) => setCustomFunctionCount(parseInt(e.target.value) || 1)}
+                        placeholder={`Max: ${functions.length}`}
+                      />
                     </div>
                     
-                    {estimatedTime && (
-                      <Alert className="border-green-200 bg-green-50">
-                        <Zap className="h-4 w-4" />
-                        <AlertDescription className="text-green-800 text-sm">
-                          <strong>Estimated Performance:</strong> {estimatedTime}
-                        </AlertDescription>
-                      </Alert>
-                    )}
+                    <div>
+                      <Label htmlFor="customAccountCount">Number of Accounts</Label>
+                      <Input
+                        id="customAccountCount"
+                        type="number"
+                        min="1"
+                        max={selectedAccounts.length}
+                        value={customAccountCount}
+                        onChange={(e) => setCustomAccountCount(parseInt(e.target.value) || 1)}
+                        placeholder={`Max: ${selectedAccounts.length}`}
+                      />
+                    </div>
                   </div>
                 )}
 
@@ -739,12 +679,12 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
               </CardContent>
             </Card>
 
-            {/* Test-After Configuration - OLD WAY */}
+            {/* Test-After Configuration */}
             <Card>
               <CardHeader className="pb-3">
                 <CardTitle className="text-sm flex items-center gap-2">
                   <Target className="w-4 h-4" />
-                  Test-After Configuration (Auto-Inject Method)
+                  Test-After Configuration
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -791,7 +731,7 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
                   <Alert className="border-blue-200 bg-blue-50">
                     <Target className="h-4 w-4" />
                     <AlertDescription className="text-blue-800 text-xs">
-                      Test emails will be automatically injected into the recipient list every {testAfterCount} emails. This uses the old reliable method of direct list injection.
+                      Test emails will be automatically injected into the recipient list every {testAfterCount} emails to monitor deliverability.
                     </AlertDescription>
                   </Alert>
                 )}
@@ -826,8 +766,8 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
               <AlertDescription>
                 {hasAccounts && hasFunctions ? (
                   <span className="text-green-800 text-sm">
-                    <strong>✅ Ready to Create Campaign</strong>
-                    {estimatedTime && ` • Estimated send time: ${estimatedTime}`}
+                    <strong>✅ Ready to Launch</strong>
+                    {estimatedTime && ` • Estimated time: ${estimatedTime} (${dispatchMethod} mode)`}
                   </span>
                 ) : (
                   <div className="text-yellow-800 text-sm">
@@ -848,18 +788,14 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
               size="lg"
               disabled={!hasFunctions || !hasAccounts || isSubmitting}
             >
-              <Plus className="w-4 h-4 mr-2" />
-              {isSubmitting ? 'Creating Campaign...' : `Create Campaign (Draft)`}
-              {recipientCount > 0 && !isSubmitting && (
+              <Rocket className="w-4 h-4 mr-2" />
+              {isSubmitting ? 'Launching...' : `Launch ${dispatchMethod.charAt(0).toUpperCase() + dispatchMethod.slice(1)} Campaign`}
+              {estimatedTime && !isSubmitting && (
                 <Badge variant="secondary" className="ml-2 text-xs">
-                  {recipientCount} recipients
+                  {estimatedTime.split('(')[0].trim()}
                 </Badge>
               )}
             </Button>
-            
-            <div className="text-center text-sm text-gray-600">
-              After creating, go to <strong>Campaign History</strong> to prepare and send your campaign.
-            </div>
           </form>
         </CardContent>
       </Card>
