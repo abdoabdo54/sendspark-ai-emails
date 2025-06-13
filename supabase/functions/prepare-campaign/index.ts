@@ -125,19 +125,42 @@ serve(async (req) => {
       )
     }
 
-    // Get rotation configuration
+    // FIXED: Parse rotation configuration using line-by-line format
     const config = campaign.config || {}
-    const fromNames = config.rotation?.useFromNameRotation && config.rotation.fromNames?.length > 0 
-      ? config.rotation.fromNames 
-      : [campaign.from_name]
     
-    const subjects = config.rotation?.useSubjectRotation && config.rotation.subjects?.length > 0 
-      ? config.rotation.subjects 
-      : [campaign.subject]
+    // Parse from names - each line is a separate from name
+    let fromNames = [campaign.from_name]; // Default fallback
+    if (config.rotation?.useFromNameRotation && config.rotation.fromNames) {
+      const fromNamesText = config.rotation.fromNames;
+      if (typeof fromNamesText === 'string' && fromNamesText.trim()) {
+        fromNames = fromNamesText
+          .split('\n')
+          .map(name => name.trim())
+          .filter(name => name.length > 0);
+      } else if (Array.isArray(fromNamesText) && fromNamesText.length > 0) {
+        fromNames = fromNamesText;
+      }
+    }
+    
+    // Parse subjects - each line is a separate subject
+    let subjects = [campaign.subject]; // Default fallback
+    if (config.rotation?.useSubjectRotation && config.rotation.subjects) {
+      const subjectsText = config.rotation.subjects;
+      if (typeof subjectsText === 'string' && subjectsText.trim()) {
+        subjects = subjectsText
+          .split('\n')
+          .map(subject => subject.trim())
+          .filter(subject => subject.length > 0);
+      } else if (Array.isArray(subjectsText) && subjectsText.length > 0) {
+        subjects = subjectsText;
+      }
+    }
 
     console.log('🔄 Using rotation:', {
       fromNamesCount: fromNames.length,
-      subjectsCount: subjects.length
+      subjectsCount: subjects.length,
+      fromNames: fromNames.slice(0, 3), // Show first 3 for debugging
+      subjects: subjects.slice(0, 3)    // Show first 3 for debugging
     })
 
     // Add processing delay based on list size
@@ -148,8 +171,9 @@ serve(async (req) => {
       await new Promise(resolve => setTimeout(resolve, processingDelay));
     }
 
-    // FIXED: Create proper prepared emails array in the format expected by useCampaignSender
+    // FIXED: Create proper prepared emails array with PERFECT ROTATION
     const preparedEmails = recipients.map((email, index) => {
+      // Perfect rotation: each email gets next from name and subject in sequence
       const fromNameIndex = index % fromNames.length;
       const subjectIndex = index % subjects.length;
       
@@ -159,19 +183,20 @@ serve(async (req) => {
         subject: subjects[subjectIndex],
         html_content: campaign.html_content || '',
         text_content: campaign.text_content || '',
-        prepared_at: new Date().toISOString()
+        prepared_at: new Date().toISOString(),
+        rotation_index: index // Track rotation for debugging
       };
     });
 
-    console.log(`✅ PREPARATION COMPLETE: ${recipients.length} emails processed`);
-    console.log(`📧 Sample prepared email:`, preparedEmails[0]);
+    console.log(`✅ PREPARATION COMPLETE: ${recipients.length} emails processed with perfect rotation`);
+    console.log(`📧 Sample prepared emails:`, preparedEmails.slice(0, 3));
 
     // Update campaign with prepared emails array
     const { error: updateError } = await supabase
       .from('email_campaigns')
       .update({
         status: 'prepared',
-        prepared_emails: preparedEmails, // Store the actual prepared emails array
+        prepared_emails: preparedEmails,
         total_recipients: recipients.length,
         error_message: null
       })
@@ -197,14 +222,18 @@ serve(async (req) => {
       )
     }
 
-    console.log(`🎉 SUCCESS: Campaign prepared with ${recipients.length} emails`)
+    console.log(`🎉 SUCCESS: Campaign prepared with ${recipients.length} emails and perfect rotation`)
 
     return new Response(
       JSON.stringify({ 
         success: true,
         message: `Campaign prepared successfully with ${recipients.length} emails`,
         emailCount: recipients.length,
-        preparationComplete: true
+        preparationComplete: true,
+        rotationInfo: {
+          fromNamesUsed: fromNames.length,
+          subjectsUsed: subjects.length
+        }
       }),
       { 
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }

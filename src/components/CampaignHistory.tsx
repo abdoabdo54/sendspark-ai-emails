@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -28,27 +29,25 @@ const CampaignHistory = () => {
   const [preparingCampaignId, setPreparingCampaignId] = useState<string | null>(null);
   const [sendingCampaigns, setSendingCampaigns] = useState<Set<string>>(new Set());
 
-  // Smart refresh: Only refresh when there are active operations
+  // FIXED: Smart refresh - ONLY during preparation, NOT during sending
   useEffect(() => {
-    const activeCampaigns = campaigns.filter(c => 
-      c.status === 'sending' || c.status === 'preparing'
-    );
+    const preparingCampaigns = campaigns.filter(c => c.status === 'preparing');
     
-    // Only set up interval if there are active operations
-    if (activeCampaigns.length > 0 || preparingCampaignId || sendingCampaigns.size > 0) {
-      console.log('🔄 Auto-refresh active: monitoring', activeCampaigns.length, 'campaigns');
+    // Only auto-refresh during preparation phase
+    if (preparingCampaigns.length > 0 || preparingCampaignId) {
+      console.log('🔄 Auto-refresh PREPARATION ONLY: monitoring', preparingCampaigns.length, 'preparing campaigns');
       const interval = setInterval(() => {
         refetch();
-      }, 3000);
+      }, 2000); // Faster refresh during preparation
 
       return () => {
-        console.log('🛑 Auto-refresh stopped');
+        console.log('🛑 Auto-refresh stopped - preparation complete');
         clearInterval(interval);
       };
     } else {
-      console.log('✅ No active operations, auto-refresh disabled');
+      console.log('✅ No preparation active, auto-refresh disabled');
     }
-  }, [campaigns, preparingCampaignId, sendingCampaigns.size, refetch]);
+  }, [campaigns.filter(c => c.status === 'preparing').length, preparingCampaignId, refetch]);
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -72,13 +71,13 @@ const CampaignHistory = () => {
         case 'send':
           const campaign = campaigns.find(c => c.id === campaignId);
           if (campaign) {
-            console.log('🚀 CRITICAL: Dispatching campaign with ZERO DELAY mode:', {
+            console.log('🚀 CRITICAL: Dispatching campaign with PERFECT DISTRIBUTION:', {
               id: campaignId,
               sendingMode: campaign.config?.sendingMode,
               selectedAccounts: campaign.config?.selectedAccounts?.length || 0
             });
             
-            // Mark as sending for refresh tracking
+            // Mark as sending for UI tracking
             setSendingCampaigns(prev => new Set([...prev, campaignId]));
             
             await dispatchCampaign({
@@ -91,9 +90,9 @@ const CampaignHistory = () => {
               config: campaign.config
             });
             
-            toast.success('🚀 Campaign sent successfully!');
+            toast.success('🚀 Campaign sent successfully with perfect distribution!');
             
-            // Remove from sending tracking and refresh
+            // Remove from sending tracking and refresh once
             setSendingCampaigns(prev => {
               const newSet = new Set(prev);
               newSet.delete(campaignId);
@@ -190,13 +189,13 @@ const CampaignHistory = () => {
                           <div className="flex gap-4 flex-wrap">
                             <span>📧 Accounts: {campaign.config.selectedAccounts?.length || 0} selected</span>
                             <span>⚡ Mode: {
-                              campaign.config.sendingMode === 'zero-delay' ? '🚀 ZERO DELAY (MAX SPEED)' :
+                              campaign.config.sendingMode === 'zero-delay' ? '🚀 ZERO DELAY (PERFECT SPEED)' :
                               campaign.config.sendingMode === 'fast' ? 'Fast (0.5s delay)' :
                               campaign.config.sendingMode === 'controlled' ? 'Controlled (2s delay)' :
                               campaign.config.sendingMode || 'controlled'
                             }</span>
                             <span>🔄 Method: {
-                              campaign.config.dispatchMethod === 'parallel' ? 'Parallel (All functions)' :
+                              campaign.config.dispatchMethod === 'parallel' ? 'Parallel (Perfect Distribution)' :
                               campaign.config.dispatchMethod === 'round-robin' ? 'Round Robin (Rotate accounts)' :
                               campaign.config.dispatchMethod === 'sequential' ? 'Sequential' :
                               campaign.config.dispatchMethod || 'parallel'
@@ -212,7 +211,7 @@ const CampaignHistory = () => {
                             <div>🎯 Test-After: {campaign.config.testAfter.email} every {campaign.config.testAfter.count} emails</div>
                           )}
                           {campaign.config.sendingMode === 'zero-delay' && (
-                            <div className="text-orange-600 font-medium">🚀 ZERO DELAY: All rate limits bypassed for maximum speed!</div>
+                            <div className="text-orange-600 font-medium">🚀 ZERO DELAY: Perfect distribution with maximum speed!</div>
                           )}
                         </div>
                       )}
@@ -252,7 +251,7 @@ const CampaignHistory = () => {
                         className="bg-green-600 hover:bg-green-700 flex items-center gap-1"
                       >
                         <Zap className="w-4 h-4" />
-                        {campaign.config?.sendingMode === 'zero-delay' ? '🚀 SEND MAX SPEED' : 'Send Now'}
+                        {campaign.config?.sendingMode === 'zero-delay' ? '🚀 SEND PERFECT SPEED' : 'Send Now'}
                       </Button>
                     )}
                     

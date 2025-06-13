@@ -1,4 +1,3 @@
-
 import { useGcfFunctions } from './useGcfFunctions';
 import { useEmailAccounts } from './useEmailAccounts';
 import { supabase } from '@/integrations/supabase/client';
@@ -20,6 +19,7 @@ interface PreparedEmail {
   html_content: string;
   text_content: string;
   prepared_at: string;
+  rotation_index?: number;
 }
 
 // Type guard function to check if Json array contains PreparedEmail objects
@@ -63,6 +63,7 @@ export const useCampaignSender = (organizationId?: string) => {
     };
   };
 
+  // FIXED: Perfect distribution algorithm for functions and accounts
   const calculateCampaignSlicing = (preparedEmails: PreparedEmail[], config: any) => {
     const { functions: enabledFunctions } = getAvailableResources();
     
@@ -77,33 +78,48 @@ export const useCampaignSender = (organizationId?: string) => {
       ? Math.min(config.customFunctionCount, enabledFunctions.length)
       : enabledFunctions.length;
     
-    console.log(`📊 DISTRIBUTION: Using ${functionsToUse} functions for ${totalEmails} emails`);
+    console.log(`📊 PERFECT DISTRIBUTION: Using ${functionsToUse} functions for ${totalEmails} emails`);
     
     // Ensure minimum 1 email per function, otherwise reduce function count
     const actualFunctionsToUse = Math.min(functionsToUse, totalEmails);
-    const emailsPerFunction = Math.ceil(totalEmails / actualFunctionsToUse);
     
-    console.log(`📈 FINAL: ${totalEmails} emails distributed across ${actualFunctionsToUse} functions (${emailsPerFunction} each)`);
+    // FIXED: Perfect distribution - calculate exact emails per function
+    const baseEmailsPerFunction = Math.floor(totalEmails / actualFunctionsToUse);
+    const remainderEmails = totalEmails % actualFunctionsToUse;
     
-    // Create slices for the actual number of functions that will be used
+    console.log(`📈 PERFECT SPLIT: ${totalEmails} emails → ${baseEmailsPerFunction} base + ${remainderEmails} remainder across ${actualFunctionsToUse} functions`);
+    
+    // Create slices with perfect distribution
     const functionsToUseList = enabledFunctions.slice(0, actualFunctionsToUse);
+    let currentIndex = 0;
     
-    const slices = functionsToUseList.map((func, index) => {
-      const skip = index * emailsPerFunction;
-      const limit = Math.min(emailsPerFunction, totalEmails - skip);
+    const slices = functionsToUseList.map((func, functionIndex) => {
+      // First `remainderEmails` functions get 1 extra email
+      const emailsForThisFunction = baseEmailsPerFunction + (functionIndex < remainderEmails ? 1 : 0);
       
-      return {
+      const slice = {
         functionId: func.id,
         functionUrl: func.url,
         functionName: func.name,
-        skip,
-        limit,
-        recipients: preparedEmails.slice(skip, skip + limit)
+        skip: currentIndex,
+        limit: emailsForThisFunction,
+        recipients: preparedEmails.slice(currentIndex, currentIndex + emailsForThisFunction)
       };
+      
+      currentIndex += emailsForThisFunction;
+      return slice;
     }).filter(slice => slice.limit > 0);
 
-    console.log(`🎯 FINAL DISTRIBUTION: ${slices.length} functions will be used:`, 
+    console.log(`🎯 PERFECT DISTRIBUTION COMPLETE:`, 
       slices.map(s => `${s.functionName}(${s.limit} emails)`));
+
+    // Verify perfect distribution
+    const totalDistributed = slices.reduce((sum, slice) => sum + slice.limit, 0);
+    if (totalDistributed !== totalEmails) {
+      console.error(`❌ DISTRIBUTION ERROR: ${totalDistributed} ≠ ${totalEmails}`);
+    } else {
+      console.log(`✅ PERFECT: ${totalDistributed} emails distributed perfectly`);
+    }
 
     return slices;
   };
@@ -134,8 +150,6 @@ export const useCampaignSender = (organizationId?: string) => {
 
       const campaign = existingCampaigns[0];
       console.log('📊 Found prepared campaign with ID:', campaign.id);
-      console.log('📧 Prepared emails data type:', Array.isArray(campaign.prepared_emails) ? 'Array' : typeof campaign.prepared_emails);
-      console.log('📧 Prepared emails length:', Array.isArray(campaign.prepared_emails) ? campaign.prepared_emails.length : 'Not an array');
 
       // FIXED: Better validation of prepared emails
       if (!campaign.prepared_emails || !Array.isArray(campaign.prepared_emails) || campaign.prepared_emails.length === 0) {
@@ -176,9 +190,9 @@ export const useCampaignSender = (organizationId?: string) => {
         throw new Error('No valid accounts selected');
       }
 
-      // Calculate proper slicing strategy using prepared emails
+      // FIXED: Perfect distribution using improved algorithm
       const slices = calculateCampaignSlicing(preparedEmails, campaignData.config);
-      console.log(`📈 Campaign distributed across ${slices.length} functions`);
+      console.log(`📈 Campaign perfectly distributed across ${slices.length} functions`);
 
       // Use custom account count if specified
       const accountsToUse = campaignData.config.useCustomConfig && campaignData.config.customAccountCount
@@ -189,17 +203,19 @@ export const useCampaignSender = (organizationId?: string) => {
       
       console.log(`📧 Using ${accountsForSending.length} accounts:`, accountsForSending.map(a => a.name));
 
-      // Configure accounts based on sending mode (ZERO DELAY = NO LIMITS)
+      // FIXED: Configure accounts for ZERO DELAY (remove ALL rate limits)
       const gcfAccounts = accountsForSending.map(account => {
         const cleanConfig = { ...account.config };
         
         if (campaignData.config.sendingMode === 'zero-delay') {
-          // ZERO DELAY = NO LIMITS AT ALL
+          // ZERO DELAY = REMOVE ALL LIMITATIONS
           delete cleanConfig.emails_per_hour;
           delete cleanConfig.emails_per_second;
           delete cleanConfig.delay_in_seconds;
           delete cleanConfig.rate_limit_enabled;
+          delete cleanConfig.rateLimit;
           cleanConfig.zero_delay_mode = true;
+          cleanConfig.bypass_all_limits = true;
           console.log(`🚀 ZERO DELAY: Removed ALL rate limits for ${account.name}`);
         } else if (campaignData.config.sendingMode === 'fast') {
           // FAST = Minimal delays
@@ -224,32 +240,29 @@ export const useCampaignSender = (organizationId?: string) => {
         };
       });
 
-      // Dispatch to ALL selected functions with prepared data
+      // FIXED: Dispatch to ALL functions with perfect data distribution
       const dispatchPromises = slices.map(async (slice, index) => {
-        // IMPORTANT: Convert prepared emails to simple recipient strings for Google Cloud Function
-        const recipientStrings = slice.recipients.map(email => email.to);
-        
-        // Use the FIRST prepared email's data for the campaign (since all prepared emails share same base content)
-        const firstEmail = slice.recipients[0];
-        
+        // Keep prepared email structure (with rotation) for perfect sending
         const payload = {
           campaignId: campaign.id,
           slice: {
             skip: slice.skip,
             limit: slice.limit,
-            recipients: recipientStrings // Send simple strings, not objects
+            recipients: slice.recipients.map(email => email.to), // Extract recipients
+            preparedEmails: slice.recipients // Send full prepared data
           },
           campaignData: {
-            from_name: firstEmail.from_name, // Use prepared from_name
-            subject: firstEmail.subject,     // Use prepared subject  
-            html_content: firstEmail.html_content,
-            text_content: firstEmail.text_content,
+            from_name: campaignData.from_name,
+            subject: campaignData.subject,
+            html_content: campaignData.html_content,
+            text_content: campaignData.text_content,
             config: {
               ...campaignData.config,
               sendingMode: campaignData.config.sendingMode,
               dispatchMethod: campaignData.config.dispatchMethod,
               zeroDelayMode: campaignData.config.sendingMode === 'zero-delay',
-              bypassRateLimits: campaignData.config.sendingMode === 'zero-delay'
+              bypassRateLimits: campaignData.config.sendingMode === 'zero-delay',
+              forceMaxSpeed: campaignData.config.sendingMode === 'zero-delay'
             }
           },
           accounts: gcfAccounts,
@@ -257,7 +270,6 @@ export const useCampaignSender = (organizationId?: string) => {
         };
 
         console.log(`🎯 DISPATCHING to ${slice.functionName}: ${slice.limit} emails with ${campaignData.config.sendingMode} mode`);
-        console.log(`📧 SAMPLE DATA: FROM "${firstEmail.from_name}" | SUBJECT "${firstEmail.subject}"`);
 
         try {
           const response = await fetch(slice.functionUrl, {
