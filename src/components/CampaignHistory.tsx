@@ -5,10 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Play, Pause, Copy, Trash2, Edit, Clock } from 'lucide-react';
 import { useCampaigns } from '@/hooks/useCampaigns';
-import { useCampaignSender } from '@/hooks/useCampaignSender';
 import { useSimpleOrganizations } from '@/contexts/SimpleOrganizationContext';
 import { format } from 'date-fns';
-import { toast } from 'sonner';
 import CampaignAnalyticsDropdown from './CampaignAnalyticsDropdown';
 import CampaignEditDialog from './CampaignEditDialog';
 
@@ -17,14 +15,13 @@ const CampaignHistory = () => {
   const { 
     campaigns, 
     loading, 
-    updateCampaign,
+    prepareCampaign, 
+    sendCampaign, 
     pauseCampaign, 
     resumeCampaign,
     duplicateCampaign,
     deleteCampaign 
   } = useCampaigns(currentOrganization?.id);
-  
-  const { sendCampaign: sendCampaignViaGCF } = useCampaignSender(currentOrganization?.id);
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -37,75 +34,14 @@ const CampaignHistory = () => {
     }
   };
 
-  const handlePrepare = async (campaignId: string) => {
-    try {
-      await updateCampaign(campaignId, { status: 'prepared' });
-      toast.success('Campaign prepared successfully');
-    } catch (error) {
-      console.error('Error preparing campaign:', error);
-      toast.error('Failed to prepare campaign');
-    }
-  };
-
-  const handleSend = async (campaignId: string) => {
-    try {
-      const campaign = campaigns.find(c => c.id === campaignId);
-      if (!campaign) {
-        toast.error('Campaign not found');
-        return;
-      }
-
-      // Update status to sending
-      await updateCampaign(campaignId, { 
-        status: 'sending',
-        sent_at: new Date().toISOString()
-      });
-
-      // Send via Google Cloud Functions
-      const result = await sendCampaignViaGCF({
-        from_name: campaign.from_name,
-        subject: campaign.subject,
-        recipients: campaign.recipients,
-        html_content: campaign.html_content,
-        text_content: campaign.text_content,
-        send_method: campaign.send_method,
-        config: campaign.config || {}
-      });
-
-      // Update campaign based on results
-      const finalStatus = result.failed === 0 ? 'sent' : (result.successful > 0 ? 'sent' : 'failed');
-      
-      await updateCampaign(campaignId, {
-        status: finalStatus,
-        sent_count: campaign.total_recipients,
-        completed_at: new Date().toISOString(),
-        ...(result.failed > 0 && { error_message: `${result.failed} out of ${result.totalSlices} functions failed` })
-      });
-
-      if (result.successful > 0) {
-        toast.success(`Campaign sent successfully! ${result.successful}/${result.totalSlices} functions completed.`);
-      } else {
-        toast.error(`Campaign failed: All ${result.failed} functions encountered errors.`);
-      }
-
-    } catch (error: any) {
-      console.error('Error sending campaign:', error);
-      await updateCampaign(campaignId, { 
-        status: 'failed',
-        error_message: error.message
-      });
-      toast.error(`Failed to send campaign: ${error.message}`);
-    }
-  };
-
   const handleAction = async (action: string, campaignId: string) => {
     try {
       switch (action) {
         case 'prepare':
-          await handlePrepare(campaignId);
+          await prepareCampaign(campaignId);
           break;
         case 'send':
-          await handleSend(campaignId);
+          await sendCampaign(campaignId);
           break;
         case 'pause':
           await pauseCampaign(campaignId);
@@ -167,11 +103,11 @@ const CampaignHistory = () => {
                       {campaign.config?.selectedAccounts && (
                         <div className="text-xs text-slate-500 mt-2">
                           <div>Accounts: {campaign.config.selectedAccounts.length} selected</div>
-                          {campaign.config.rotation?.fromName && (
-                            <div>FROM rotation: {campaign.config.rotation.fromNameVariations?.length || 0} variants</div>
+                          {campaign.config.rotation?.useFromNameRotation && (
+                            <div>FROM rotation: {campaign.config.rotation.fromNames?.length || 0} variants</div>
                           )}
-                          {campaign.config.rotation?.subject && (
-                            <div>Subject rotation: {campaign.config.rotation.subjectVariations?.length || 0} variants</div>
+                          {campaign.config.rotation?.useSubjectRotation && (
+                            <div>Subject rotation: {campaign.config.rotation.subjects?.length || 0} variants</div>
                           )}
                         </div>
                       )}

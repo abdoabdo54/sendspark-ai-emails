@@ -318,20 +318,20 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
         config
       };
 
-      console.log('🚀 Creating campaign with data:', campaignData);
+      console.log('🚀 Launching campaign with data:', campaignData);
       
-      // Call onSend which will create the campaign in draft status
+      // Call onSend which will handle the campaign dispatch
       await onSend(campaignData);
       
       toast({
-        title: "✅ Campaign Created",
-        description: `Campaign created successfully with ${finalRecipients.length} recipients. Go to Campaign History to prepare and send.`
+        title: "✅ Campaign Launched",
+        description: `Campaign dispatched successfully with ${finalRecipients.length} recipients`
       });
 
     } catch (error: any) {
-      console.error('Campaign creation failed:', error);
+      console.error('Campaign launch failed:', error);
       toast({
-        title: "❌ Campaign Creation Failed",
+        title: "❌ Campaign Failed",
         description: error.message || 'Unknown error occurred',
         variant: "destructive"
       });
@@ -788,18 +788,14 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
               size="lg"
               disabled={!hasFunctions || !hasAccounts || isSubmitting}
             >
-              <Mail className="w-4 h-4 mr-2" />
-              {isSubmitting ? 'Creating Campaign...' : 'Create Campaign'}
+              <Rocket className="w-4 h-4 mr-2" />
+              {isSubmitting ? 'Launching...' : `Launch ${dispatchMethod.charAt(0).toUpperCase() + dispatchMethod.slice(1)} Campaign`}
               {estimatedTime && !isSubmitting && (
                 <Badge variant="secondary" className="ml-2 text-xs">
-                  Draft Mode
+                  {estimatedTime.split('(')[0].trim()}
                 </Badge>
               )}
             </Button>
-            
-            <div className="text-center text-sm text-gray-600">
-              Campaign will be created in draft status. Use Campaign History to prepare and send.
-            </div>
           </form>
         </CardContent>
       </Card>

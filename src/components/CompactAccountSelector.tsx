@@ -118,7 +118,6 @@ const CompactAccountSelector: React.FC<CompactAccountSelectorProps> = ({
                   className="flex-1"
                   onClick={handleDeselectAll}
                   type="button"
-                  disabled={selectedCount === 0}
                 >
                   <X className="w-3 h-3 mr-1" />
                   Deselect All

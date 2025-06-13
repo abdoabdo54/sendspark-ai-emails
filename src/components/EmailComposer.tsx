@@ -5,7 +5,7 @@ import SingleEmailComposer from './SingleEmailComposer';
 import CampaignAnalytics from './CampaignAnalytics';
 import CampaignTesting from './CampaignTesting';
 import AccountManager from './AccountManager';
-import { useCampaigns } from '@/hooks/useCampaigns';
+import { useCampaignSender } from '@/hooks/useCampaignSender';
 import { useSimpleOrganizations } from '@/contexts/SimpleOrganizationContext';
 import { toast } from 'sonner';
 
@@ -15,7 +15,7 @@ interface EmailComposerProps {
 
 const EmailComposer = ({ activeTab = 'bulk' }: EmailComposerProps) => {
   const { currentOrganization } = useSimpleOrganizations();
-  const { createCampaign } = useCampaigns(currentOrganization?.id);
+  const { sendCampaign, hasFunctions, hasAccounts } = useCampaignSender(currentOrganization?.id);
   const [isProcessing, setIsProcessing] = useState(false);
 
   const handleBulkEmailSend = async (campaignData: any) => {
@@ -29,7 +29,17 @@ const EmailComposer = ({ activeTab = 'bulk' }: EmailComposerProps) => {
       return;
     }
 
-    // Basic validation
+    // Validation checks
+    if (!hasFunctions) {
+      toast.error('No Google Cloud Functions configured. Please add at least one function in the Function Manager.');
+      return;
+    }
+
+    if (!hasAccounts) {
+      toast.error('No active email accounts found. Please configure email accounts first.');
+      return;
+    }
+
     if (!campaignData.config?.selectedAccounts?.length) {
       toast.error('No email accounts selected. Please select at least one account.');
       return;
@@ -38,9 +48,9 @@ const EmailComposer = ({ activeTab = 'bulk' }: EmailComposerProps) => {
     setIsProcessing(true);
 
     try {
-      console.log('Creating campaign with data:', campaignData);
+      console.log('Creating and sending campaign with data:', campaignData);
       
-      // Parse recipients to get count
+      // Parse recipients to validate
       const recipients = campaignData.recipients
         .split(',')
         .map((email: string) => email.trim())
@@ -51,27 +61,30 @@ const EmailComposer = ({ activeTab = 'bulk' }: EmailComposerProps) => {
         return;
       }
 
-      // Create the campaign in draft status
-      const campaign = await createCampaign({
+      toast.info(`Starting campaign to ${recipients.length} recipients...`);
+      
+      // Send the campaign using Google Cloud Functions
+      const result = await sendCampaign({
         from_name: campaignData.from_name,
         subject: campaignData.subject,
         recipients: campaignData.recipients,
         html_content: campaignData.html_content || '',
         text_content: campaignData.text_content || '',
         send_method: campaignData.send_method || 'bulk',
-        status: 'draft',
-        sent_count: 0,
-        total_recipients: recipients.length,
         config: campaignData.config || {}
       });
 
-      if (campaign) {
-        toast.success(`Campaign created successfully with ${recipients.length} recipients!`);
+      console.log('Campaign dispatch result:', result);
+      
+      if (result.successful > 0) {
+        toast.success(`Campaign dispatched successfully! ${result.successful}/${result.totalSlices} functions completed.`);
+      } else {
+        toast.error(`Campaign failed: All ${result.failed} functions encountered errors.`);
       }
 
     } catch (error) {
-      console.error('Error creating campaign:', error);
-      toast.error(`Failed to create campaign: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      console.error('Error sending campaign:', error);
+      toast.error(`Campaign failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
       setIsProcessing(false);
     }
@@ -84,27 +97,11 @@ const EmailComposer = ({ activeTab = 'bulk' }: EmailComposerProps) => {
     }
 
     try {
-      console.log('Creating single email campaign:', emailData);
-      
-      const campaign = await createCampaign({
-        from_name: emailData.from_name,
-        subject: emailData.subject,
-        recipients: emailData.recipients,
-        html_content: emailData.html_content || '',
-        text_content: emailData.text_content || '',
-        send_method: 'single',
-        status: 'draft',
-        sent_count: 0,
-        total_recipients: 1,
-        config: emailData.config || {}
-      });
-
-      if (campaign) {
-        toast.success('Single email campaign created successfully!');
-      }
+      console.log('Sending single email:', emailData);
+      toast.info('Single email functionality not yet implemented for Google Cloud Functions');
     } catch (error) {
-      console.error('Error creating single email campaign:', error);
-      toast.error('Failed to create single email campaign');
+      console.error('Error sending single email:', error);
+      toast.error('Failed to send single email');
     }
   };
 
