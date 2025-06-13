@@ -1,3 +1,4 @@
+
 import { useGcfFunctions } from './useGcfFunctions';
 import { useEmailAccounts } from './useEmailAccounts';
 import { supabase } from '@/integrations/supabase/client';
@@ -63,7 +64,7 @@ export const useCampaignSender = (organizationId?: string) => {
     };
   };
 
-  // FIXED: Perfect distribution algorithm for functions and accounts
+  // FIXED: Perfect distribution algorithm for functions AND accounts
   const calculateCampaignSlicing = (preparedEmails: PreparedEmail[], config: any) => {
     const { functions: enabledFunctions } = getAvailableResources();
     
@@ -203,7 +204,7 @@ export const useCampaignSender = (organizationId?: string) => {
       
       console.log(`📧 Using ${accountsForSending.length} accounts:`, accountsForSending.map(a => a.name));
 
-      // FIXED: Configure accounts for ZERO DELAY (remove ALL rate limits)
+      // FIXED: Configure accounts for ZERO DELAY and PERFECT ROTATION
       const gcfAccounts = accountsForSending.map(account => {
         const cleanConfig = { ...account.config };
         
@@ -240,16 +241,16 @@ export const useCampaignSender = (organizationId?: string) => {
         };
       });
 
-      // FIXED: Dispatch to ALL functions with perfect data distribution
+      // FIXED: Dispatch to ALL functions with perfect data distribution AND account rotation
       const dispatchPromises = slices.map(async (slice, index) => {
-        // Keep prepared email structure (with rotation) for perfect sending
+        // CRITICAL FIX: Ensure each slice gets the EXACT prepared emails with rotation
         const payload = {
           campaignId: campaign.id,
           slice: {
             skip: slice.skip,
             limit: slice.limit,
             recipients: slice.recipients.map(email => email.to), // Extract recipients
-            preparedEmails: slice.recipients // Send full prepared data
+            preparedEmails: slice.recipients // Send full prepared data with rotation
           },
           campaignData: {
             from_name: campaignData.from_name,
@@ -262,14 +263,15 @@ export const useCampaignSender = (organizationId?: string) => {
               dispatchMethod: campaignData.config.dispatchMethod,
               zeroDelayMode: campaignData.config.sendingMode === 'zero-delay',
               bypassRateLimits: campaignData.config.sendingMode === 'zero-delay',
-              forceMaxSpeed: campaignData.config.sendingMode === 'zero-delay'
+              forceMaxSpeed: campaignData.config.sendingMode === 'zero-delay',
+              perfectRotation: true // Enable perfect rotation
             }
           },
-          accounts: gcfAccounts,
+          accounts: gcfAccounts, // ALL accounts sent to ALL functions for perfect rotation
           organizationId
         };
 
-        console.log(`🎯 DISPATCHING to ${slice.functionName}: ${slice.limit} emails with ${campaignData.config.sendingMode} mode`);
+        console.log(`🎯 DISPATCHING to ${slice.functionName}: ${slice.limit} emails with ${campaignData.config.sendingMode} mode and ${gcfAccounts.length} accounts`);
 
         try {
           const response = await fetch(slice.functionUrl, {

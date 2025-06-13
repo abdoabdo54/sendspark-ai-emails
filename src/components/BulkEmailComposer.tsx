@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -265,19 +264,20 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
         console.log(`📧 Test-After: Injected ${Math.ceil(finalRecipients.length / (testAfterCount + 1))} test emails`);
       }
 
-      // CRITICAL FIX: Ensure custom config values are properly stored
+      // FIXED: Use line-by-line format for rotation
       const config = {
         sendingMode,
         dispatchMethod,
-        selectedAccounts: [...selectedAccounts], // FIXED: Properly copy array
+        selectedAccounts: [...selectedAccounts],
         useCustomConfig,
         customFunctionCount: useCustomConfig ? customFunctionCount : functions.length,
         customAccountCount: useCustomConfig ? customAccountCount : selectedAccounts.length,
         rotation: {
           useFromNameRotation: useFromRotation,
           useSubjectRotation: useSubjectRotation,
-          fromNames: useFromRotation ? fromNameVariations.split(',').map(s => s.trim()) : [],
-          subjects: useSubjectRotation ? subjectVariations.split(',').map(s => s.trim()) : []
+          // FIXED: Store as line-by-line format (string with \n separators)
+          fromNames: useFromRotation ? fromNameVariations : '',
+          subjects: useSubjectRotation ? subjectVariations : ''
         },
         testAfter: {
           enabled: useTestAfter,
@@ -297,8 +297,8 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
       console.log('📧 Accounts to use:', config.customAccountCount);
 
       const campaignData = {
-        from_name: useFromRotation ? fromNameVariations.split(',')[0].trim() : fromName,
-        subject: useSubjectRotation ? subjectVariations.split(',')[0].trim() : subject,
+        from_name: useFromRotation ? fromNameVariations.split('\n')[0].trim() : fromName,
+        subject: useSubjectRotation ? subjectVariations.split('\n')[0].trim() : subject,
         recipients: finalRecipients.join(', '),
         html_content: htmlContent,
         text_content: textContent,
@@ -605,12 +605,17 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
                       </div>
                       {useFromRotation && (
                         <Textarea
-                          placeholder="Variation 1, Variation 2, Variation 3..."
+                          placeholder="From Name 1&#10;From Name 2&#10;From Name 3"
                           value={fromNameVariations}
                           onChange={(e) => setFromNameVariations(e.target.value)}
-                          rows={2}
+                          rows={3}
                           className="text-sm"
                         />
+                      )}
+                      {useFromRotation && (
+                        <p className="text-xs text-gray-600">
+                          ✅ Each line = one from name variation
+                        </p>
                       )}
                     </div>
 
@@ -625,12 +630,17 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
                       </div>
                       {useSubjectRotation && (
                         <Textarea
-                          placeholder="Subject 1, Subject 2, Subject 3..."
+                          placeholder="Subject Line 1&#10;Subject Line 2&#10;Subject Line 3"
                           value={subjectVariations}
                           onChange={(e) => setSubjectVariations(e.target.value)}
-                          rows={2}
+                          rows={3}
                           className="text-sm"
                         />
+                      )}
+                      {useSubjectRotation && (
+                        <p className="text-xs text-gray-600">
+                          ✅ Each line = one subject variation (commas allowed in subjects)
+                        </p>
                       )}
                     </div>
                   </div>

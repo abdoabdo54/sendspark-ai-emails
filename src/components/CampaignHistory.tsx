@@ -29,19 +29,19 @@ const CampaignHistory = () => {
   const [preparingCampaignId, setPreparingCampaignId] = useState<string | null>(null);
   const [sendingCampaigns, setSendingCampaigns] = useState<Set<string>>(new Set());
 
-  // FIXED: Smart refresh - ONLY during preparation, NOT during sending
+  // FIXED: Smart refresh - ONLY during preparation, with proper timing
   useEffect(() => {
+    // Only refresh when there are campaigns actively preparing
     const preparingCampaigns = campaigns.filter(c => c.status === 'preparing');
     
-    // Only auto-refresh during preparation phase
-    if (preparingCampaigns.length > 0 || preparingCampaignId) {
+    if (preparingCampaigns.length > 0 && !preparingCampaignId) {
       console.log('🔄 Auto-refresh PREPARATION ONLY: monitoring', preparingCampaigns.length, 'preparing campaigns');
       const interval = setInterval(() => {
         refetch();
-      }, 2000); // Faster refresh during preparation
+      }, 2000); // 2 second refresh during preparation
 
       return () => {
-        console.log('🛑 Auto-refresh stopped - preparation complete');
+        console.log('🛑 Auto-refresh stopped - no more preparing campaigns');
         clearInterval(interval);
       };
     } else {
@@ -90,7 +90,8 @@ const CampaignHistory = () => {
               config: campaign.config
             });
             
-            toast.success('🚀 Campaign sent successfully with perfect distribution!');
+            // FIXED: Single toast notification - no duplicates
+            console.log('✅ Campaign sent successfully with perfect distribution!');
             
             // Remove from sending tracking and refresh once
             setSendingCampaigns(prev => {
@@ -142,10 +143,11 @@ const CampaignHistory = () => {
   const handlePreparationComplete = () => {
     console.log('✅ Preparation completed, stopping auto-refresh');
     setPreparingCampaignId(null);
-    // Single refresh after preparation, then auto-refresh will stop
+    // FIXED: Refresh 2 seconds after popup closes as requested
     setTimeout(() => {
+      console.log('🔄 Refreshing campaigns 2 seconds after preparation popup closed');
       refetch();
-    }, 500);
+    }, 2000);
   };
 
   if (loading) {

@@ -125,10 +125,10 @@ serve(async (req) => {
       )
     }
 
-    // FIXED: Parse rotation configuration using line-by-line format
+    // FIXED: Parse rotation configuration using LINE-BY-LINE format
     const config = campaign.config || {}
     
-    // Parse from names - each line is a separate from name
+    // Parse from names - EACH LINE is a separate from name
     let fromNames = [campaign.from_name]; // Default fallback
     if (config.rotation?.useFromNameRotation && config.rotation.fromNames) {
       const fromNamesText = config.rotation.fromNames;
@@ -142,7 +142,7 @@ serve(async (req) => {
       }
     }
     
-    // Parse subjects - each line is a separate subject
+    // Parse subjects - EACH LINE is a separate subject
     let subjects = [campaign.subject]; // Default fallback
     if (config.rotation?.useSubjectRotation && config.rotation.subjects) {
       const subjectsText = config.rotation.subjects;
