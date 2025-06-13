@@ -23,6 +23,22 @@ interface CampaignEditDialogProps {
   trigger?: React.ReactNode;
 }
 
+// Helper function to parse rotation data from campaign config
+const parseRotationFromConfig = (rotationData: any): string[] => {
+  if (!rotationData) return [''];
+  
+  if (Array.isArray(rotationData)) {
+    return rotationData.length > 0 ? rotationData : [''];
+  }
+  
+  if (typeof rotationData === 'string') {
+    const parsed = rotationData.trim().split('\n').map(item => item.trim()).filter(item => item.length > 0);
+    return parsed.length > 0 ? parsed : [''];
+  }
+  
+  return [''];
+};
+
 const CampaignEditDialog = ({ campaign, trigger }: CampaignEditDialogProps) => {
   const { currentOrganization } = useSimpleOrganizations();
   const { updateCampaign } = useCampaigns(currentOrganization?.id);
@@ -44,11 +60,15 @@ const CampaignEditDialog = ({ campaign, trigger }: CampaignEditDialogProps) => {
   const [customFunctionCount, setCustomFunctionCount] = useState(campaign.config?.customFunctionCount || 1);
   const [customAccountCount, setCustomAccountCount] = useState(campaign.config?.customAccountCount || 1);
   
-  // Rotation settings
+  // Rotation settings - FIXED: Properly parse rotation data
   const [useFromNameRotation, setUseFromNameRotation] = useState(campaign.config?.rotation?.useFromNameRotation || false);
-  const [fromNameRotations, setFromNameRotations] = useState<string[]>(campaign.config?.rotation?.fromNames || ['']);
+  const [fromNameRotations, setFromNameRotations] = useState<string[]>(
+    parseRotationFromConfig(campaign.config?.rotation?.fromNames)
+  );
   const [useSubjectRotation, setUseSubjectRotation] = useState(campaign.config?.rotation?.useSubjectRotation || false);
-  const [subjectRotations, setSubjectRotations] = useState<string[]>(campaign.config?.rotation?.subjects || ['']);
+  const [subjectRotations, setSubjectRotations] = useState<string[]>(
+    parseRotationFromConfig(campaign.config?.rotation?.subjects)
+  );
   
   // Test After settings
   const [testAfterEnabled, setTestAfterEnabled] = useState(campaign.config?.testAfter?.enabled || false);
@@ -116,6 +136,15 @@ const CampaignEditDialog = ({ campaign, trigger }: CampaignEditDialogProps) => {
     try {
       const recipientCount = recipients.split(',').filter(email => email.trim()).length;
       
+      // FIXED: Convert arrays to line-by-line strings for storage
+      const fromNamesText = useFromNameRotation 
+        ? fromNameRotations.filter(name => name.trim()).join('\n')
+        : '';
+      
+      const subjectsText = useSubjectRotation 
+        ? subjectRotations.filter(subject => subject.trim()).join('\n')
+        : '';
+      
       const updatedConfig = {
         selectedAccounts,
         sendingMode,
@@ -125,9 +154,9 @@ const CampaignEditDialog = ({ campaign, trigger }: CampaignEditDialogProps) => {
         customAccountCount: useCustomConfig ? customAccountCount : selectedAccounts.length,
         rotation: {
           useFromNameRotation,
-          fromNames: useFromNameRotation ? fromNameRotations.filter(name => name.trim()) : [],
+          fromNames: fromNamesText, // Store as line-by-line string
           useSubjectRotation,
-          subjects: useSubjectRotation ? subjectRotations.filter(subject => subject.trim()) : []
+          subjects: subjectsText // Store as line-by-line string
         },
         testAfter: {
           enabled: testAfterEnabled,
@@ -463,7 +492,7 @@ const CampaignEditDialog = ({ campaign, trigger }: CampaignEditDialogProps) => {
                   {useFromNameRotation && (
                     <div className="space-y-3">
                       <div className="flex items-center justify-between">
-                        <Label>FROM Names (will rotate instead of main FROM name)</Label>
+                        <Label>FROM Names (one per line - will rotate instead of main FROM name)</Label>
                         <Button type="button" variant="outline" size="sm" onClick={addFromNameRotation}>
                           <Plus className="h-4 w-4" />
                         </Button>
@@ -506,7 +535,7 @@ const CampaignEditDialog = ({ campaign, trigger }: CampaignEditDialogProps) => {
                   {useSubjectRotation && (
                     <div className="space-y-3">
                       <div className="flex items-center justify-between">
-                        <Label>Subject Lines (will rotate instead of main subject)</Label>
+                        <Label>Subject Lines (one per line - will rotate instead of main subject)</Label>
                         <Button type="button" variant="outline" size="sm" onClick={addSubjectRotation}>
                           <Plus className="h-4 w-4" />
                         </Button>
