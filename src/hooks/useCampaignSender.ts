@@ -21,42 +21,6 @@ export const useCampaignSender = (organizationId?: string) => {
   const { accounts } = useEmailAccounts(organizationId);
   const { functions } = useGcfFunctions(organizationId);
 
-  const parseRecipients = (recipientsText: string): string[] => {
-    console.log('📝 Parsing recipients from text:', recipientsText.length, 'characters');
-    
-    let recipients: string[] = [];
-
-    if (recipientsText.includes('\n')) {
-      recipients = recipientsText
-        .split('\n')
-        .map(email => email.trim())
-        .filter(email => email && email.includes('@'));
-    } else if (recipientsText.includes(',')) {
-      recipients = recipientsText
-        .split(',')
-        .map(email => email.trim())
-        .filter(email => email && email.includes('@'));
-    } else if (recipientsText.includes(';')) {
-      recipients = recipientsText
-        .split(';')
-        .map(email => email.trim())
-        .filter(email => email && email.includes('@'));
-    } else if (recipientsText.includes(' ')) {
-      recipients = recipientsText
-        .split(' ')
-        .map(email => email.trim())
-        .filter(email => email && email.includes('@'));
-    } else {
-      const singleEmail = recipientsText.trim();
-      if (singleEmail && singleEmail.includes('@')) {
-        recipients = [singleEmail];
-      }
-    }
-
-    console.log(`📊 Found ${recipients.length} valid recipients`);
-    return recipients;
-  };
-
   const sendCampaign = async (campaignData: CampaignData) => {
     if (!organizationId) {
       throw new Error('Organization not selected');
@@ -66,10 +30,10 @@ export const useCampaignSender = (organizationId?: string) => {
       setIsSending(true);
       setProgress(0);
 
-      console.log('🚀 STARTING CAMPAIGN DISPATCH');
-      console.log('Campaign config:', campaignData.config);
+      console.log('🚀 SEND: Starting campaign dispatch');
+      console.log('🚀 SEND: Campaign config:', campaignData.config);
 
-      // First, get the campaign from database to check if it has prepared emails
+      // Get the campaign from database to access prepared emails
       const { data: existingCampaign, error: fetchError } = await supabase
         .from('email_campaigns')
         .select('*')
@@ -80,25 +44,30 @@ export const useCampaignSender = (organizationId?: string) => {
         .single();
 
       if (fetchError) {
-        console.error('❌ Error fetching campaign:', fetchError);
+        console.error('❌ SEND: Error fetching campaign:', fetchError);
+        throw new Error('Campaign not found');
       }
 
-      let recipients: string[] = [];
-      
-      // Use prepared emails if available, otherwise parse recipients text
-      if (existingCampaign?.prepared_emails && Array.isArray(existingCampaign.prepared_emails) && existingCampaign.prepared_emails.length > 0) {
-        console.log('✅ Using prepared emails:', existingCampaign.prepared_emails.length);
-        recipients = existingCampaign.prepared_emails.map((email: any) => email.to);
-      } else {
-        console.log('📝 Parsing recipients from text');
-        recipients = parseRecipients(campaignData.recipients);
+      console.log('📧 SEND: Found campaign:', {
+        id: existingCampaign.id,
+        status: existingCampaign.status,
+        preparedEmailsCount: existingCampaign.prepared_emails?.length || 0,
+        totalRecipients: existingCampaign.total_recipients
+      });
+
+      // Check if campaign is prepared
+      if (existingCampaign.status !== 'prepared') {
+        throw new Error(`Campaign status is '${existingCampaign.status}'. Only prepared campaigns can be sent.`);
       }
 
-      if (recipients.length === 0) {
-        throw new Error('No valid recipients found');
+      // Get prepared emails
+      const preparedEmails = existingCampaign.prepared_emails;
+      if (!preparedEmails || !Array.isArray(preparedEmails) || preparedEmails.length === 0) {
+        throw new Error('No prepared emails found. Please prepare the campaign first.');
       }
 
-      console.log(`📧 Processing ${recipients.length} recipients`);
+      console.log(`📧 SEND: Using ${preparedEmails.length} prepared emails`);
+      console.log(`📧 SEND: Sample prepared email:`, preparedEmails[0]);
 
       // Get selected accounts from config
       const selectedAccountIds = campaignData.config?.selectedAccounts || [];
@@ -114,10 +83,9 @@ export const useCampaignSender = (organizationId?: string) => {
         throw new Error('No active accounts found from selection');
       }
 
-      console.log(`🏪 Using ${selectedAccounts.length} accounts for ${recipients.length} recipients`);
+      console.log(`🏪 SEND: Using ${selectedAccounts.length} accounts`);
       selectedAccounts.forEach((account, index) => {
         console.log(`   Account ${index + 1}: ${account.name} (${account.email}) - ${account.type}`);
-        console.log(`   Config:`, account.config);
       });
 
       setProgress(25);
@@ -128,83 +96,50 @@ export const useCampaignSender = (organizationId?: string) => {
         throw new Error('No enabled Google Cloud Functions found. Please add and enable at least one function in Function Manager.');
       }
 
-      console.log(`🔧 Using ${enabledFunctions.length} enabled functions`);
-      enabledFunctions.forEach((func, index) => {
-        console.log(`   Function ${index + 1}: ${func.name} - ${func.url}`);
-      });
+      console.log(`🔧 SEND: Using ${enabledFunctions.length} enabled functions`);
 
       setProgress(50);
 
-      // Create campaign record if it doesn't exist
-      let campaignId = existingCampaign?.id;
-      
-      if (!campaignId) {
-        const { data: campaign, error: campaignError } = await supabase
-          .from('email_campaigns')
-          .insert({
-            organization_id: organizationId,
-            subject: campaignData.subject,
-            from_name: campaignData.from_name,
-            recipients: campaignData.recipients,
-            html_content: campaignData.html_content || '',
-            text_content: campaignData.text_content || '',
-            send_method: campaignData.send_method,
-            status: 'sending',
-            config: campaignData.config,
-            total_recipients: recipients.length,
-            sent_count: 0
-          })
-          .select()
-          .single();
+      // Update campaign to sending status
+      const { error: updateError } = await supabase
+        .from('email_campaigns')
+        .update({ 
+          status: 'sending',
+          sent_count: 0,
+          sent_at: null,
+          error_message: null 
+        })
+        .eq('id', existingCampaign.id);
 
-        if (campaignError) {
-          console.error('❌ Failed to create campaign:', campaignError);
-          throw new Error('Failed to create campaign record');
-        }
-        
-        campaignId = campaign.id;
-      } else {
-        // Update existing campaign to sending status
-        const { error: updateError } = await supabase
-          .from('email_campaigns')
-          .update({ 
-            status: 'sending',
-            sent_count: 0,
-            sent_at: null,
-            error_message: null 
-          })
-          .eq('id', campaignId);
-
-        if (updateError) {
-          console.error('❌ Failed to update campaign status:', updateError);
-        }
+      if (updateError) {
+        console.error('❌ SEND: Failed to update campaign status:', updateError);
       }
 
-      console.log(`📝 Campaign ID: ${campaignId}`);
       setProgress(75);
 
       // Calculate recipients per function
-      const recipientsPerFunction = Math.ceil(recipients.length / enabledFunctions.length);
+      const recipientsPerFunction = Math.ceil(preparedEmails.length / enabledFunctions.length);
       
-      console.log(`📊 Distribution: ~${recipientsPerFunction} recipients per function`);
+      console.log(`📊 SEND: Distribution - ${recipientsPerFunction} emails per function`);
 
-      // Dispatch to functions with proper recipient slicing
+      // Dispatch to functions with proper email slicing
       const functionPromises = enabledFunctions.map(async (func, funcIndex) => {
         const startIndex = funcIndex * recipientsPerFunction;
-        const endIndex = Math.min(startIndex + recipientsPerFunction, recipients.length);
-        const sliceRecipients = recipients.slice(startIndex, endIndex);
+        const endIndex = Math.min(startIndex + recipientsPerFunction, preparedEmails.length);
+        const sliceEmails = preparedEmails.slice(startIndex, endIndex);
         
-        if (sliceRecipients.length === 0) {
-          console.log(`⏭️ Function ${func.name} has no recipients to process`);
-          return { success: true, function: func.name, result: { message: 'No recipients assigned' }, url: func.url, sentCount: 0 };
+        if (sliceEmails.length === 0) {
+          console.log(`⏭️ SEND: Function ${func.name} has no emails to process`);
+          return { success: true, function: func.name, result: { message: 'No emails assigned' }, url: func.url, sentCount: 0 };
         }
 
-        console.log(`🚀 DISPATCHING to function ${funcIndex + 1}: ${func.name} with ${sliceRecipients.length} recipients`);
+        console.log(`🚀 SEND: Dispatching to ${func.name} with ${sliceEmails.length} emails`);
         
         const dispatchPayload = {
-          campaignId: campaignId,
+          campaignId: existingCampaign.id,
           slice: {
-            recipients: sliceRecipients
+            recipients: sliceEmails.map(email => email.to),
+            preparedEmails: sliceEmails // Include full prepared email data
           },
           campaignData: {
             from_name: campaignData.from_name,
@@ -221,33 +156,22 @@ export const useCampaignSender = (organizationId?: string) => {
             name: account.name,
             email: account.email,
             type: account.type,
-            config: {
-              ...account.config,
-              // Ensure script_url is properly included for apps-script accounts
-              script_url: account.config?.script_url,
-              // For SMTP accounts, ensure proper field mapping
-              host: account.config?.host,
-              port: account.config?.port || 587,
-              username: account.config?.username || account.config?.user,
-              password: account.config?.password || account.config?.pass,
-              security: account.config?.security || account.config?.encryption || 'tls',
-              use_auth: account.config?.use_auth !== false
-            }
+            config: account.config
           })),
           organizationId: organizationId,
           globalStartIndex: startIndex
         };
 
-        console.log(`📦 Function ${func.name} payload accounts:`, dispatchPayload.accounts.map(acc => ({
-          name: acc.name,
-          type: acc.type,
-          script_url: acc.config?.script_url ? 'SET' : 'MISSING',
-          smtp_host: acc.config?.host || 'MISSING'
-        })));
+        console.log(`📦 SEND: Function ${func.name} payload:`, {
+          campaignId: existingCampaign.id,
+          emailCount: sliceEmails.length,
+          accountCount: selectedAccounts.length,
+          globalStartIndex: startIndex
+        });
 
         try {
           const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 minutes timeout
+          const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 minutes
           
           const response = await fetch(func.url, {
             method: 'POST',
@@ -260,16 +184,16 @@ export const useCampaignSender = (organizationId?: string) => {
 
           clearTimeout(timeoutId);
 
-          console.log(`📡 Function ${func.name} response status: ${response.status}`);
+          console.log(`📡 SEND: Function ${func.name} response status: ${response.status}`);
 
           if (!response.ok) {
             const errorText = await response.text();
-            console.error(`❌ Function ${func.name} HTTP error:`, response.status, errorText);
+            console.error(`❌ SEND: Function ${func.name} HTTP error:`, response.status, errorText);
             throw new Error(`HTTP ${response.status}: ${errorText.substring(0, 200)}`);
           }
 
           const result = await response.json();
-          console.log(`✅ Function ${func.name} completed:`, result);
+          console.log(`✅ SEND: Function ${func.name} completed:`, result);
           
           return { 
             success: true, 
@@ -280,13 +204,13 @@ export const useCampaignSender = (organizationId?: string) => {
           };
 
         } catch (error: any) {
-          console.error(`❌ Function ${func.name} failed:`, error);
+          console.error(`❌ SEND: Function ${func.name} failed:`, error);
           
           let errorMessage = error.message;
           if (error.name === 'AbortError') {
             errorMessage = 'Request timeout (5 minutes)';
           } else if (error.message.includes('Failed to fetch')) {
-            errorMessage = 'Network error - check function URL and internet connection';
+            errorMessage = 'Network error - check function URL';
           }
           
           return { 
@@ -306,31 +230,25 @@ export const useCampaignSender = (organizationId?: string) => {
 
       const successfulDispatches = results.filter(r => r.success);
       const failedDispatches = results.filter(r => !r.success);
-
-      // Calculate total sent emails across all functions
       const totalSentEmails = successfulDispatches.reduce((sum, result) => sum + (result.sentCount || 0), 0);
 
-      console.log(`🎉 DISPATCH COMPLETE: ${successfulDispatches.length} successful, ${failedDispatches.length} failed`);
-      console.log(`📊 TOTAL EMAILS SENT: ${totalSentEmails}/${recipients.length}`);
+      console.log(`🎉 SEND: Complete - ${successfulDispatches.length} successful, ${failedDispatches.length} failed`);
+      console.log(`📊 SEND: Total emails sent: ${totalSentEmails}/${preparedEmails.length}`);
 
-      // Update campaign status with actual sent count
+      // Update campaign final status
       if (successfulDispatches.length > 0) {
-        try {
-          const finalStatus = totalSentEmails === recipients.length ? 'sent' : totalSentEmails > 0 ? 'partial_success' : 'sent';
-          await supabase
-            .from('email_campaigns')
-            .update({ 
-              status: finalStatus,
-              sent_at: new Date().toISOString(),
-              completed_at: new Date().toISOString(),
-              sent_count: totalSentEmails
-            })
-            .eq('id', campaignId);
+        const finalStatus = totalSentEmails === preparedEmails.length ? 'sent' : 'partial_success';
+        await supabase
+          .from('email_campaigns')
+          .update({ 
+            status: finalStatus,
+            sent_at: new Date().toISOString(),
+            completed_at: new Date().toISOString(),
+            sent_count: totalSentEmails
+          })
+          .eq('id', existingCampaign.id);
 
-          console.log(`📝 Campaign status updated to ${finalStatus}, sent_count: ${totalSentEmails}`);
-        } catch (updateError) {
-          console.error('❌ Failed to update campaign status:', updateError);
-        }
+        console.log(`📝 SEND: Campaign status updated to ${finalStatus}`);
       }
 
       if (successfulDispatches.length === 0) {
@@ -343,17 +261,16 @@ export const useCampaignSender = (organizationId?: string) => {
             error_message: errorDetails,
             completed_at: new Date().toISOString()
           })
-          .eq('id', campaignId);
+          .eq('id', existingCampaign.id);
           
-        throw new Error(`All ${enabledFunctions.length} function dispatches failed. Details: ${errorDetails}`);
+        throw new Error(`All function dispatches failed: ${errorDetails}`);
       }
 
-      // Show appropriate success/warning message
+      // Show results
       if (failedDispatches.length > 0) {
-        console.warn(`⚠️ ${failedDispatches.length} functions failed, but ${successfulDispatches.length} succeeded`);
-        toast.warning(`Campaign dispatched with some issues: ${failedDispatches.length} functions failed, ${successfulDispatches.length} succeeded. ${totalSentEmails} emails sent.`);
+        toast.warning(`Campaign sent with issues: ${failedDispatches.length} functions failed. ${totalSentEmails} emails sent.`);
       } else {
-        toast.success(`Campaign dispatched successfully! All ${successfulDispatches.length} functions completed processing ${totalSentEmails} emails.`);
+        toast.success(`Campaign sent successfully! ${totalSentEmails} emails dispatched.`);
       }
 
       return {
@@ -362,11 +279,11 @@ export const useCampaignSender = (organizationId?: string) => {
         totalEmails: totalSentEmails,
         accountsUsed: selectedAccounts.length,
         functionsUsed: successfulDispatches.length,
-        campaignId: campaignId
+        campaignId: existingCampaign.id
       };
 
     } catch (error: any) {
-      console.error('❌ CAMPAIGN DISPATCH FAILED:', error);
+      console.error('❌ SEND: Campaign dispatch failed:', error);
       toast.error(`Campaign dispatch failed: ${error.message}`);
       throw error;
     } finally {

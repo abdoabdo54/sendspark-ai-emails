@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -119,21 +118,21 @@ const Campaigns = () => {
     try {
       switch (action) {
         case 'prepare':
-          console.log('🔧 Starting CLIENT-SIDE campaign preparation:', campaignId);
+          console.log('🔧 Starting campaign preparation:', campaignId);
           setPreparingCampaigns(prev => new Set([...prev, campaignId]));
           
           try {
             const result = await prepareCampaignClientSide(campaignId);
-            console.log('✅ Client preparation completed:', result);
+            console.log('✅ Campaign preparation completed:', result);
             toast.success(`Campaign prepared successfully with ${result.emailCount} emails!`);
             
-            // Refresh campaigns after 2 seconds
+            // Refresh campaigns
             setTimeout(() => {
               refetch();
             }, 2000);
             
           } catch (error: any) {
-            console.error('❌ Client preparation failed:', error);
+            console.error('❌ Campaign preparation failed:', error);
             toast.error(`Preparation failed: ${error.message}`);
           } finally {
             setPreparingCampaigns(prev => {
@@ -146,16 +145,32 @@ const Campaigns = () => {
           
         case 'send':
           const sendCampaign = campaigns.find(c => c.id === campaignId);
-          if (sendCampaign) {
-            console.log('🚀 CRITICAL: Dispatching campaign with PERFECT DISTRIBUTION:', {
-              id: campaignId,
-              sendingMode: sendCampaign.config?.sendingMode,
-              selectedAccounts: sendCampaign.config?.selectedAccounts?.length || 0
-            });
-            
-            // Mark as sending for UI tracking
-            setSendingCampaigns(prev => new Set([...prev, campaignId]));
-            
+          if (!sendCampaign) {
+            throw new Error('Campaign not found');
+          }
+
+          // Check if campaign is prepared
+          if (sendCampaign.status !== 'prepared') {
+            toast.error(`Campaign must be prepared before sending. Current status: ${sendCampaign.status}`);
+            return;
+          }
+
+          // Check if accounts are selected
+          if (!sendCampaign.config?.selectedAccounts?.length) {
+            toast.error('No accounts selected for this campaign. Please edit and select accounts.');
+            return;
+          }
+          
+          console.log('🚀 Starting campaign send:', {
+            id: campaignId,
+            status: sendCampaign.status,
+            preparedEmails: sendCampaign.prepared_emails?.length || 0,
+            selectedAccounts: sendCampaign.config?.selectedAccounts?.length || 0
+          });
+          
+          setSendingCampaigns(prev => new Set([...prev, campaignId]));
+          
+          try {
             await dispatchCampaign({
               from_name: sendCampaign.from_name,
               subject: sendCampaign.subject,
@@ -166,21 +181,19 @@ const Campaigns = () => {
               config: sendCampaign.config
             });
             
-            console.log('✅ Campaign sent successfully with perfect distribution!');
+            console.log('✅ Campaign sent successfully!');
             
-            // Remove from sending tracking and refresh once
+            // Refresh campaigns
+            setTimeout(() => {
+              refetch();
+            }, 1000);
+            
+          } finally {
             setSendingCampaigns(prev => {
               const newSet = new Set(prev);
               newSet.delete(campaignId);
               return newSet;
             });
-            
-            // Single refresh after sending
-            setTimeout(() => {
-              refetch();
-            }, 1000);
-          } else {
-            throw new Error('Campaign not found');
           }
           break;
           
@@ -408,7 +421,7 @@ const Campaigns = () => {
   );
 };
 
-// Memoized campaign list item component with action buttons
+// Memoized campaign list item component
 const CampaignListItem = React.memo(({ 
   campaign, 
   onAction, 
@@ -427,6 +440,11 @@ const CampaignListItem = React.memo(({
           <Badge className={`text-xs ${getStatusColor(campaign.status)}`}>
             {campaign.status}
           </Badge>
+          {campaign.status === 'prepared' && (
+            <Badge className="text-xs bg-green-100 text-green-800 border-green-200">
+              Ready to Send
+            </Badge>
+          )}
         </div>
         
         <div className="flex items-center gap-6 text-sm text-slate-600 mb-3">
@@ -447,33 +465,37 @@ const CampaignListItem = React.memo(({
           </div>
         </div>
 
-        {/* Campaign Configuration Display */}
+        {/* Show preparation status */}
+        {campaign.status === 'prepared' && campaign.prepared_emails?.length > 0 && (
+          <div className="text-xs text-green-600 mb-2">
+            ✅ {campaign.prepared_emails.length} emails prepared and ready to send
+          </div>
+        )}
+
+        {/* Campaign configuration display */}
         {campaign.config && (
           <div className="text-xs text-slate-500 mb-3 space-y-1">
             <div className="flex gap-4 flex-wrap">
               <span>📧 Accounts: {campaign.config.selectedAccounts?.length || 0} selected</span>
               <span>⚡ Mode: {
-                campaign.config.sendingMode === 'zero-delay' ? '🚀 ZERO DELAY (PERFECT SPEED)' :
+                campaign.config.sendingMode === 'zero-delay' ? '🚀 ZERO DELAY' :
                 campaign.config.sendingMode === 'fast' ? 'Fast (0.5s delay)' :
                 campaign.config.sendingMode === 'controlled' ? 'Controlled (2s delay)' :
                 campaign.config.sendingMode || 'controlled'
               }</span>
               <span>🔄 Method: {
-                campaign.config.dispatchMethod === 'parallel' ? 'Parallel (Perfect Distribution)' :
-                campaign.config.dispatchMethod === 'round-robin' ? 'Round Robin (Rotate accounts)' :
+                campaign.config.dispatchMethod === 'parallel' ? 'Parallel Distribution' :
+                campaign.config.dispatchMethod === 'round-robin' ? 'Round Robin' :
                 campaign.config.dispatchMethod === 'sequential' ? 'Sequential' :
                 campaign.config.dispatchMethod || 'parallel'
               }</span>
             </div>
-            {campaign.config.sendingMode === 'zero-delay' && (
-              <div className="text-orange-600 font-medium">🚀 ZERO DELAY: Perfect distribution with maximum speed!</div>
-            )}
           </div>
         )}
       </div>
       
       <div className="flex items-center gap-2 flex-wrap">
-        {/* Prepare Button */}
+        {/* Prepare Button - show for draft campaigns */}
         {campaign.status === 'draft' && (
           <Button
             size="sm"
@@ -487,7 +509,7 @@ const CampaignListItem = React.memo(({
           </Button>
         )}
         
-        {/* Send Button */}
+        {/* Send Button - show for prepared campaigns */}
         {campaign.status === 'prepared' && (
           <Button
             size="sm"
@@ -496,7 +518,7 @@ const CampaignListItem = React.memo(({
             className="bg-green-600 hover:bg-green-700 flex items-center gap-1"
           >
             <Zap className="w-4 h-4" />
-            {isSending ? 'Sending...' : campaign.config?.sendingMode === 'zero-delay' ? '🚀 SEND PERFECT SPEED' : 'Send Now'}
+            {isSending ? 'Sending...' : 'Send Now'}
           </Button>
         )}
         
@@ -543,7 +565,7 @@ const CampaignListItem = React.memo(({
           <Copy className="w-4 h-4" />
         </Button>
 
-        {/* Edit Button (for drafts) */}
+        {/* Edit Button - for draft campaigns */}
         {campaign.status === 'draft' && (
           <Button 
             variant="outline" 

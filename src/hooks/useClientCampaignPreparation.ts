@@ -19,6 +19,9 @@ interface RotationConfig {
 
 interface CampaignConfig {
   rotation?: RotationConfig;
+  selectedAccounts?: string[];
+  sendingMode?: string;
+  dispatchMethod?: string;
   [key: string]: any;
 }
 
@@ -29,8 +32,13 @@ export const useClientCampaignPreparation = () => {
   const [totalBatches, setTotalBatches] = useState(0);
 
   const parseRecipients = (recipientsText: string): string[] => {
-    console.log('📝 Parsing recipients from text:', recipientsText.length, 'characters');
+    console.log('📝 CLIENT PREP: Parsing recipients from text:', recipientsText?.length || 0, 'characters');
     
+    if (!recipientsText?.trim()) {
+      console.warn('⚠️ CLIENT PREP: No recipients text provided');
+      return [];
+    }
+
     let recipients: string[] = [];
 
     // Handle different recipient formats
@@ -61,7 +69,7 @@ export const useClientCampaignPreparation = () => {
       }
     }
 
-    console.log(`📊 Found ${recipients.length} valid recipients`);
+    console.log(`📊 CLIENT PREP: Found ${recipients.length} valid recipients`);
     return recipients;
   };
 
@@ -86,7 +94,7 @@ export const useClientCampaignPreparation = () => {
     try {
       setIsProcessing(true);
       setProgress(0);
-      console.log('🔧 CLIENT-SIDE PREPARATION: Starting for campaign:', campaignId);
+      console.log('🔧 CLIENT PREP: Starting preparation for campaign:', campaignId);
 
       // Get the campaign
       const { data: campaign, error: campaignError } = await supabase
@@ -96,18 +104,15 @@ export const useClientCampaignPreparation = () => {
         .single();
 
       if (campaignError || !campaign) {
+        console.error('❌ CLIENT PREP: Campaign not found:', campaignError);
         throw new Error('Campaign not found');
       }
 
-      // Allow preparation for any status except 'sending'
-      if (campaign.status === 'sending') {
-        throw new Error('Cannot prepare campaign while it is being sent');
-      }
-
-      console.log('📧 Processing campaign:', {
+      console.log('📧 CLIENT PREP: Processing campaign:', {
         id: campaignId,
         subject: campaign.subject,
         status: campaign.status,
+        recipientsText: campaign.recipients?.substring(0, 100) + '...',
         recipientsLength: campaign.recipients?.length || 0
       });
 
@@ -115,14 +120,17 @@ export const useClientCampaignPreparation = () => {
       const recipients = parseRecipients(campaign.recipients || '');
       
       if (recipients.length === 0) {
-        throw new Error('No valid recipients found');
+        console.error('❌ CLIENT PREP: No valid recipients found in:', campaign.recipients);
+        throw new Error('No valid recipients found. Please check your recipient list format.');
       }
 
-      // Parse rotation configuration with proper typing
+      console.log('✅ CLIENT PREP: Parsed recipients:', recipients.slice(0, 5), `(showing first 5 of ${recipients.length})`);
+
+      // Parse rotation configuration
       const config = (campaign.config as CampaignConfig) || {};
       
-      // Parse from names - each line is a separate from name
-      let fromNames = [campaign.from_name]; // Default fallback
+      // Parse from names
+      let fromNames = [campaign.from_name];
       if (config.rotation?.useFromNameRotation && config.rotation.fromNames) {
         const parsed = parseRotationData(config.rotation.fromNames);
         if (parsed.length > 0) {
@@ -130,8 +138,8 @@ export const useClientCampaignPreparation = () => {
         }
       }
       
-      // Parse subjects - each line is a separate subject
-      let subjects = [campaign.subject]; // Default fallback
+      // Parse subjects
+      let subjects = [campaign.subject];
       if (config.rotation?.useSubjectRotation && config.rotation.subjects) {
         const parsed = parseRotationData(config.rotation.subjects);
         if (parsed.length > 0) {
@@ -139,15 +147,15 @@ export const useClientCampaignPreparation = () => {
         }
       }
 
-      console.log('🔄 CLIENT ROTATION:', {
+      console.log('🔄 CLIENT PREP: Rotation config:', {
         fromNamesCount: fromNames.length,
         subjectsCount: subjects.length,
-        fromNames: fromNames.slice(0, 3),
-        subjects: subjects.slice(0, 3)
+        sampleFromNames: fromNames.slice(0, 2),
+        sampleSubjects: subjects.slice(0, 2)
       });
 
-      // Process in batches to avoid blocking UI and show progress
-      const BATCH_SIZE = 1000; // Process 1000 emails at a time
+      // Process in batches
+      const BATCH_SIZE = 1000;
       const totalEmails = recipients.length;
       const batches = Math.ceil(totalEmails / BATCH_SIZE);
       setTotalBatches(batches);
@@ -160,9 +168,9 @@ export const useClientCampaignPreparation = () => {
         const endIdx = Math.min(startIdx + BATCH_SIZE, totalEmails);
         const batchRecipients = recipients.slice(startIdx, endIdx);
 
-        console.log(`📦 Processing batch ${batchIndex + 1}/${batches}: ${batchRecipients.length} emails`);
+        console.log(`📦 CLIENT PREP: Processing batch ${batchIndex + 1}/${batches}: ${batchRecipients.length} emails`);
 
-        // Create prepared emails for this batch with perfect rotation
+        // Create prepared emails for this batch
         const batchPreparedEmails = batchRecipients.map((email, batchLocalIndex) => {
           const globalIndex = startIdx + batchLocalIndex;
           const fromNameIndex = globalIndex % fromNames.length;
@@ -183,30 +191,29 @@ export const useClientCampaignPreparation = () => {
         const currentProgress = Math.round(((batchIndex + 1) / batches) * 100);
         setProgress(currentProgress);
 
-        // Allow UI to update between batches
         await new Promise(resolve => setTimeout(resolve, 10));
       }
 
-      console.log(`✅ CLIENT PREPARATION COMPLETE: ${allPreparedEmails.length} emails processed`);
-      console.log(`📧 Sample prepared emails:`, allPreparedEmails.slice(0, 3));
+      console.log(`✅ CLIENT PREP: Complete - prepared ${allPreparedEmails.length} emails`);
+      console.log(`📧 CLIENT PREP: Sample prepared emails:`, allPreparedEmails.slice(0, 3));
 
-      // Update campaign with prepared emails - this is the only database operation
+      // Update campaign with prepared emails
       const { error: updateError } = await supabase
         .from('email_campaigns')
         .update({
           status: 'prepared',
-          prepared_emails: allPreparedEmails as any, // Type assertion for Supabase JSON
+          prepared_emails: allPreparedEmails,
           total_recipients: totalEmails,
           error_message: null
         })
         .eq('id', campaignId);
 
       if (updateError) {
-        console.error('❌ Failed to update campaign:', updateError);
+        console.error('❌ CLIENT PREP: Failed to update campaign:', updateError);
         throw new Error(`Failed to save preparation data: ${updateError.message}`);
       }
 
-      console.log(`🎉 CLIENT SUCCESS: Campaign prepared with ${totalEmails} emails`);
+      console.log(`🎉 CLIENT PREP: SUCCESS - Campaign prepared with ${totalEmails} emails`);
 
       return {
         success: true,
@@ -220,7 +227,7 @@ export const useClientCampaignPreparation = () => {
       };
 
     } catch (error: any) {
-      console.error('❌ CLIENT PREPARATION ERROR:', error);
+      console.error('❌ CLIENT PREP: Error:', error);
       
       // Update campaign status to failed
       await supabase

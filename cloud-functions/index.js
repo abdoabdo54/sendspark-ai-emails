@@ -8,7 +8,7 @@ const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const supabase = createClient(supabaseUrl, supabaseKey);
 
-// Configure nodemailer transporter based on account type - MAXIMUM SPEED
+// Configure nodemailer transporter
 function createTransporter(account) {
   if (account.type === 'smtp') {
     const config = account.config || {};
@@ -16,20 +16,21 @@ function createTransporter(account) {
       host: config.host,
       port: config.port,
       user: config.username || config.user,
-      hasPassword: !!(config.password || config.pass)
+      hasPassword: !!(config.password || config.pass),
+      secure: config.secure
     });
 
     return nodemailer.createTransporter({
       host: config.host,
       port: config.port || 587,
-      secure: config.secure || config.encryption === 'ssl' || false,
+      secure: config.secure || false,
       auth: {
         user: config.username || config.user,
         pass: config.password || config.pass
       },
       pool: true,
-      maxConnections: 100,
-      maxMessages: 1000,
+      maxConnections: 50,
+      maxMessages: 100,
       rateLimit: false
     });
   }
@@ -44,10 +45,11 @@ async function sendViaAppsScript(account, emailData) {
     const scriptUrl = config.script_url;
     
     if (!scriptUrl) {
+      console.error(`❌ Apps Script URL not configured for ${account.name}`);
       return { success: false, error: 'Apps Script URL not configured' };
     }
 
-    console.log(`📧 Sending via Apps Script: ${scriptUrl}`);
+    console.log(`📧 Sending via Apps Script: ${account.name} to ${emailData.to}`);
 
     const response = await fetch(scriptUrl, {
       method: 'POST',
@@ -79,7 +81,7 @@ async function sendViaAppsScript(account, emailData) {
       return { success: false, error: result.message || result.error || 'Apps Script error' };
     }
   } catch (error) {
-    console.error(`❌ Apps Script error:`, error);
+    console.error(`❌ Apps Script error for ${account.name}:`, error);
     return { success: false, error: error.message };
   }
 }
@@ -114,11 +116,10 @@ async function processEmail(recipient, account, campaignData, globalIndex, total
       fromEmail: account.email
     };
 
-    console.log(`📧 Processing email ${globalIndex + 1}: ${recipient} via ${account.name} (${account.type})`);
+    console.log(`📧 Processing: ${recipient} via ${account.name} (${account.type})`);
 
     let result;
 
-    // Send based on account type
     if (account.type === 'smtp') {
       const transporter = createTransporter(account);
       if (transporter) {
@@ -136,7 +137,7 @@ async function processEmail(recipient, account, campaignData, globalIndex, total
     const accountIndex = globalIndex % totalAccounts;
     
     if (result.success) {
-      console.log(`✅ Email ${globalIndex + 1} → ${recipient} via Account ${accountIndex + 1} (${account.name}) SUCCESS`);
+      console.log(`✅ SUCCESS: ${recipient} via ${account.name}`);
       return {
         recipient,
         status: 'sent',
@@ -149,7 +150,7 @@ async function processEmail(recipient, account, campaignData, globalIndex, total
         timestamp: new Date().toISOString()
       };
     } else {
-      console.log(`❌ Email ${globalIndex + 1} → ${recipient} via Account ${accountIndex + 1} (${account.name}) FAILED: ${result.error}`);
+      console.log(`❌ FAILED: ${recipient} via ${account.name} - ${result.error}`);
       return {
         recipient,
         status: 'failed',
@@ -174,34 +175,7 @@ async function processEmail(recipient, account, campaignData, globalIndex, total
   }
 }
 
-// Batch database update function
-async function updateCampaignProgress(campaignId, sentCount, isComplete = false) {
-  try {
-    const updateData = {
-      sent_count: sentCount
-    };
-
-    if (isComplete) {
-      updateData.status = 'sent';
-      updateData.completed_at = new Date().toISOString();
-    }
-
-    const { error } = await supabase
-      .from('email_campaigns')
-      .update(updateData)
-      .eq('id', campaignId);
-
-    if (error) {
-      console.error(`❌ Database update failed:`, error);
-    } else {
-      console.log(`📝 Campaign progress updated: ${sentCount} emails sent`);
-    }
-  } catch (dbError) {
-    console.error(`❌ Database update error:`, dbError);
-  }
-}
-
-// Main function handler - MAXIMUM SPEED
+// Main function handler
 const sendEmailCampaignZeroDelay = async (req, res) => {
   // Enable CORS
   res.set('Access-Control-Allow-Origin', '*');
@@ -225,11 +199,12 @@ const sendEmailCampaignZeroDelay = async (req, res) => {
       globalStartIndex = 0
     } = req.body;
 
-    console.log(`🚀 [${campaignId}] Received request:`, {
+    console.log(`🚀 GCF: Received request:`, {
       campaignId,
       recipients: slice?.recipients?.length || 0,
       accounts: accounts?.length || 0,
-      globalStartIndex
+      globalStartIndex,
+      hasPreparedEmails: !!slice?.preparedEmails
     });
 
     // Health check
@@ -243,73 +218,69 @@ const sendEmailCampaignZeroDelay = async (req, res) => {
 
     // Validate input
     if (!slice?.recipients || !Array.isArray(slice.recipients) || slice.recipients.length === 0) {
-      console.error(`❌ No recipients provided`);
+      console.error(`❌ GCF: No recipients provided`);
       return res.status(400).json({
         success: false,
         error: 'No recipients provided',
-        received: { slice, accounts: accounts?.length || 0 }
+        received: { 
+          slice: !!slice, 
+          recipients: slice?.recipients?.length || 0,
+          accounts: accounts?.length || 0 
+        }
       });
     }
 
     if (!accounts || !Array.isArray(accounts) || accounts.length === 0) {
-      console.error(`❌ No accounts provided`);
+      console.error(`❌ GCF: No accounts provided`);
       return res.status(400).json({
         success: false,
-        error: 'No accounts provided',
-        received: { recipients: slice.recipients.length, accounts: accounts?.length || 0 }
+        error: 'No accounts provided'
       });
     }
 
-    console.log(`🚀 [${campaignId}] MAXIMUM SPEED PROCESSING: ${slice.recipients.length} emails starting from global index ${globalStartIndex}`);
-    console.log(`📊 [${campaignId}] Using ${accounts.length} accounts with perfect rotation`);
+    console.log(`🚀 GCF: Processing ${slice.recipients.length} emails with ${accounts.length} accounts`);
     
-    // Log account details for debugging
+    // Log account details
     accounts.forEach((account, index) => {
       console.log(`   Account ${index + 1}: ${account.name} (${account.email}) - ${account.type}`);
       if (account.type === 'apps-script') {
-        console.log(`     Script URL: ${account.config?.script_url || 'NOT SET'}`);
+        console.log(`     Script URL: ${account.config?.script_url ? 'SET' : 'MISSING'}`);
+      } else if (account.type === 'smtp') {
+        console.log(`     SMTP Host: ${account.config?.host || 'MISSING'}`);
       }
     });
 
-    const config = campaignData.config || {};
-    const sendingMode = config.sendingMode || 'zero-delay';
-    const batchSize = 20; // Reduced for better error handling
+    const batchSize = 10; // Process in smaller batches for better error handling
 
-    console.log(`⚡ [${campaignId}] Processing in MAXIMUM SPEED batches of ${batchSize}`);
-
-    // Prepare all email tasks with GLOBAL INDEXING
+    // Process emails
     const emailTasks = slice.recipients.map((recipient, localIndex) => {
       const globalIndex = globalStartIndex + localIndex;
       const accountIndex = globalIndex % accounts.length;
       const account = accounts[accountIndex];
       
-      console.log(`📧 [${campaignId}] Email ${globalIndex + 1}: ${recipient} → Account ${accountIndex + 1}/${accounts.length} (${account.name})`);
-      
       return () => processEmail(recipient, account, campaignData, globalIndex, accounts.length);
     });
 
-    // MAXIMUM SPEED: Process emails in batches
     const results = [];
-    let totalSentInThisFunction = 0;
+    let totalSent = 0;
     
     for (let i = 0; i < emailTasks.length; i += batchSize) {
       const batch = emailTasks.slice(i, i + batchSize);
       const batchNumber = Math.floor(i/batchSize) + 1;
       const totalBatches = Math.ceil(emailTasks.length / batchSize);
       
-      console.log(`🚀 [${campaignId}] Processing batch ${batchNumber}/${totalBatches}: ${batch.length} emails - MAXIMUM SPEED`);
+      console.log(`🚀 GCF: Processing batch ${batchNumber}/${totalBatches}: ${batch.length} emails`);
       
       const batchResults = await Promise.all(batch.map(task => task()));
       results.push(...batchResults);
       
-      // Count successful sends in this batch
-      const batchSentCount = batchResults.filter(r => r.status === 'sent').length;
-      totalSentInThisFunction += batchSentCount;
+      const batchSent = batchResults.filter(r => r.status === 'sent').length;
+      totalSent += batchSent;
       
-      console.log(`✅ Batch ${batchNumber} completed: ${batchSentCount}/${batch.length} emails sent`);
+      console.log(`✅ GCF: Batch ${batchNumber} complete: ${batchSent}/${batch.length} sent`);
       
-      // Update database progress every batch
-      if (batchSentCount > 0) {
+      // Update campaign progress
+      if (batchSent > 0) {
         try {
           const { data: currentCampaign } = await supabase
             .from('email_campaigns')
@@ -317,67 +288,54 @@ const sendEmailCampaignZeroDelay = async (req, res) => {
             .eq('id', campaignId)
             .single();
 
-          const newSentCount = (currentCampaign?.sent_count || 0) + batchSentCount;
-          await updateCampaignProgress(campaignId, newSentCount);
+          const newSentCount = (currentCampaign?.sent_count || 0) + batchSent;
+          
+          await supabase
+            .from('email_campaigns')
+            .update({ sent_count: newSentCount })
+            .eq('id', campaignId);
+            
+          console.log(`📝 GCF: Updated campaign sent_count to ${newSentCount}`);
         } catch (error) {
-          console.error(`❌ Progress update failed for batch ${batchNumber}:`, error);
+          console.error(`❌ GCF: Progress update failed:`, error);
         }
       }
     }
 
-    // Calculate final results
-    const sentCount = results.filter(r => r.status === 'sent').length;
     const failedCount = results.filter(r => r.status === 'failed').length;
     const processingTime = Date.now() - startTime;
-    const successRate = Math.round((sentCount / slice.recipients.length) * 100);
+    const successRate = Math.round((totalSent / slice.recipients.length) * 100);
 
-    // Account distribution verification
-    console.log(`📊 [${campaignId}] FINAL ACCOUNT DISTRIBUTION:`);
-    const accountDistribution = accounts.map((account, index) => {
-      const accountResults = results.filter(r => r.accountIndex === index + 1);
-      const accountSent = accountResults.filter(r => r.status === 'sent').length;
-      const accountFailed = accountResults.filter(r => r.status === 'failed').length;
-      console.log(`   Account ${index + 1} (${account.name}): ${accountSent} sent, ${accountFailed} failed`);
-      return {
-        accountName: account.name,
-        accountId: account.id,
-        accountIndex: index + 1,
-        emailsSent: accountSent,
-        emailsFailed: accountFailed
-      };
-    });
-
-    console.log(`✅ [${campaignId}] MAXIMUM SPEED completed: ${sentCount} sent, ${failedCount} failed (${successRate}%) in ${processingTime}ms`);
-    console.log(`⚡ [${campaignId}] Processing rate: ${Math.round(slice.recipients.length / (processingTime / 1000))} emails/second`);
+    console.log(`✅ GCF: Complete - ${totalSent} sent, ${failedCount} failed (${successRate}%) in ${processingTime}ms`);
 
     // Log failed emails for debugging
     const failedEmails = results.filter(r => r.status === 'failed');
     if (failedEmails.length > 0) {
-      console.log(`❌ Failed emails:`, failedEmails.map(f => `${f.recipient}: ${f.error}`));
+      console.log(`❌ GCF: Failed emails:`, failedEmails.slice(0, 5).map(f => `${f.recipient}: ${f.error}`));
     }
 
     res.status(200).json({
       success: true,
       campaignId,
       processed: slice.recipients.length,
-      sent: sentCount,
+      sent: totalSent,
       failed: failedCount,
       successRate,
       processingTimeMs: processingTime,
-      emailsPerSecond: Math.round(slice.recipients.length / (processingTime / 1000)),
-      sendingMode: 'maximum-speed',
       batchesProcessed: Math.ceil(slice.recipients.length / batchSize),
-      batchSize,
-      maximumSpeed: true,
       globalStartIndex,
-      accountDistribution,
-      failedEmails: failedEmails.slice(0, 5), // First 5 failed for debugging
-      results: results.slice(-5) // Last 5 for debugging
+      accountDistribution: accounts.map((account, index) => ({
+        accountName: account.name,
+        accountId: account.id,
+        accountIndex: index + 1,
+        emailsSent: results.filter(r => r.accountIndex === index + 1 && r.status === 'sent').length
+      })),
+      sampleResults: results.slice(-3) // Last 3 for debugging
     });
 
   } catch (error) {
     const processingTime = Date.now() - startTime;
-    console.error('❌ Function error:', error);
+    console.error('❌ GCF: Function error:', error);
     
     // Update campaign status to failed
     if (req.body.campaignId) {
@@ -391,18 +349,17 @@ const sendEmailCampaignZeroDelay = async (req, res) => {
           })
           .eq('id', req.body.campaignId);
       } catch (dbError) {
-        console.error('❌ Failed to update campaign status:', dbError);
+        console.error('❌ GCF: Failed to update campaign status:', dbError);
       }
     }
     
     res.status(500).json({
       success: false,
       error: error.message,
-      processingTimeMs: processingTime,
-      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      processingTimeMs: processingTime
     });
   }
 };
 
-// Register the function with Functions Framework
+// Register the function
 functions.http('sendEmailCampaignZeroDelay', sendEmailCampaignZeroDelay);
