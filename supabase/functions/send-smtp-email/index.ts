@@ -23,110 +23,108 @@ interface EmailData {
   text?: string;
 }
 
-async function connectWithTLS(hostname: string, port: number): Promise<Deno.TcpConn> {
-  console.log(`Attempting TLS connection to ${hostname}:${port}`);
-  
-  try {
-    const conn = await Deno.connectTls({
-      hostname,
-      port,
-    });
-    console.log("✓ TLS connection established");
-    return conn;
-  } catch (error) {
-    console.error("✗ TLS connection failed:", error.message);
-    throw error;
-  }
-}
-
-async function connectWithSTARTTLS(hostname: string, port: number): Promise<Deno.TlsConn> {
-  console.log(`Attempting STARTTLS connection to ${hostname}:${port}`);
-  
-  try {
-    // First establish plain connection
-    const plainConn = await Deno.connect({
-      hostname,
-      port,
-    });
-    console.log("✓ Plain connection established");
-
-    const encoder = new TextEncoder();
-    const decoder = new TextDecoder();
-    
-    // Read initial greeting
-    const buffer = new Uint8Array(1024);
-    const bytesRead = await plainConn.read(buffer);
-    const greeting = decoder.decode(buffer.subarray(0, bytesRead || 0));
-    console.log("Server greeting:", greeting.trim());
-    
-    if (!greeting.startsWith('220')) {
-      plainConn.close();
-      throw new Error('Server not ready: ' + greeting);
-    }
-
-    // Send EHLO
-    await plainConn.write(encoder.encode(`EHLO ${hostname}\r\n`));
-    const ehloBuffer = new Uint8Array(1024);
-    const ehloBytesRead = await plainConn.read(ehloBuffer);
-    const ehloResponse = decoder.decode(ehloBuffer.subarray(0, ehloBytesRead || 0));
-    console.log("EHLO response:", ehloResponse.trim());
-
-    if (!ehloResponse.includes('STARTTLS')) {
-      plainConn.close();
-      throw new Error('Server does not support STARTTLS');
-    }
-
-    // Send STARTTLS command
-    await plainConn.write(encoder.encode('STARTTLS\r\n'));
-    const startTlsBuffer = new Uint8Array(1024);
-    const startTlsBytesRead = await plainConn.read(startTlsBuffer);
-    const startTlsResponse = decoder.decode(startTlsBuffer.subarray(0, startTlsBytesRead || 0));
-    console.log("STARTTLS response:", startTlsResponse.trim());
-
-    if (!startTlsResponse.startsWith('220')) {
-      plainConn.close();
-      throw new Error('STARTTLS failed: ' + startTlsResponse);
-    }
-
-    // Upgrade to TLS
-    const tlsConn = await Deno.startTls(plainConn, { hostname });
-    console.log("✓ STARTTLS upgrade successful");
-    return tlsConn;
-  } catch (error) {
-    console.error("✗ STARTTLS connection failed:", error.message);
-    throw error;
-  }
-}
-
 async function sendEmailViaSMTP(config: SMTPConfig, emailData: EmailData): Promise<{ success: boolean; error?: string; logs: string[] }> {
   const logs: string[] = [];
   
   try {
-    logs.push(`Starting SMTP send to ${emailData.to} via ${config.host}:${config.port}`);
-    logs.push(`Encryption: ${config.encryption}, Auth required: ${config.auth_required}`);
+    logs.push(`🚀 Starting SMTP send to ${emailData.to} via ${config.host}:${config.port}`);
     
+    // Determine connection type based on common SMTP configurations
+    let useDirectTLS = false;
+    let useSTARTTLS = false;
+    
+    // Gmail and common providers
+    if (config.host.includes('gmail') || config.port === 465 || config.encryption === 'ssl') {
+      useDirectTLS = true;
+      logs.push("📧 Using direct TLS/SSL connection for Gmail/secure SMTP");
+    } else if (config.port === 587 || config.encryption === 'tls') {
+      useSTARTTLS = true;
+      logs.push("📧 Using STARTTLS connection");
+    } else {
+      logs.push("📧 Using plain connection");
+    }
+
     let conn: Deno.TcpConn | Deno.TlsConn;
     
-    // Establish connection based on encryption type
-    if (config.encryption === 'ssl' || (config.encryption === 'tls' && config.port === 465)) {
-      conn = await connectWithTLS(config.host, config.port);
-      logs.push("Using direct TLS/SSL connection");
-    } else if (config.encryption === 'tls' || config.port === 587) {
-      conn = await connectWithSTARTTLS(config.host, config.port);
-      logs.push("Using STARTTLS connection");
+    // Establish connection
+    if (useDirectTLS) {
+      try {
+        conn = await Deno.connectTls({
+          hostname: config.host,
+          port: config.port,
+        });
+        logs.push("✅ Direct TLS connection established");
+      } catch (error) {
+        logs.push(`❌ Direct TLS failed: ${error.message}`);
+        throw error;
+      }
+    } else if (useSTARTTLS) {
+      try {
+        // Start with plain connection
+        const plainConn = await Deno.connect({
+          hostname: config.host,
+          port: config.port,
+        });
+        logs.push("✅ Plain connection established for STARTTLS");
+
+        const encoder = new TextEncoder();
+        const decoder = new TextDecoder();
+        
+        // Read greeting
+        const buffer = new Uint8Array(1024);
+        const bytesRead = await plainConn.read(buffer);
+        const greeting = decoder.decode(buffer.subarray(0, bytesRead || 0));
+        logs.push(`📨 Server greeting: ${greeting.trim()}`);
+        
+        if (!greeting.startsWith('220')) {
+          plainConn.close();
+          throw new Error('Server not ready: ' + greeting);
+        }
+
+        // Send EHLO
+        await plainConn.write(encoder.encode(`EHLO ${config.host}\r\n`));
+        const ehloBuffer = new Uint8Array(1024);
+        const ehloBytesRead = await plainConn.read(ehloBuffer);
+        const ehloResponse = decoder.decode(ehloBuffer.subarray(0, ehloBytesRead || 0));
+        logs.push(`📨 EHLO response: ${ehloResponse.trim()}`);
+
+        if (!ehloResponse.includes('STARTTLS')) {
+          plainConn.close();
+          throw new Error('Server does not support STARTTLS');
+        }
+
+        // Send STARTTLS
+        await plainConn.write(encoder.encode('STARTTLS\r\n'));
+        const startTlsBuffer = new Uint8Array(1024);
+        const startTlsBytesRead = await plainConn.read(startTlsBuffer);
+        const startTlsResponse = decoder.decode(startTlsBuffer.subarray(0, startTlsBytesRead || 0));
+        logs.push(`📨 STARTTLS response: ${startTlsResponse.trim()}`);
+
+        if (!startTlsResponse.startsWith('220')) {
+          plainConn.close();
+          throw new Error('STARTTLS failed: ' + startTlsResponse);
+        }
+
+        // Upgrade to TLS
+        conn = await Deno.startTls(plainConn, { hostname: config.host });
+        logs.push("✅ STARTTLS upgrade successful");
+      } catch (error) {
+        logs.push(`❌ STARTTLS failed: ${error.message}`);
+        throw error;
+      }
     } else {
       // Plain connection
       conn = await Deno.connect({
         hostname: config.host,
         port: config.port,
       });
-      logs.push("Using plain connection");
+      logs.push("✅ Plain connection established");
     }
 
     const encoder = new TextEncoder();
     const decoder = new TextDecoder();
     
-    // Helper function to read response
+    // Helper functions
     async function readResponse(): Promise<string> {
       const buffer = new Uint8Array(2048);
       const bytesRead = await conn.read(buffer);
@@ -135,62 +133,43 @@ async function sendEmailViaSMTP(config: SMTPConfig, emailData: EmailData): Promi
       return response;
     }
 
-    // Helper function to send command and read response
     async function sendCommand(command: string): Promise<string> {
       logs.push(`→ ${command}`);
       await conn.write(encoder.encode(command + '\r\n'));
       return await readResponse();
     }
 
-    // If using STARTTLS, we already handled the initial greeting
-    if (config.encryption !== 'tls' || config.port !== 587) {
-      // Read initial response for direct connections
+    // For TLS connections that haven't read greeting yet
+    if (useDirectTLS) {
       const initialResponse = await readResponse();
-      
       if (!initialResponse.startsWith('220')) {
         conn.close();
-        logs.push("✗ Server not ready");
-        return { success: false, error: 'Server not ready: ' + initialResponse, logs };
+        throw new Error('Server not ready: ' + initialResponse);
       }
     }
 
-    // Send EHLO command (again for TLS connections)
+    // Send EHLO (again for TLS connections)
     const ehloResponse = await sendCommand(`EHLO ${config.host}`);
-
     if (!ehloResponse.startsWith('250')) {
       conn.close();
-      logs.push("✗ EHLO failed");
-      return { success: false, error: 'EHLO failed: ' + ehloResponse, logs };
+      throw new Error('EHLO failed: ' + ehloResponse);
     }
 
-    // Authenticate if required
+    // Authentication
     if (config.auth_required) {
-      logs.push("Starting authentication...");
+      logs.push("🔐 Starting authentication...");
       
-      // Try AUTH LOGIN first
+      // Try AUTH LOGIN first (most common)
       const authResponse = await sendCommand('AUTH LOGIN');
 
-      if (!authResponse.startsWith('334')) {
-        // Try AUTH PLAIN as fallback
-        logs.push("AUTH LOGIN failed, trying AUTH PLAIN");
-        const credentials = btoa(`\0${config.username}\0${config.password}`);
-        const authPlainResponse = await sendCommand(`AUTH PLAIN ${credentials}`);
-        
-        if (!authPlainResponse.startsWith('235')) {
-          conn.close();
-          logs.push("✗ Authentication failed with both LOGIN and PLAIN methods");
-          return { success: false, error: 'Authentication failed: ' + authPlainResponse, logs };
-        }
-        logs.push("✓ AUTH PLAIN successful");
-      } else {
-        // Continue with AUTH LOGIN
+      if (authResponse.startsWith('334')) {
+        // AUTH LOGIN flow
         const usernameB64 = btoa(config.username);
         const userResponse = await sendCommand(usernameB64);
 
         if (!userResponse.startsWith('334')) {
           conn.close();
-          logs.push("✗ Username authentication failed");
-          return { success: false, error: 'Username auth failed: ' + userResponse, logs };
+          throw new Error('Username authentication failed: ' + userResponse);
         }
 
         const passwordB64 = btoa(config.password);
@@ -198,41 +177,43 @@ async function sendEmailViaSMTP(config: SMTPConfig, emailData: EmailData): Promi
 
         if (!passResponse.startsWith('235')) {
           conn.close();
-          logs.push("✗ Password authentication failed");
-          return { success: false, error: 'Password auth failed: ' + passResponse, logs };
+          throw new Error('Password authentication failed: ' + passResponse);
         }
-        logs.push("✓ AUTH LOGIN successful");
+        logs.push("✅ AUTH LOGIN successful");
+      } else {
+        // Try AUTH PLAIN
+        logs.push("🔄 AUTH LOGIN failed, trying AUTH PLAIN");
+        const credentials = btoa(`\0${config.username}\0${config.password}`);
+        const authPlainResponse = await sendCommand(`AUTH PLAIN ${credentials}`);
+        
+        if (!authPlainResponse.startsWith('235')) {
+          conn.close();
+          throw new Error('Authentication failed with both LOGIN and PLAIN: ' + authPlainResponse);
+        }
+        logs.push("✅ AUTH PLAIN successful");
       }
     }
 
-    // Send MAIL FROM command
+    // Send email
     const mailFromResponse = await sendCommand(`MAIL FROM:<${emailData.from.email}>`);
-
     if (!mailFromResponse.startsWith('250')) {
       conn.close();
-      logs.push("✗ MAIL FROM failed");
-      return { success: false, error: 'MAIL FROM failed: ' + mailFromResponse, logs };
+      throw new Error('MAIL FROM failed: ' + mailFromResponse);
     }
 
-    // Send RCPT TO command
     const rcptToResponse = await sendCommand(`RCPT TO:<${emailData.to}>`);
-
     if (!rcptToResponse.startsWith('250')) {
       conn.close();
-      logs.push("✗ RCPT TO failed");
-      return { success: false, error: 'RCPT TO failed: ' + rcptToResponse, logs };
+      throw new Error('RCPT TO failed: ' + rcptToResponse);
     }
 
-    // Send DATA command
     const dataResponse = await sendCommand('DATA');
-
     if (!dataResponse.startsWith('354')) {
       conn.close();
-      logs.push("✗ DATA command failed");
-      return { success: false, error: 'DATA failed: ' + dataResponse, logs };
+      throw new Error('DATA command failed: ' + dataResponse);
     }
 
-    // Construct email message
+    // Construct email
     const emailContent = [
       `From: ${emailData.from.name} <${emailData.from.email}>`,
       `To: ${emailData.to}`,
@@ -244,26 +225,22 @@ async function sendEmailViaSMTP(config: SMTPConfig, emailData: EmailData): Promi
       `.`
     ].join('\r\n');
 
-    // Send email content
-    logs.push("Sending email content...");
     await conn.write(encoder.encode(emailContent + '\r\n'));
     const emailSentResponse = await readResponse();
 
     if (!emailSentResponse.startsWith('250')) {
       conn.close();
-      logs.push("✗ Email sending failed");
-      return { success: false, error: 'Email sending failed: ' + emailSentResponse, logs };
+      throw new Error('Email sending failed: ' + emailSentResponse);
     }
 
-    // Send QUIT command
     await sendCommand('QUIT');
     conn.close();
 
-    logs.push(`✓ Email sent successfully to ${emailData.to}`);
+    logs.push(`✅ Email sent successfully to ${emailData.to}`);
     return { success: true, logs };
 
   } catch (error) {
-    logs.push(`✗ SMTP error: ${error.message}`);
+    logs.push(`❌ SMTP error: ${error.message}`);
     console.error('SMTP sending error:', error);
     return { success: false, error: error.message, logs };
   }
@@ -277,18 +254,19 @@ serve(async (req) => {
   try {
     const { config, emailData } = await req.json()
 
-    console.log('Sending email via SMTP:', {
+    console.log('📧 SMTP Send Request:', {
       host: config.host,
       port: config.port,
       to: emailData.to,
       subject: emailData.subject,
-      encryption: config.encryption
+      encryption: config.encryption,
+      auth_required: config.auth_required
     });
 
     const result = await sendEmailViaSMTP(config, emailData);
 
-    // Log all the SMTP transaction logs
-    console.log('SMTP Transaction Logs:');
+    // Log all transaction logs
+    console.log('📋 SMTP Transaction Logs:');
     result.logs.forEach(log => console.log(log));
 
     return new Response(
@@ -299,9 +277,13 @@ serve(async (req) => {
       }
     )
   } catch (error) {
-    console.error('Error sending email:', error)
+    console.error('❌ Fatal SMTP error:', error)
     return new Response(
-      JSON.stringify({ success: false, error: error.message, logs: [`Fatal error: ${error.message}`] }),
+      JSON.stringify({ 
+        success: false, 
+        error: error.message, 
+        logs: [`❌ Fatal error: ${error.message}`] 
+      }),
       { 
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         status: 500 
