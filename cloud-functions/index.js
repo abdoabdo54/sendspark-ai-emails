@@ -22,20 +22,23 @@ function createUltraFastTransporter(account) {
       },
       // MAXIMUM SPEED SETTINGS - NO LIMITS
       pool: true,
-      maxConnections: 100, // Increased from 50
+      maxConnections: 200, // Increased even more
       maxMessages: Infinity, // No message limit
       rateDelta: 0, // No rate limiting
       rateLimit: false, // Disable rate limiting completely
-      connectionTimeout: 120000, // 2 minutes
-      greetingTimeout: 60000, // 1 minute
-      socketTimeout: 120000, // 2 minutes
+      connectionTimeout: 180000, // 3 minutes
+      greetingTimeout: 90000, // 1.5 minutes
+      socketTimeout: 180000, // 3 minutes
       // Additional speed optimizations
       disableFileAccess: true,
       disableUrlAccess: true,
       keepAlive: true,
       // Remove any delays
       sendTimeout: 0,
-      idleTimeout: 0
+      idleTimeout: 0,
+      // Disable all authentication checks that could slow down
+      ignoreTLS: false,
+      requireTLS: false
     });
   }
   return null;
@@ -58,12 +61,15 @@ async function sendViaUltraFastSMTP(transporter, emailData) {
   }
 }
 
-// Fixed Apps Script sending with proper error handling
+// WORKING Apps Script implementation - restored from previous version
 async function sendViaAppsScript(account, emailData) {
   try {
     const config = account.config || {};
     
-    if (!config.exec_url) {
+    // Use exec_url if available, fallback to script_url for backward compatibility
+    const scriptUrl = config.exec_url || config.script_url;
+    
+    if (!scriptUrl) {
       return { success: false, error: 'Apps Script execution URL not configured' };
     }
 
@@ -76,16 +82,16 @@ async function sendViaAppsScript(account, emailData) {
       fromAlias: emailData.fromEmail
     };
 
-    console.log(`📧 Apps Script: Sending to ${emailData.to} via ${config.exec_url}`);
+    console.log(`📧 Apps Script: Sending to ${emailData.to} via ${scriptUrl}`);
 
-    const response = await fetch(config.exec_url, {
+    const response = await fetch(scriptUrl, {
       method: 'POST',
       headers: { 
         'Content-Type': 'application/json',
         ...(config.api_key ? { 'Authorization': `Bearer ${config.api_key}` } : {})
       },
       body: JSON.stringify(payload),
-      timeout: 30000 // 30 second timeout
+      timeout: 45000 // 45 second timeout for Apps Script
     });
 
     console.log(`📧 Apps Script Response Status: ${response.status}`);
@@ -94,10 +100,18 @@ async function sendViaAppsScript(account, emailData) {
       const result = await response.json();
       console.log(`📧 Apps Script Result:`, result);
       
-      if (result.status === 'success' || result.success === true) {
-        return { success: true, remainingQuota: result.remainingQuota };
+      // Handle various success response formats from Apps Script
+      if (result.status === 'success' || result.success === true || result.result === 'success') {
+        return { 
+          success: true, 
+          remainingQuota: result.remainingQuota || result.remaining_quota,
+          messageId: result.messageId || result.message_id
+        };
       } else {
-        return { success: false, error: result.message || result.error || 'Apps Script returned non-success status' };
+        return { 
+          success: false, 
+          error: result.message || result.error || result.details || 'Apps Script returned non-success status' 
+        };
       }
     } else {
       const errorText = await response.text();
@@ -110,7 +124,7 @@ async function sendViaAppsScript(account, emailData) {
   }
 }
 
-// Process email with hybrid method (SMTP + Apps Script) - FIXED
+// Process email with hybrid method (SMTP + Apps Script) - ENHANCED
 async function processEmailHybrid(preparedEmail, account, campaignData, globalIndex, totalAccounts) {
   try {
     const emailData = {
@@ -174,7 +188,7 @@ async function processEmailHybrid(preparedEmail, account, campaignData, globalIn
   }
 }
 
-// Main hybrid function handler - FIXED
+// Main hybrid function handler - ENHANCED
 const sendEmailCampaignZeroDelay = async (req, res) => {
   res.set('Access-Control-Allow-Origin', '*');
   res.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -298,10 +312,13 @@ const sendEmailCampaignZeroDelay = async (req, res) => {
 
     console.log(`✅ HYBRID GCF: COMPLETED - ${totalSent} sent (${smtpSent} SMTP, ${appsScriptSent} Apps Script), ${failedCount} failed (${smtpFailed} SMTP, ${appsScriptFailed} Apps Script), ${successRate}% in ${processingTime}ms`);
 
-    // Log Apps Script failures for debugging
+    // Log detailed Apps Script failures for debugging
     const appsScriptFailures = results.filter(r => r.status === 'failed' && r.accountType === 'apps-script');
     if (appsScriptFailures.length > 0) {
-      console.error('❌ Apps Script Failures:', appsScriptFailures.map(f => ({ email: f.recipient, error: f.error })));
+      console.error('❌ DETAILED Apps Script Failures:');
+      appsScriptFailures.forEach(f => {
+        console.error(`  • ${f.recipient}: ${f.error} (Account: ${f.accountName})`);
+      });
     }
 
     res.status(200).json({
@@ -317,8 +334,14 @@ const sendEmailCampaignZeroDelay = async (req, res) => {
         smtp: { sent: smtpSent, failed: smtpFailed },
         appsScript: { sent: appsScriptSent, failed: appsScriptFailed }
       },
-      results: results.slice(-10), // Last 10 for debugging
-      failures: appsScriptFailures.slice(0, 5) // First 5 Apps Script failures for debugging
+      results: results.slice(-5), // Last 5 for debugging
+      failures: appsScriptFailures.slice(0, 10), // First 10 Apps Script failures for debugging
+      detailedFailures: appsScriptFailures.map(f => ({
+        email: f.recipient,
+        error: f.error,
+        account: f.accountName,
+        type: f.accountType
+      }))
     });
 
   } catch (error) {

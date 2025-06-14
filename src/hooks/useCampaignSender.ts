@@ -108,9 +108,34 @@ export const useCampaignSender = (organizationId?: string) => {
         throw new Error('No active accounts selected for sending.');
       }
 
-      console.log(`🏪 HYBRID ULTRA-FAST: Using ${smtpAccounts.length} SMTP + ${appsScriptAccounts.length} Apps Script accounts`);
+      // Enhanced Apps Script account validation and configuration
+      const validAppsScriptAccounts = appsScriptAccounts.filter(account => {
+        const config = account.config || {};
+        const hasUrl = config.exec_url || config.script_url;
+        
+        if (!hasUrl) {
+          console.warn(`⚠️ Apps Script account ${account.name} missing execution URL`);
+          return false;
+        }
+        
+        console.log(`✅ Apps Script account ${account.name} validated:`, {
+          exec_url: config.exec_url ? 'configured' : 'missing',
+          script_url: config.script_url ? 'configured' : 'missing',
+          api_key: config.api_key ? 'configured' : 'missing'
+        });
+        
+        return true;
+      });
+
+      console.log(`🏪 HYBRID ULTRA-FAST: Using ${smtpAccounts.length} SMTP + ${validAppsScriptAccounts.length} valid Apps Script accounts`);
       console.log('SMTP Accounts:', smtpAccounts.map(a => ({ name: a.name, email: a.email })));
-      console.log('Apps Script Accounts:', appsScriptAccounts.map(a => ({ name: a.name, email: a.email, execUrl: a.config?.exec_url })));
+      console.log('Apps Script Accounts:', validAppsScriptAccounts.map(a => ({ 
+        name: a.name, 
+        email: a.email, 
+        execUrl: a.config?.exec_url || a.config?.script_url,
+        hasApiKey: !!a.config?.api_key 
+      })));
+      
       setProgress(25);
 
       // Get enabled functions
@@ -132,6 +157,9 @@ export const useCampaignSender = (organizationId?: string) => {
         .eq('id', existingCampaign.id);
 
       setProgress(75);
+
+      // Combine valid accounts for distribution
+      const finalAccounts = [...smtpAccounts, ...validAppsScriptAccounts];
 
       // Distribute emails across functions for parallel processing
       const emailsPerFunction = Math.ceil(preparedEmails.length / enabledFunctions.length);
@@ -159,7 +187,7 @@ export const useCampaignSender = (organizationId?: string) => {
             html_content: campaignData.html_content || '',
             text_content: campaignData.text_content || ''
           },
-          accounts: allSelectedAccounts.map(account => ({
+          accounts: finalAccounts.map(account => ({
             id: account.id,
             name: account.name,
             email: account.email,
@@ -169,18 +197,19 @@ export const useCampaignSender = (organizationId?: string) => {
               // ULTRA-FAST SMTP settings - NO LIMITS
               ...(account.type === 'smtp' ? {
                 pool: true,
-                maxConnections: 100,
+                maxConnections: 200,
                 maxMessages: Infinity,
                 rateDelta: 0,
                 rateLimit: false,
-                connectionTimeout: 120000,
-                greetingTimeout: 60000,
-                socketTimeout: 120000,
+                connectionTimeout: 180000,
+                greetingTimeout: 90000,
+                socketTimeout: 180000,
                 sendTimeout: 0,
                 idleTimeout: 0
               } : {
-                // Apps Script settings
-                exec_url: account.config?.exec_url,
+                // Enhanced Apps Script settings with fallbacks
+                exec_url: account.config?.exec_url || account.config?.script_url,
+                script_url: account.config?.script_url,
                 api_key: account.config?.api_key,
                 script_id: account.config?.script_id,
                 deployment_id: account.config?.deployment_id
@@ -192,14 +221,16 @@ export const useCampaignSender = (organizationId?: string) => {
           hybridMode: true, // Enable hybrid SMTP + Apps Script processing
           accountDistribution: {
             smtp: smtpAccounts.length,
-            appsScript: appsScriptAccounts.length
+            appsScript: validAppsScriptAccounts.length,
+            total: finalAccounts.length
           }
         };
 
         console.log(`📦 HYBRID ULTRA-FAST: Payload for ${func.name}:`, {
           preparedEmailsCount: functionEmails.length,
           smtpAccountsCount: smtpAccounts.length,
-          appsScriptAccountsCount: appsScriptAccounts.length,
+          appsScriptAccountsCount: validAppsScriptAccounts.length,
+          totalAccountsCount: finalAccounts.length,
           hybridMode: true
         });
 
@@ -218,9 +249,9 @@ export const useCampaignSender = (organizationId?: string) => {
           const result = await response.json();
           console.log(`✅ HYBRID: Function ${func.name} result:`, result);
           
-          // Log any Apps Script failures for debugging
-          if (result.failures && result.failures.length > 0) {
-            console.error(`❌ Apps Script failures in ${func.name}:`, result.failures);
+          // Log detailed Apps Script failures for debugging
+          if (result.detailedFailures && result.detailedFailures.length > 0) {
+            console.error(`❌ Apps Script detailed failures in ${func.name}:`, result.detailedFailures);
           }
           
           return { 
@@ -228,7 +259,8 @@ export const useCampaignSender = (organizationId?: string) => {
             function: func.name, 
             result,
             sentCount: result.sent || 0,
-            breakdown: result.breakdown || {}
+            breakdown: result.breakdown || {},
+            detailedFailures: result.detailedFailures || []
           };
 
         } catch (error: any) {
@@ -254,8 +286,15 @@ export const useCampaignSender = (organizationId?: string) => {
       const totalSmtpFailed = successfulDispatches.reduce((sum, result) => sum + (result.breakdown?.smtp?.failed || 0), 0);
       const totalAppsScriptFailed = successfulDispatches.reduce((sum, result) => sum + (result.breakdown?.appsScript?.failed || 0), 0);
 
+      // Collect detailed Apps Script failures
+      const allAppsScriptFailures = successfulDispatches.flatMap(result => result.detailedFailures || []);
+
       console.log(`🎉 HYBRID ULTRA-FAST: FINAL RESULTS - ${totalSentEmails} emails sent (${totalSmtpSent} SMTP, ${totalAppsScriptSent} Apps Script)`);
       console.log(`🎉 HYBRID FAILURES: ${totalSmtpFailed} SMTP failed, ${totalAppsScriptFailed} Apps Script failed`);
+
+      if (allAppsScriptFailures.length > 0) {
+        console.error('❌ DETAILED Apps Script Failures:', allAppsScriptFailures);
+      }
 
       if (totalSentEmails === 0) {
         const errors = results.filter(r => !r.success).map(r => r.error).join(', ');
@@ -274,8 +313,12 @@ export const useCampaignSender = (organizationId?: string) => {
         })
         .eq('id', existingCampaign.id);
 
-      // Show detailed success message
-      const successMessage = `Hybrid Ultra-Fast: Campaign sent successfully! ${totalSentEmails} emails dispatched (${totalSmtpSent} via SMTP, ${totalAppsScriptSent} via Apps Script)${totalAppsScriptFailed > 0 ? `. ${totalAppsScriptFailed} Apps Script emails failed - check account configuration.` : ''}`;
+      // Show detailed success message with Apps Script failure details
+      let successMessage = `Hybrid Ultra-Fast: Campaign sent successfully! ${totalSentEmails} emails dispatched (${totalSmtpSent} via SMTP, ${totalAppsScriptSent} via Apps Script)`;
+      
+      if (totalAppsScriptFailed > 0) {
+        successMessage += `. ${totalAppsScriptFailed} Apps Script emails failed - check account configuration and execution URLs.`;
+      }
       
       toast.success(successMessage);
 
@@ -286,7 +329,8 @@ export const useCampaignSender = (organizationId?: string) => {
         breakdown: {
           smtp: { sent: totalSmtpSent, failed: totalSmtpFailed },
           appsScript: { sent: totalAppsScriptSent, failed: totalAppsScriptFailed }
-        }
+        },
+        appsScriptFailures: allAppsScriptFailures
       };
 
     } catch (error: any) {
