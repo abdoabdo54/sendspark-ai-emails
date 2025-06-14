@@ -76,6 +76,76 @@ async function sendViaSMTP(transporter, emailData) {
   }
 }
 
+// Process single email
+async function processEmail(recipient, account, campaignData, globalIndex, totalAccounts) {
+  try {
+    const emailData = {
+      to: recipient,
+      subject: campaignData.subject,
+      html: campaignData.html_content,
+      text: campaignData.text_content,
+      fromName: campaignData.from_name,
+      fromEmail: account.email
+    };
+
+    let result;
+
+    // Send based on account type
+    if (account.type === 'smtp') {
+      const transporter = createTransporter(account.config);
+      if (transporter) {
+        result = await sendViaSMTP(transporter, emailData);
+        transporter.close();
+      } else {
+        result = { success: false, error: 'Failed to create SMTP transporter' };
+      }
+    } else if (account.type === 'apps-script') {
+      result = await sendViaAppsScript(account.config, emailData);
+    } else {
+      result = { success: false, error: `Unsupported account type: ${account.type}` };
+    }
+
+    const accountIndex = globalIndex % totalAccounts;
+    
+    if (result.success) {
+      console.log(`✅ Email ${globalIndex + 1} → ${recipient} via Account ${accountIndex + 1} (${account.name}) SUCCESS`);
+      return {
+        recipient,
+        status: 'sent',
+        accountType: account.type,
+        accountName: account.name,
+        accountIndex: accountIndex + 1,
+        accountId: account.id,
+        globalIndex: globalIndex + 1,
+        messageId: result.messageId,
+        timestamp: new Date().toISOString()
+      };
+    } else {
+      console.log(`❌ Email ${globalIndex + 1} → ${recipient} via Account ${accountIndex + 1} (${account.name}) FAILED: ${result.error}`);
+      return {
+        recipient,
+        status: 'failed',
+        error: result.error,
+        accountType: account.type,
+        accountName: account.name,
+        accountIndex: accountIndex + 1,
+        accountId: account.id,
+        globalIndex: globalIndex + 1,
+        timestamp: new Date().toISOString()
+      };
+    }
+  } catch (error) {
+    console.error(`❌ Error processing ${recipient}:`, error);
+    return {
+      recipient,
+      status: 'failed',
+      error: error.message,
+      globalIndex: globalIndex + 1,
+      timestamp: new Date().toISOString()
+    };
+  }
+}
+
 // Main function handler
 const sendEmailCampaignZeroDelay = async (req, res) => {
   // Enable CORS
@@ -96,7 +166,8 @@ const sendEmailCampaignZeroDelay = async (req, res) => {
       slice, 
       campaignData, 
       accounts, 
-      organizationId 
+      organizationId,
+      globalStartIndex = 0 // NEW: Starting index for global rotation
     } = req.body;
 
     // Health check
@@ -108,94 +179,39 @@ const sendEmailCampaignZeroDelay = async (req, res) => {
       });
     }
 
-    console.log(`🚀 [${campaignId}] PERFECT ACCOUNT ROTATION: ${slice.recipients.length} emails across ${accounts.length} accounts`);
+    console.log(`🚀 [${campaignId}] PERFECT GLOBAL ROTATION: Processing ${slice.recipients.length} emails starting from global index ${globalStartIndex}`);
+    console.log(`📊 [${campaignId}] Using ${accounts.length} accounts with perfect rotation`);
 
-    const results = [];
     const config = campaignData.config || {};
     const sendingMode = config.sendingMode || 'zero-delay';
+    const batchSize = sendingMode === 'zero-delay' ? 50 : 10; // Parallel batch size
 
-    console.log(`📊 [${campaignId}] Mode: ${sendingMode}, Accounts: ${accounts.length}`);
+    console.log(`⚡ [${campaignId}] Parallel processing in batches of ${batchSize}`);
 
-    // CRITICAL FIX: PERFECT ROUND-ROBIN ROTATION
-    // Every email gets assigned to the next account in sequence, cycling through all accounts
-    for (let i = 0; i < slice.recipients.length; i++) {
-      const recipient = slice.recipients[i];
-      
-      // PERFECT ROTATION: Use modulo to cycle through ALL accounts
-      const accountIndex = i % accounts.length;
+    // Prepare all email tasks with GLOBAL INDEXING
+    const emailTasks = slice.recipients.map((recipient, localIndex) => {
+      const globalIndex = globalStartIndex + localIndex; // CRITICAL: Global index calculation
+      const accountIndex = globalIndex % accounts.length; // PERFECT: Global rotation
       const account = accounts[accountIndex];
+      
+      console.log(`📧 [${campaignId}] Email ${globalIndex + 1}: ${recipient} → Account ${accountIndex + 1}/${accounts.length} (${account.name})`);
+      
+      return () => processEmail(recipient, account, campaignData, globalIndex, accounts.length);
+    });
 
-      console.log(`📧 [${campaignId}] Email ${i + 1}/${slice.recipients.length}: ${recipient} → Account ${accountIndex + 1}/${accounts.length} (${account.name})`);
-
-      try {
-        const emailData = {
-          to: recipient,
-          subject: campaignData.subject,
-          html: campaignData.html_content,
-          text: campaignData.text_content,
-          fromName: campaignData.from_name,
-          fromEmail: account.email
-        };
-
-        let result;
-
-        // Send based on account type
-        if (account.type === 'smtp') {
-          const transporter = createTransporter(account.config);
-          if (transporter) {
-            result = await sendViaSMTP(transporter, emailData);
-            transporter.close();
-          } else {
-            result = { success: false, error: 'Failed to create SMTP transporter' };
-          }
-        } else if (account.type === 'apps-script') {
-          result = await sendViaAppsScript(account.config, emailData);
-        } else {
-          result = { success: false, error: `Unsupported account type: ${account.type}` };
-        }
-
-        if (result.success) {
-          console.log(`✅ [${campaignId}] ${i+1}/${slice.recipients.length} → ${recipient} via Account ${accountIndex + 1} (${account.name}) SUCCESS`);
-          results.push({
-            recipient,
-            status: 'sent',
-            accountType: account.type,
-            accountName: account.name,
-            accountIndex: accountIndex + 1,
-            accountId: account.id,
-            messageId: result.messageId,
-            timestamp: new Date().toISOString()
-          });
-        } else {
-          console.log(`❌ [${campaignId}] ${i+1}/${slice.recipients.length} → ${recipient} via Account ${accountIndex + 1} (${account.name}) FAILED: ${result.error}`);
-          results.push({
-            recipient,
-            status: 'failed',
-            error: result.error,
-            accountType: account.type,
-            accountName: account.name,
-            accountIndex: accountIndex + 1,
-            accountId: account.id,
-            timestamp: new Date().toISOString()
-          });
-        }
-
-        // Apply delay based on sending mode (zero-delay = no delay)
-        if (sendingMode === 'controlled') {
-          await new Promise(resolve => setTimeout(resolve, 2000));
-        } else if (sendingMode === 'fast') {
-          await new Promise(resolve => setTimeout(resolve, 500));
-        }
-        // zero-delay mode: no delay for maximum speed
-
-      } catch (error) {
-        console.error(`❌ [${campaignId}] Error processing ${recipient}:`, error);
-        results.push({
-          recipient,
-          status: 'failed',
-          error: error.message,
-          timestamp: new Date().toISOString()
-        });
+    // Process emails in parallel batches for maximum speed
+    const results = [];
+    
+    for (let i = 0; i < emailTasks.length; i += batchSize) {
+      const batch = emailTasks.slice(i, i + batchSize);
+      console.log(`🚀 [${campaignId}] Processing batch ${Math.floor(i/batchSize) + 1}: ${batch.length} emails in parallel`);
+      
+      const batchResults = await Promise.all(batch.map(task => task()));
+      results.push(...batchResults);
+      
+      // Small delay between batches if not zero-delay mode
+      if (sendingMode !== 'zero-delay' && i + batchSize < emailTasks.length) {
+        await new Promise(resolve => setTimeout(resolve, 100));
       }
     }
 
@@ -206,14 +222,37 @@ const sendEmailCampaignZeroDelay = async (req, res) => {
     const successRate = Math.round((sentCount / slice.recipients.length) * 100);
 
     // PERFECT ACCOUNT DISTRIBUTION VERIFICATION
-    console.log(`📊 [${campaignId}] PERFECT ACCOUNT DISTRIBUTION VERIFICATION:`);
+    console.log(`📊 [${campaignId}] PERFECT GLOBAL ACCOUNT DISTRIBUTION:`);
     accounts.forEach((account, index) => {
       const accountResults = results.filter(r => r.accountIndex === index + 1);
       const accountSent = accountResults.filter(r => r.status === 'sent').length;
       console.log(`   Account ${index + 1} (${account.name}): ${accountSent} emails sent`);
     });
 
+    // Update campaign statistics
+    try {
+      const { data: currentCampaign } = await supabase
+        .from('email_campaigns')
+        .select('sent_count')
+        .eq('id', campaignId)
+        .single();
+
+      const newSentCount = (currentCampaign?.sent_count || 0) + sentCount;
+
+      await supabase
+        .from('email_campaigns')
+        .update({
+          sent_count: newSentCount
+        })
+        .eq('id', campaignId);
+
+      console.log(`📝 [${campaignId}] Updated campaign sent_count to ${newSentCount}`);
+    } catch (dbError) {
+      console.error(`❌ [${campaignId}] Database update failed:`, dbError);
+    }
+
     console.log(`✅ [${campaignId}] Slice completed: ${sentCount} sent, ${failedCount} failed (${successRate}%) in ${processingTime}ms`);
+    console.log(`⚡ [${campaignId}] Parallel processing: ${Math.round(slice.recipients.length / (processingTime / 1000))} emails/second`);
 
     res.status(200).json({
       success: true,
@@ -223,15 +262,19 @@ const sendEmailCampaignZeroDelay = async (req, res) => {
       failed: failedCount,
       successRate,
       processingTimeMs: processingTime,
+      emailsPerSecond: Math.round(slice.recipients.length / (processingTime / 1000)),
       sendingMode,
-      perfectRotation: true,
+      parallelBatches: Math.ceil(slice.recipients.length / batchSize),
+      batchSize,
+      perfectGlobalRotation: true,
+      globalStartIndex,
       accountDistribution: accounts.map((account, index) => ({
         accountName: account.name,
         accountId: account.id,
         accountIndex: index + 1,
         emailsSent: results.filter(r => r.accountIndex === index + 1 && r.status === 'sent').length
       })),
-      results: results.slice(-10) // Return last 10 results for debugging
+      results: results.slice(-10) // Last 10 for debugging
     });
 
   } catch (error) {
