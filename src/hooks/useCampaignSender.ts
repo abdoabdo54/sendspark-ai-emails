@@ -1,3 +1,4 @@
+
 import { useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useEmailAccounts } from './useEmailAccounts';
@@ -180,12 +181,12 @@ export const useCampaignSender = (organizationId?: string) => {
       // Get enabled functions for dispatch
       const enabledFunctions = functions.filter(f => f.enabled);
       if (enabledFunctions.length === 0) {
-        throw new Error('No enabled Google Cloud Functions found');
+        throw new Error('No enabled Google Cloud Functions found. Please add and enable at least one function in Function Manager.');
       }
 
       console.log(`🔧 DISPATCH: Using ${enabledFunctions.length} enabled functions`);
       enabledFunctions.forEach((func, index) => {
-        console.log(`   Function ${index + 1}: ${func.name}`);
+        console.log(`   Function ${index + 1}: ${func.name} - ${func.url}`);
       });
 
       setProgress(50);
@@ -221,31 +222,55 @@ export const useCampaignSender = (organizationId?: string) => {
 
       setProgress(75);
 
-      // PARALLEL DISPATCH to all functions with PERFECT distribution
+      // PARALLEL DISPATCH to all functions with PERFECT distribution and enhanced error handling
       const functionPromises = enabledFunctions.map(async (func, funcIndex) => {
-        console.log(`🚀 DISPATCHING to function ${funcIndex + 1}: ${func.name}`);
+        console.log(`🚀 DISPATCHING to function ${funcIndex + 1}: ${func.name} (${func.url})`);
         
         try {
+          // Add timeout to prevent hanging requests
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 60000); // 60 second timeout
+          
           const response = await fetch(func.url, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json'
             },
-            body: JSON.stringify(dispatchPayload)
+            body: JSON.stringify(dispatchPayload),
+            signal: controller.signal
           });
+
+          clearTimeout(timeoutId);
+
+          console.log(`📡 Function ${func.name} response status: ${response.status}`);
 
           if (!response.ok) {
             const errorText = await response.text();
-            throw new Error(`Function ${func.name} failed: ${response.status} - ${errorText}`);
+            console.error(`❌ Function ${func.name} HTTP error:`, response.status, errorText);
+            throw new Error(`HTTP ${response.status}: ${errorText.substring(0, 200)}`);
           }
 
           const result = await response.json();
-          console.log(`✅ Function ${func.name} completed:`, result);
-          return { success: true, function: func.name, result };
+          console.log(`✅ Function ${func.name} completed successfully:`, result);
+          return { success: true, function: func.name, result, url: func.url };
 
-        } catch (error) {
+        } catch (error: any) {
           console.error(`❌ Function ${func.name} failed:`, error);
-          return { success: false, function: func.name, error: error.message };
+          
+          // Provide more specific error messages
+          let errorMessage = error.message;
+          if (error.name === 'AbortError') {
+            errorMessage = 'Request timeout (60s)';
+          } else if (error.message.includes('Failed to fetch')) {
+            errorMessage = 'Network error - check function URL and connectivity';
+          }
+          
+          return { 
+            success: false, 
+            function: func.name, 
+            error: errorMessage,
+            url: func.url 
+          };
         }
       });
 
@@ -254,31 +279,49 @@ export const useCampaignSender = (organizationId?: string) => {
       
       setProgress(100);
 
-      const successfulDispatches = results.filter(r => r.success).length;
-      const failedDispatches = results.filter(r => !r.success).length;
+      const successfulDispatches = results.filter(r => r.success);
+      const failedDispatches = results.filter(r => !r.success);
 
-      console.log(`🎉 DISPATCH COMPLETE: ${successfulDispatches} successful, ${failedDispatches} failed`);
+      console.log(`🎉 DISPATCH COMPLETE: ${successfulDispatches.length} successful, ${failedDispatches.length} failed`);
 
-      if (successfulDispatches === 0) {
-        throw new Error('All function dispatches failed');
+      // Log detailed results
+      if (failedDispatches.length > 0) {
+        console.log('❌ FAILED DISPATCHES:');
+        failedDispatches.forEach(failed => {
+          console.log(`   ${failed.function} (${failed.url}): ${failed.error}`);
+        });
       }
 
-      if (failedDispatches > 0) {
-        console.warn(`⚠️ ${failedDispatches} functions failed, but ${successfulDispatches} succeeded`);
+      if (successfulDispatches.length > 0) {
+        console.log('✅ SUCCESSFUL DISPATCHES:');
+        successfulDispatches.forEach(success => {
+          console.log(`   ${success.function} (${success.url}): OK`);
+        });
       }
 
-      toast.success(`Campaign dispatched successfully! ${successfulDispatches} functions processing with perfect account distribution.`);
+      if (successfulDispatches.length === 0) {
+        // Provide detailed error information
+        const errorDetails = failedDispatches.map(f => `${f.function}: ${f.error}`).join('; ');
+        throw new Error(`All ${enabledFunctions.length} function dispatches failed. Details: ${errorDetails}`);
+      }
+
+      if (failedDispatches.length > 0) {
+        console.warn(`⚠️ ${failedDispatches.length} functions failed, but ${successfulDispatches.length} succeeded`);
+        toast.warning(`Campaign dispatched with some issues: ${failedDispatches.length} functions failed, ${successfulDispatches.length} succeeded.`);
+      } else {
+        toast.success(`Campaign dispatched successfully! ${successfulDispatches.length} functions processing with perfect account distribution.`);
+      }
 
       return {
         success: true,
-        message: `Campaign dispatched to ${successfulDispatches} functions with perfect account rotation`,
+        message: `Campaign dispatched to ${successfulDispatches.length} functions with perfect account rotation`,
         totalEmails,
         accountsUsed: selectedAccounts.length,
-        functionsUsed: successfulDispatches,
+        functionsUsed: successfulDispatches.length,
         perfectDistribution: true
       };
 
-    } catch (error) {
+    } catch (error: any) {
       console.error('❌ CAMPAIGN DISPATCH FAILED:', error);
       toast.error(`Campaign dispatch failed: ${error.message}`);
       throw error;
