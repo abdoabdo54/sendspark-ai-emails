@@ -1,4 +1,3 @@
-
 import { useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useEmailAccounts } from './useEmailAccounts';
@@ -191,12 +190,16 @@ export const useCampaignSender = (organizationId?: string) => {
 
       setProgress(50);
 
+      // FIXED: Use constants instead of accessing protected properties
+      const SUPABASE_URL = "https://kzatxttazxwqawefumed.supabase.co";
+      const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt6YXR4dHRhenh3cWF3ZWZ1bWVkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDgyNzE1NTAsImV4cCI6MjA2Mzg0NzU1MH0.2hJNt57jErh8GgjbXc8vNg94F0FFBZS7tXxmdQvRG_w";
+
       // Prepare enhanced dispatch payload with perfect distribution
       const dispatchPayload = {
         campaignId: `dispatch-${Date.now()}`,
         emailsByAccount: emailsByAccount,
-        supabaseUrl: supabase.supabaseUrl,
-        supabaseKey: supabase.supabaseKey,
+        supabaseUrl: SUPABASE_URL,
+        supabaseKey: SUPABASE_KEY,
         config: {
           ...campaignData.config,
           sendingMode: campaignData.config?.sendingMode || 'zero-delay',

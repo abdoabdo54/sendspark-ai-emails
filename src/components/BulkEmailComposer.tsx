@@ -15,6 +15,7 @@ import { toast } from 'sonner';
 import { useSimpleOrganizations } from '@/contexts/SimpleOrganizationContext';
 import { useCampaignSender } from '@/hooks/useCampaignSender';
 import { useEmailAccounts } from '@/hooks/useEmailAccounts';
+import { useGcfFunctions } from '@/hooks/useGcfFunctions';
 import { useNavigate } from 'react-router-dom';
 import CSVDataImporter from './CSVDataImporter';
 import GoogleSheetsImport from './GoogleSheetsImport';
@@ -28,7 +29,8 @@ interface BulkEmailComposerProps {
 const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
   const navigate = useNavigate();
   const { currentOrganization } = useSimpleOrganizations();
-  const { functions, hasFunctions } = useCampaignSender(currentOrganization?.id);
+  const { sendCampaign, isSending, progress } = useCampaignSender(currentOrganization?.id);
+  const { functions } = useGcfFunctions(currentOrganization?.id);
   const { accounts } = useEmailAccounts(currentOrganization?.id);
   
   // Form state
@@ -73,6 +75,7 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
   const recipientCount = recipients.split(',').filter(email => email.trim()).length;
   const activeAccounts = accounts.filter(account => account.is_active);
   const hasAccounts = selectedAccounts.length > 0;
+  const hasFunctions = functions.length > 0;
 
   // Initialize custom config with available resources
   useEffect(() => {
