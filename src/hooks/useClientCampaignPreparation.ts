@@ -10,6 +10,18 @@ interface PreparedEmail {
   rotation_index: number;
 }
 
+interface RotationConfig {
+  useFromNameRotation?: boolean;
+  fromNames?: string | string[];
+  useSubjectRotation?: boolean;
+  subjects?: string | string[];
+}
+
+interface CampaignConfig {
+  rotation?: RotationConfig;
+  [key: string]: any;
+}
+
 export const useClientCampaignPreparation = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -106,8 +118,8 @@ export const useClientCampaignPreparation = () => {
         throw new Error('No valid recipients found');
       }
 
-      // Parse rotation configuration
-      const config = campaign.config || {};
+      // Parse rotation configuration with proper typing
+      const config = (campaign.config as CampaignConfig) || {};
       
       // Parse from names - each line is a separate from name
       let fromNames = [campaign.from_name]; // Default fallback
@@ -183,7 +195,7 @@ export const useClientCampaignPreparation = () => {
         .from('email_campaigns')
         .update({
           status: 'prepared',
-          prepared_emails: allPreparedEmails,
+          prepared_emails: allPreparedEmails as any, // Type assertion for Supabase JSON
           total_recipients: totalEmails,
           error_message: null
         })

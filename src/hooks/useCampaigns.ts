@@ -321,6 +321,7 @@ export const useCampaigns = (organizationId?: string) => {
     pauseCampaign,
     resumeCampaign,
     prepareCampaign, // Keep for backward compatibility
+    sendCampaign, // Add the missing sendCampaign export
     refetch: fetchCampaigns
   };
 };

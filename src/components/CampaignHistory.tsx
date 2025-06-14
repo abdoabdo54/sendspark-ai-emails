@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -11,7 +12,7 @@ import { toast } from 'sonner';
 import CampaignAnalyticsDropdown from './CampaignAnalyticsDropdown';
 import CampaignEditDialog from './CampaignEditDialog';
 import CampaignPreparationDialog from './CampaignPreparationDialog';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@radix-ui/react-dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import ClientCampaignPreparationProgress from './ClientCampaignPreparationProgress';
 import { useClientCampaignPreparation } from '@/hooks/useClientCampaignPreparation';
 
@@ -84,9 +85,9 @@ const CampaignHistory = () => {
           setClientPreparationMessage('Starting client-side preparation...');
           
           // Get campaign to estimate email count
-          const campaign = campaigns.find(c => c.id === campaignId);
-          if (campaign) {
-            const recipientText = campaign.recipients || '';
+          const prepareCampaign = campaigns.find(c => c.id === campaignId);
+          if (prepareCampaign) {
+            const recipientText = prepareCampaign.recipients || '';
             let estimatedCount = 0;
             if (recipientText.includes(',') || recipientText.includes('\n') || recipientText.includes(';')) {
               const separators = [',', '\n', ';'];
@@ -126,25 +127,25 @@ const CampaignHistory = () => {
           }
           break;
         case 'send':
-          const campaign = campaigns.find(c => c.id === campaignId);
-          if (campaign) {
+          const sendCampaign = campaigns.find(c => c.id === campaignId);
+          if (sendCampaign) {
             console.log('🚀 CRITICAL: Dispatching campaign with PERFECT DISTRIBUTION:', {
               id: campaignId,
-              sendingMode: campaign.config?.sendingMode,
-              selectedAccounts: campaign.config?.selectedAccounts?.length || 0
+              sendingMode: sendCampaign.config?.sendingMode,
+              selectedAccounts: sendCampaign.config?.selectedAccounts?.length || 0
             });
             
             // Mark as sending for UI tracking
             setSendingCampaigns(prev => new Set([...prev, campaignId]));
             
             await dispatchCampaign({
-              from_name: campaign.from_name,
-              subject: campaign.subject,
-              recipients: campaign.recipients,
-              html_content: campaign.html_content,
-              text_content: campaign.text_content,
-              send_method: campaign.send_method,
-              config: campaign.config
+              from_name: sendCampaign.from_name,
+              subject: sendCampaign.subject,
+              recipients: sendCampaign.recipients,
+              html_content: sendCampaign.html_content,
+              text_content: sendCampaign.text_content,
+              send_method: sendCampaign.send_method,
+              config: sendCampaign.config
             });
             
             // FIXED: Single toast notification - no duplicates
