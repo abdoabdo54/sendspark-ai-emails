@@ -9,20 +9,28 @@ const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 // Configure nodemailer transporter based on account type - MAXIMUM SPEED
-function createTransporter(accountConfig) {
-  if (accountConfig.type === 'smtp') {
+function createTransporter(account) {
+  if (account.type === 'smtp') {
+    const config = account.config || {};
+    console.log(`🔧 Creating SMTP transporter for ${account.name}:`, {
+      host: config.host,
+      port: config.port,
+      user: config.username || config.user,
+      hasPassword: !!(config.password || config.pass)
+    });
+
     return nodemailer.createTransporter({
-      host: accountConfig.host,
-      port: accountConfig.port,
-      secure: accountConfig.secure || false,
+      host: config.host,
+      port: config.port || 587,
+      secure: config.secure || config.encryption === 'ssl' || false,
       auth: {
-        user: accountConfig.user,
-        pass: accountConfig.pass
+        user: config.username || config.user,
+        pass: config.password || config.pass
       },
       pool: true,
-      maxConnections: 100, // Maximum performance
-      maxMessages: 1000,   // Maximum performance
-      rateLimit: false     // No rate limiting
+      maxConnections: 100,
+      maxMessages: 1000,
+      rateLimit: false
     });
   }
   
@@ -30,9 +38,18 @@ function createTransporter(accountConfig) {
 }
 
 // Send email via Apps Script
-async function sendViaAppsScript(accountConfig, emailData) {
+async function sendViaAppsScript(account, emailData) {
   try {
-    const response = await fetch(accountConfig.script_url, {
+    const config = account.config || {};
+    const scriptUrl = config.script_url;
+    
+    if (!scriptUrl) {
+      return { success: false, error: 'Apps Script URL not configured' };
+    }
+
+    console.log(`📧 Sending via Apps Script: ${scriptUrl}`);
+
+    const response = await fetch(scriptUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -47,14 +64,22 @@ async function sendViaAppsScript(accountConfig, emailData) {
       })
     });
 
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`❌ Apps Script HTTP error:`, response.status, errorText);
+      return { success: false, error: `HTTP ${response.status}: ${errorText}` };
+    }
+
     const result = await response.json();
+    console.log(`📧 Apps Script response:`, result);
     
-    if (response.ok && result.status === 'success') {
-      return { success: true, messageId: result.messageId };
+    if (result.status === 'success' || result.success) {
+      return { success: true, messageId: result.messageId || 'apps-script-sent' };
     } else {
-      return { success: false, error: result.message || 'Apps Script error' };
+      return { success: false, error: result.message || result.error || 'Apps Script error' };
     }
   } catch (error) {
+    console.error(`❌ Apps Script error:`, error);
     return { success: false, error: error.message };
   }
 }
@@ -72,6 +97,7 @@ async function sendViaSMTP(transporter, emailData) {
 
     return { success: true, messageId: info.messageId };
   } catch (error) {
+    console.error(`❌ SMTP error:`, error);
     return { success: false, error: error.message };
   }
 }
@@ -88,11 +114,13 @@ async function processEmail(recipient, account, campaignData, globalIndex, total
       fromEmail: account.email
     };
 
+    console.log(`📧 Processing email ${globalIndex + 1}: ${recipient} via ${account.name} (${account.type})`);
+
     let result;
 
     // Send based on account type
     if (account.type === 'smtp') {
-      const transporter = createTransporter(account.config);
+      const transporter = createTransporter(account);
       if (transporter) {
         result = await sendViaSMTP(transporter, emailData);
         transporter.close();
@@ -100,7 +128,7 @@ async function processEmail(recipient, account, campaignData, globalIndex, total
         result = { success: false, error: 'Failed to create SMTP transporter' };
       }
     } else if (account.type === 'apps-script') {
-      result = await sendViaAppsScript(account.config, emailData);
+      result = await sendViaAppsScript(account, emailData);
     } else {
       result = { success: false, error: `Unsupported account type: ${account.type}` };
     }
@@ -197,6 +225,13 @@ const sendEmailCampaignZeroDelay = async (req, res) => {
       globalStartIndex = 0
     } = req.body;
 
+    console.log(`🚀 [${campaignId}] Received request:`, {
+      campaignId,
+      recipients: slice?.recipients?.length || 0,
+      accounts: accounts?.length || 0,
+      globalStartIndex
+    });
+
     // Health check
     if (!campaignId) {
       return res.status(200).json({
@@ -206,12 +241,39 @@ const sendEmailCampaignZeroDelay = async (req, res) => {
       });
     }
 
+    // Validate input
+    if (!slice?.recipients || !Array.isArray(slice.recipients) || slice.recipients.length === 0) {
+      console.error(`❌ No recipients provided`);
+      return res.status(400).json({
+        success: false,
+        error: 'No recipients provided',
+        received: { slice, accounts: accounts?.length || 0 }
+      });
+    }
+
+    if (!accounts || !Array.isArray(accounts) || accounts.length === 0) {
+      console.error(`❌ No accounts provided`);
+      return res.status(400).json({
+        success: false,
+        error: 'No accounts provided',
+        received: { recipients: slice.recipients.length, accounts: accounts?.length || 0 }
+      });
+    }
+
     console.log(`🚀 [${campaignId}] MAXIMUM SPEED PROCESSING: ${slice.recipients.length} emails starting from global index ${globalStartIndex}`);
     console.log(`📊 [${campaignId}] Using ${accounts.length} accounts with perfect rotation`);
+    
+    // Log account details for debugging
+    accounts.forEach((account, index) => {
+      console.log(`   Account ${index + 1}: ${account.name} (${account.email}) - ${account.type}`);
+      if (account.type === 'apps-script') {
+        console.log(`     Script URL: ${account.config?.script_url || 'NOT SET'}`);
+      }
+    });
 
     const config = campaignData.config || {};
     const sendingMode = config.sendingMode || 'zero-delay';
-    const batchSize = 50; // MAXIMUM SPEED - Larger batches
+    const batchSize = 20; // Reduced for better error handling
 
     console.log(`⚡ [${campaignId}] Processing in MAXIMUM SPEED batches of ${batchSize}`);
 
@@ -226,7 +288,7 @@ const sendEmailCampaignZeroDelay = async (req, res) => {
       return () => processEmail(recipient, account, campaignData, globalIndex, accounts.length);
     });
 
-    // MAXIMUM SPEED: Process emails in larger batches with NO DELAYS
+    // MAXIMUM SPEED: Process emails in batches
     const results = [];
     let totalSentInThisFunction = 0;
     
@@ -244,7 +306,9 @@ const sendEmailCampaignZeroDelay = async (req, res) => {
       const batchSentCount = batchResults.filter(r => r.status === 'sent').length;
       totalSentInThisFunction += batchSentCount;
       
-      // Update database progress every batch (not every email)
+      console.log(`✅ Batch ${batchNumber} completed: ${batchSentCount}/${batch.length} emails sent`);
+      
+      // Update database progress every batch
       if (batchSentCount > 0) {
         try {
           const { data: currentCampaign } = await supabase
@@ -259,8 +323,6 @@ const sendEmailCampaignZeroDelay = async (req, res) => {
           console.error(`❌ Progress update failed for batch ${batchNumber}:`, error);
         }
       }
-      
-      // NO DELAYS - Maximum speed processing
     }
 
     // Calculate final results
@@ -271,14 +333,28 @@ const sendEmailCampaignZeroDelay = async (req, res) => {
 
     // Account distribution verification
     console.log(`📊 [${campaignId}] FINAL ACCOUNT DISTRIBUTION:`);
-    accounts.forEach((account, index) => {
+    const accountDistribution = accounts.map((account, index) => {
       const accountResults = results.filter(r => r.accountIndex === index + 1);
       const accountSent = accountResults.filter(r => r.status === 'sent').length;
-      console.log(`   Account ${index + 1} (${account.name}): ${accountSent} emails sent`);
+      const accountFailed = accountResults.filter(r => r.status === 'failed').length;
+      console.log(`   Account ${index + 1} (${account.name}): ${accountSent} sent, ${accountFailed} failed`);
+      return {
+        accountName: account.name,
+        accountId: account.id,
+        accountIndex: index + 1,
+        emailsSent: accountSent,
+        emailsFailed: accountFailed
+      };
     });
 
     console.log(`✅ [${campaignId}] MAXIMUM SPEED completed: ${sentCount} sent, ${failedCount} failed (${successRate}%) in ${processingTime}ms`);
     console.log(`⚡ [${campaignId}] Processing rate: ${Math.round(slice.recipients.length / (processingTime / 1000))} emails/second`);
+
+    // Log failed emails for debugging
+    const failedEmails = results.filter(r => r.status === 'failed');
+    if (failedEmails.length > 0) {
+      console.log(`❌ Failed emails:`, failedEmails.map(f => `${f.recipient}: ${f.error}`));
+    }
 
     res.status(200).json({
       success: true,
@@ -294,12 +370,8 @@ const sendEmailCampaignZeroDelay = async (req, res) => {
       batchSize,
       maximumSpeed: true,
       globalStartIndex,
-      accountDistribution: accounts.map((account, index) => ({
-        accountName: account.name,
-        accountId: account.id,
-        accountIndex: index + 1,
-        emailsSent: results.filter(r => r.accountIndex === index + 1 && r.status === 'sent').length
-      })),
+      accountDistribution,
+      failedEmails: failedEmails.slice(0, 5), // First 5 failed for debugging
       results: results.slice(-5) // Last 5 for debugging
     });
 

@@ -24,7 +24,12 @@ serve(async (req) => {
     })
 
     if (!campaignId || !slice?.recipients || !campaignData || !accounts || accounts.length === 0) {
-      console.error('❌ Missing required parameters:', { campaignId, slice, campaignData, accounts })
+      console.error('❌ Missing required parameters:', { 
+        campaignId: !!campaignId, 
+        recipients: slice?.recipients?.length || 0, 
+        campaignData: !!campaignData, 
+        accounts: accounts?.length || 0 
+      })
       return new Response(
         JSON.stringify({ error: 'Missing required parameters' }),
         { 
@@ -45,7 +50,7 @@ serve(async (req) => {
     const errors = []
     const logs = []
 
-    // Process emails with account rotation and proper SMTP sending
+    // Process emails with account rotation and proper sending
     for (let i = 0; i < slice.recipients.length; i++) {
       const recipient = slice.recipients[i]
       const accountIndex = i % accounts.length // Rotate accounts
@@ -60,7 +65,7 @@ serve(async (req) => {
 
         console.log(`📤 Sending email ${i + 1}/${slice.recipients.length} via ${account.name} to ${recipient}`)
 
-        // Send email using SMTP
+        // Send email based on account type
         if (account.type === 'smtp') {
           const smtpResult = await sendViaSMTP(account, recipient, campaignData)
           
@@ -77,8 +82,23 @@ serve(async (req) => {
               account: account.name
             })
           }
+        } else if (account.type === 'apps-script') {
+          const appsScriptResult = await sendViaAppsScript(account, recipient, campaignData)
+          
+          if (appsScriptResult.success) {
+            sentCount++
+            logs.push(`✅ Apps Script sent to ${recipient} via ${account.name}`)
+            console.log(`✅ Apps Script sent to ${recipient} via ${account.name}`)
+          } else {
+            logs.push(`❌ Apps Script failed to ${recipient}: ${appsScriptResult.error}`)
+            console.error(`❌ Apps Script failed to ${recipient}:`, appsScriptResult.error)
+            errors.push({
+              recipient,
+              error: appsScriptResult.error,
+              account: account.name
+            })
+          }
         } else {
-          // Handle other account types (apps-script, powermta, etc.)
           logs.push(`⚠️ Unsupported account type: ${account.type}`)
           errors.push({
             recipient,
@@ -187,6 +207,51 @@ async function sendViaSMTP(account: any, recipient: string, campaignData: any): 
     }
   } catch (error) {
     console.error('SMTP sending error:', error)
+    return { success: false, error: error.message }
+  }
+}
+
+async function sendViaAppsScript(account: any, recipient: string, campaignData: any): Promise<{ success: boolean; error?: string }> {
+  try {
+    const scriptUrl = account.config?.script_url
+    
+    if (!scriptUrl) {
+      return { success: false, error: 'Apps Script URL not configured' }
+    }
+
+    console.log(`📧 Sending via Apps Script: ${scriptUrl}`)
+
+    const response = await fetch(scriptUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        to: recipient,
+        subject: campaignData.subject,
+        htmlBody: campaignData.html_content || '',
+        plainBody: campaignData.text_content || '',
+        fromName: campaignData.from_name,
+        fromAlias: account.email
+      })
+    })
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      console.error(`❌ Apps Script HTTP error:`, response.status, errorText)
+      return { success: false, error: `HTTP ${response.status}: ${errorText}` }
+    }
+
+    const result = await response.json()
+    console.log(`📧 Apps Script response:`, result)
+    
+    if (result.status === 'success' || result.success) {
+      return { success: true }
+    } else {
+      return { success: false, error: result.message || result.error || 'Apps Script error' }
+    }
+  } catch (error) {
+    console.error('Apps Script sending error:', error)
     return { success: false, error: error.message }
   }
 }
