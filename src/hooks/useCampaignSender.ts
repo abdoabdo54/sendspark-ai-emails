@@ -177,11 +177,15 @@ export const useCampaignSender = (organizationId?: string) => {
           globalStartIndex: startIndex
         };
 
-        console.log(`📦 Function ${func.name} payload: ${sliceRecipients.length} recipients, ${selectedAccounts.length} accounts`);
+        console.log(`📦 Function ${func.name} payload:`, {
+          recipients: sliceRecipients.length,
+          accounts: selectedAccounts.length,
+          sendingMode: dispatchPayload.campaignData.config.sendingMode
+        });
 
         try {
           const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 180000); // 3 minutes timeout
+          const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 minutes timeout
           
           const response = await fetch(func.url, {
             method: 'POST',
@@ -210,7 +214,7 @@ export const useCampaignSender = (organizationId?: string) => {
             function: func.name, 
             result, 
             url: func.url,
-            sentCount: result.sent || sliceRecipients.length // Use actual sent count or fallback to slice length
+            sentCount: result.sent || 0
           };
 
         } catch (error: any) {
@@ -218,9 +222,9 @@ export const useCampaignSender = (organizationId?: string) => {
           
           let errorMessage = error.message;
           if (error.name === 'AbortError') {
-            errorMessage = 'Request timeout (3 minutes)';
+            errorMessage = 'Request timeout (5 minutes)';
           } else if (error.message.includes('Failed to fetch')) {
-            errorMessage = 'Network error - check function URL';
+            errorMessage = 'Network error - check function URL and internet connection';
           }
           
           return { 
@@ -247,10 +251,10 @@ export const useCampaignSender = (organizationId?: string) => {
       console.log(`🎉 DISPATCH COMPLETE: ${successfulDispatches.length} successful, ${failedDispatches.length} failed`);
       console.log(`📊 TOTAL EMAILS SENT: ${totalSentEmails}/${recipients.length}`);
 
-      // Update campaign status
+      // Update campaign status with actual sent count
       if (successfulDispatches.length > 0) {
         try {
-          const finalStatus = failedDispatches.length === 0 ? 'sent' : 'partial_success';
+          const finalStatus = totalSentEmails === recipients.length ? 'sent' : totalSentEmails > 0 ? 'partial_success' : 'sent';
           await supabase
             .from('email_campaigns')
             .update({ 

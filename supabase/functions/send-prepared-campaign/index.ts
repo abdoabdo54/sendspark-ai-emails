@@ -13,16 +13,18 @@ serve(async (req) => {
   }
 
   try {
-    const { campaignId, slice, campaignData, accounts, organizationId } = await req.json()
+    const { campaignId, slice, campaignData, accounts, organizationId, globalStartIndex } = await req.json()
 
-    console.log('🚀 GCF: Processing prepared campaign slice:', {
+    console.log('🚀 GCF: Processing campaign slice:', {
       campaignId,
-      recipients: slice.recipients.length,
-      accounts: accounts.length,
-      sendingMode: campaignData.config.sendingMode
+      recipients: slice.recipients?.length || 0,
+      accounts: accounts?.length || 0,
+      sendingMode: campaignData?.config?.sendingMode || 'unknown',
+      globalStartIndex
     })
 
-    if (!campaignId || !slice || !campaignData || !accounts) {
+    if (!campaignId || !slice?.recipients || !campaignData || !accounts || accounts.length === 0) {
+      console.error('❌ Missing required parameters:', { campaignId, slice, campaignData, accounts })
       return new Response(
         JSON.stringify({ error: 'Missing required parameters' }),
         { 
@@ -37,100 +39,61 @@ serve(async (req) => {
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     const supabase = createClient(supabaseUrl, supabaseKey)
 
-    // Get the prepared campaign data
-    const { data: campaign, error: campaignError } = await supabase
-      .from('email_campaigns')
-      .select('*')
-      .eq('id', campaignId)
-      .single()
-
-    if (campaignError || !campaign) {
-      console.error('❌ Campaign not found:', campaignError)
-      return new Response(
-        JSON.stringify({ error: 'Campaign not found' }),
-        { 
-          status: 404, 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        }
-      )
-    }
-
-    if (campaign.status !== 'prepared' && campaign.status !== 'sending') {
-      console.error('❌ Campaign not prepared:', campaign.status)
-      return new Response(
-        JSON.stringify({ error: 'Campaign must be prepared before sending' }),
-        { 
-          status: 400, 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        }
-      )
-    }
-
-    const preparedEmails = campaign.prepared_emails || []
-    if (preparedEmails.length === 0) {
-      console.error('❌ No prepared emails found')
-      return new Response(
-        JSON.stringify({ error: 'No prepared emails found' }),
-        { 
-          status: 400, 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        }
-      )
-    }
-
-    // Get the slice of prepared emails for this function
-    const emailsToSend = preparedEmails.slice(slice.skip, slice.skip + slice.limit)
-    
-    console.log(`📧 Processing ${emailsToSend.length} PRE-PREPARED emails with ${accounts.length} accounts`)
+    console.log(`📧 Processing ${slice.recipients.length} recipients with ${accounts.length} accounts`)
 
     let sentCount = 0
     const errors = []
+    const logs = []
 
-    // Process emails with account rotation (emails are already prepared with subject/from rotation)
-    for (let i = 0; i < emailsToSend.length; i++) {
-      const email = emailsToSend[i]
+    // Process emails with account rotation and proper SMTP sending
+    for (let i = 0; i < slice.recipients.length; i++) {
+      const recipient = slice.recipients[i]
       const accountIndex = i % accounts.length // Rotate accounts
       const account = accounts[accountIndex]
 
       try {
         // Apply sending delay based on mode (unless zero-delay)
-        if (campaignData.config.sendingMode !== 'zero-delay' && i > 0) {
-          const delay = campaignData.config.sendingMode === 'fast' ? 500 : 2000
+        if (campaignData.config?.sendingMode !== 'zero-delay' && i > 0) {
+          const delay = campaignData.config?.sendingMode === 'fast' ? 500 : 2000
           await new Promise(resolve => setTimeout(resolve, delay))
         }
 
-        // Send email using the selected account with PRE-PREPARED data
-        const emailPayload = {
-          to: email.to,
-          from_name: email.from_name, // Already rotated during preparation
-          subject: email.subject,     // Already rotated during preparation
-          html_content: email.html_content,
-          text_content: email.text_content,
-          account: account,
-          campaign_id: campaignId
+        console.log(`📤 Sending email ${i + 1}/${slice.recipients.length} via ${account.name} to ${recipient}`)
+
+        // Send email using SMTP
+        if (account.type === 'smtp') {
+          const smtpResult = await sendViaSMTP(account, recipient, campaignData)
+          
+          if (smtpResult.success) {
+            sentCount++
+            logs.push(`✅ SMTP sent to ${recipient} via ${account.name}`)
+            console.log(`✅ SMTP sent to ${recipient} via ${account.name}`)
+          } else {
+            logs.push(`❌ SMTP failed to ${recipient}: ${smtpResult.error}`)
+            console.error(`❌ SMTP failed to ${recipient}:`, smtpResult.error)
+            errors.push({
+              recipient,
+              error: smtpResult.error,
+              account: account.name
+            })
+          }
+        } else {
+          // Handle other account types (apps-script, powermta, etc.)
+          logs.push(`⚠️ Unsupported account type: ${account.type}`)
+          errors.push({
+            recipient,
+            error: `Unsupported account type: ${account.type}`,
+            account: account.name
+          })
         }
-
-        console.log(`📤 Sending email ${i + 1}/${emailsToSend.length} via ${account.name} to ${email.to}`)
-        console.log(`   FROM: "${email.from_name}" | SUBJECT: "${email.subject}"`)
-
-        // Here you would call your actual email sending service
-        // For now, we'll simulate success
-        await new Promise(resolve => setTimeout(resolve, 100)) // Simulate send time
         
-        sentCount++
-        
-        // Test After logic
-        if (campaignData.config?.testAfter?.enabled && 
-            (sentCount % campaignData.config.testAfter.count === 0)) {
-          console.log(`🎯 Test After: Sending test email after ${sentCount} emails`)
-          // Send test email logic here
-        }
-
       } catch (error) {
-        console.error(`❌ Failed to send email to ${email.to}:`, error)
+        console.error(`❌ Failed to send email to ${recipient}:`, error)
+        logs.push(`❌ Failed to send to ${recipient}: ${error.message}`)
         errors.push({
-          recipient: email.to,
-          error: error.message
+          recipient,
+          error: error.message,
+          account: account?.name || 'unknown'
         })
       }
     }
@@ -139,7 +102,7 @@ serve(async (req) => {
     const { error: updateError } = await supabase
       .from('email_campaigns')
       .update({
-        sent_count: campaign.sent_count + sentCount
+        sent_count: supabase.sql`sent_count + ${sentCount}`
       })
       .eq('id', campaignId)
 
@@ -147,15 +110,16 @@ serve(async (req) => {
       console.error('❌ Failed to update campaign progress:', updateError)
     }
 
-    console.log(`✅ GCF completed: ${sentCount}/${emailsToSend.length} emails sent, ${errors.length} errors`)
+    console.log(`✅ GCF completed: ${sentCount}/${slice.recipients.length} emails sent, ${errors.length} errors`)
 
     return new Response(
       JSON.stringify({ 
         success: true,
         sent: sentCount,
-        total: emailsToSend.length,
+        total: slice.recipients.length,
         errors: errors,
-        message: `Successfully sent ${sentCount} out of ${emailsToSend.length} emails`
+        logs: logs,
+        message: `Successfully sent ${sentCount} out of ${slice.recipients.length} emails`
       }),
       { 
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
@@ -173,3 +137,56 @@ serve(async (req) => {
     )
   }
 })
+
+async function sendViaSMTP(account: any, recipient: string, campaignData: any): Promise<{ success: boolean; error?: string }> {
+  try {
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!
+    const supabaseKey = Deno.env.get('SUPABASE_ANON_KEY')!
+    
+    const emailData = {
+      from: { email: account.email, name: campaignData.from_name },
+      to: recipient,
+      subject: campaignData.subject,
+      html: campaignData.html_content || campaignData.text_content,
+      text: campaignData.text_content || ''
+    }
+
+    console.log(`🔧 SMTP Config for ${account.name}:`, {
+      host: account.config?.host,
+      port: account.config?.port,
+      encryption: account.config?.security || account.config?.encryption,
+      username: account.config?.username ? '***' : 'missing'
+    })
+
+    const response = await fetch(`${supabaseUrl}/functions/v1/send-smtp-email`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${supabaseKey}`
+      },
+      body: JSON.stringify({
+        config: {
+          host: account.config?.host,
+          port: account.config?.port || 587,
+          username: account.config?.username,
+          password: account.config?.password,
+          encryption: account.config?.security || account.config?.encryption || 'tls',
+          auth_required: account.config?.use_auth !== false
+        },
+        emailData
+      })
+    })
+
+    const result = await response.json()
+    
+    if (response.ok && result.success) {
+      return { success: true }
+    } else {
+      console.error('SMTP Error Response:', result)
+      return { success: false, error: result.error || 'SMTP sending failed' }
+    }
+  } catch (error) {
+    console.error('SMTP sending error:', error)
+    return { success: false, error: error.message }
+  }
+}
