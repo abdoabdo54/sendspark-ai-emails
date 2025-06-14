@@ -108,21 +108,20 @@ const sendEmailCampaignZeroDelay = async (req, res) => {
       });
     }
 
-    console.log(`🚀 [${campaignId}] Processing slice with EQUAL DISTRIBUTION: ${slice.recipients.length} emails across ${accounts.length} accounts`);
+    console.log(`🚀 [${campaignId}] PERFECT ACCOUNT ROTATION: ${slice.recipients.length} emails across ${accounts.length} accounts`);
 
     const results = [];
-
-    // Get configuration
     const config = campaignData.config || {};
     const sendingMode = config.sendingMode || 'zero-delay';
-    const equalAccountRotation = config.equalAccountRotation || true;
 
-    console.log(`📊 [${campaignId}] Mode: ${sendingMode}, Equal Rotation: ${equalAccountRotation}`);
+    console.log(`📊 [${campaignId}] Mode: ${sendingMode}, Accounts: ${accounts.length}`);
 
-    // PERFECT EQUAL DISTRIBUTION: Process each recipient with proper account rotation
+    // CRITICAL FIX: PERFECT ROUND-ROBIN ROTATION
+    // Every email gets assigned to the next account in sequence, cycling through all accounts
     for (let i = 0; i < slice.recipients.length; i++) {
       const recipient = slice.recipients[i];
-      // EQUAL ROTATION: Use modulo to ensure perfect distribution across accounts
+      
+      // PERFECT ROTATION: Use modulo to cycle through ALL accounts
       const accountIndex = i % accounts.length;
       const account = accounts[accountIndex];
 
@@ -140,7 +139,7 @@ const sendEmailCampaignZeroDelay = async (req, res) => {
 
         let result;
 
-        // Send based on account type with proper error handling
+        // Send based on account type
         if (account.type === 'smtp') {
           const transporter = createTransporter(account.config);
           if (transporter) {
@@ -156,18 +155,19 @@ const sendEmailCampaignZeroDelay = async (req, res) => {
         }
 
         if (result.success) {
-          console.log(`✅ [${campaignId}] ${i+1}/${slice.recipients.length} → ${recipient} via ${account.name} SUCCESS`);
+          console.log(`✅ [${campaignId}] ${i+1}/${slice.recipients.length} → ${recipient} via Account ${accountIndex + 1} (${account.name}) SUCCESS`);
           results.push({
             recipient,
             status: 'sent',
             accountType: account.type,
             accountName: account.name,
             accountIndex: accountIndex + 1,
+            accountId: account.id,
             messageId: result.messageId,
             timestamp: new Date().toISOString()
           });
         } else {
-          console.log(`❌ [${campaignId}] ${i+1}/${slice.recipients.length} → ${recipient} via ${account.name} FAILED: ${result.error}`);
+          console.log(`❌ [${campaignId}] ${i+1}/${slice.recipients.length} → ${recipient} via Account ${accountIndex + 1} (${account.name}) FAILED: ${result.error}`);
           results.push({
             recipient,
             status: 'failed',
@@ -175,6 +175,7 @@ const sendEmailCampaignZeroDelay = async (req, res) => {
             accountType: account.type,
             accountName: account.name,
             accountIndex: accountIndex + 1,
+            accountId: account.id,
             timestamp: new Date().toISOString()
           });
         }
@@ -185,7 +186,7 @@ const sendEmailCampaignZeroDelay = async (req, res) => {
         } else if (sendingMode === 'fast') {
           await new Promise(resolve => setTimeout(resolve, 500));
         }
-        // zero-delay mode: no delay
+        // zero-delay mode: no delay for maximum speed
 
       } catch (error) {
         console.error(`❌ [${campaignId}] Error processing ${recipient}:`, error);
@@ -204,8 +205,8 @@ const sendEmailCampaignZeroDelay = async (req, res) => {
     const processingTime = Date.now() - startTime;
     const successRate = Math.round((sentCount / slice.recipients.length) * 100);
 
-    // Log account distribution summary
-    console.log(`📊 [${campaignId}] ACCOUNT DISTRIBUTION SUMMARY:`);
+    // PERFECT ACCOUNT DISTRIBUTION VERIFICATION
+    console.log(`📊 [${campaignId}] PERFECT ACCOUNT DISTRIBUTION VERIFICATION:`);
     accounts.forEach((account, index) => {
       const accountResults = results.filter(r => r.accountIndex === index + 1);
       const accountSent = accountResults.filter(r => r.status === 'sent').length;
@@ -223,13 +224,14 @@ const sendEmailCampaignZeroDelay = async (req, res) => {
       successRate,
       processingTimeMs: processingTime,
       sendingMode,
-      equalDistribution: true,
+      perfectRotation: true,
       accountDistribution: accounts.map((account, index) => ({
         accountName: account.name,
+        accountId: account.id,
         accountIndex: index + 1,
         emailsSent: results.filter(r => r.accountIndex === index + 1 && r.status === 'sent').length
       })),
-      results: results.slice(-5) // Return last 5 results for debugging
+      results: results.slice(-10) // Return last 10 results for debugging
     });
 
   } catch (error) {

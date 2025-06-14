@@ -88,7 +88,7 @@ export const useCampaignSender = (organizationId?: string) => {
         throw new Error('No active accounts found from selection');
       }
 
-      console.log(`🏪 EQUAL DISTRIBUTION: Using ${selectedAccounts.length} accounts for ${recipients.length} recipients`);
+      console.log(`🏪 PERFECT ROTATION: Using ${selectedAccounts.length} accounts for ${recipients.length} recipients`);
       selectedAccounts.forEach((account, index) => {
         console.log(`   Account ${index + 1}: ${account.name} (${account.email}) - ${account.type}`);
       });
@@ -111,9 +111,6 @@ export const useCampaignSender = (organizationId?: string) => {
       // Create a temporary campaign ID for tracking
       const tempCampaignId = `dispatch-${Date.now()}`;
 
-      // Update campaign status to 'sending' at the start
-      console.log('📝 Updating campaign status to SENDING');
-
       setProgress(75);
 
       // PERFECT EQUAL DISTRIBUTION: Calculate recipients per function
@@ -134,7 +131,7 @@ export const useCampaignSender = (organizationId?: string) => {
 
         console.log(`🚀 DISPATCHING to function ${funcIndex + 1}: ${func.name} with ${sliceRecipients.length} recipients`);
         
-        // Prepare payload with PERFECT EQUAL ACCOUNT DISTRIBUTION
+        // Prepare payload with ALL SELECTED ACCOUNTS for perfect rotation
         const dispatchPayload = {
           campaignId: tempCampaignId,
           slice: {
@@ -150,11 +147,10 @@ export const useCampaignSender = (organizationId?: string) => {
               sendingMode: campaignData.config?.sendingMode || 'zero-delay',
               dispatchMethod: 'parallel',
               perfectDistribution: true,
-              equalAccountRotation: true,
-              updateCampaignStats: true
+              perfectRotation: true
             }
           },
-          accounts: selectedAccounts, // All accounts for equal rotation within each function
+          accounts: selectedAccounts, // ALL accounts for perfect rotation within each function
           organizationId: organizationId
         };
 
@@ -163,7 +159,7 @@ export const useCampaignSender = (organizationId?: string) => {
           recipientCount: sliceRecipients.length,
           accountCount: selectedAccounts.length,
           sendingMode: dispatchPayload.campaignData.config.sendingMode,
-          equalRotation: dispatchPayload.campaignData.config.equalAccountRotation
+          perfectRotation: dispatchPayload.campaignData.config.perfectRotation
         });
 
         try {
@@ -193,7 +189,6 @@ export const useCampaignSender = (organizationId?: string) => {
           const result = await response.json();
           console.log(`✅ Function ${func.name} completed successfully:`, result);
           
-          // Return success with sent count for tracking
           return { 
             success: true, 
             function: func.name, 
@@ -205,7 +200,6 @@ export const useCampaignSender = (organizationId?: string) => {
         } catch (error: any) {
           console.error(`❌ Function ${func.name} failed:`, error);
           
-          // Provide more specific error messages
           let errorMessage = error.message;
           if (error.name === 'AbortError') {
             errorMessage = 'Request timeout (60s)';
@@ -237,23 +231,27 @@ export const useCampaignSender = (organizationId?: string) => {
       console.log(`🎉 DISPATCH COMPLETE: ${successfulDispatches.length} successful, ${failedDispatches.length} failed`);
       console.log(`📊 TOTAL EMAILS SENT: ${totalSentEmails}/${recipients.length}`);
 
-      // Log detailed results
-      if (failedDispatches.length > 0) {
-        console.log('❌ FAILED DISPATCHES:');
-        failedDispatches.forEach(failed => {
-          console.log(`   ${failed.function} (${failed.url}): ${failed.error}`);
-        });
-      }
-
+      // CRITICAL FIX: Update campaign status to 'sent' after successful dispatch
       if (successfulDispatches.length > 0) {
-        console.log('✅ SUCCESSFUL DISPATCHES:');
-        successfulDispatches.forEach(success => {
-          console.log(`   ${success.function} (${success.url}): ${success.sentCount || 0} emails sent`);
-        });
+        try {
+          const campaignUpdate = await supabase
+            .from('email_campaigns')
+            .update({ 
+              status: 'sent',
+              sent_at: new Date().toISOString(),
+              sent_count: totalSentEmails
+            })
+            .eq('recipients', campaignData.recipients)
+            .eq('subject', campaignData.subject)
+            .eq('organization_id', organizationId);
+
+          console.log('📝 Campaign status updated to SENT:', campaignUpdate);
+        } catch (updateError) {
+          console.error('❌ Failed to update campaign status:', updateError);
+        }
       }
 
       if (successfulDispatches.length === 0) {
-        // Provide detailed error information
         const errorDetails = failedDispatches.map(f => `${f.function}: ${f.error}`).join('; ');
         throw new Error(`All ${enabledFunctions.length} function dispatches failed. Details: ${errorDetails}`);
       }
@@ -261,18 +259,18 @@ export const useCampaignSender = (organizationId?: string) => {
       // Show appropriate success/warning message
       if (failedDispatches.length > 0) {
         console.warn(`⚠️ ${failedDispatches.length} functions failed, but ${successfulDispatches.length} succeeded`);
-        toast.warning(`Campaign dispatched with some issues: ${failedDispatches.length} functions failed, ${successfulDispatches.length} succeeded. ${totalSentEmails} emails sent.`);
+        toast.warning(`Campaign dispatched with some issues: ${failedDispatches.length} functions failed, ${successfulDispatches.length} succeeded. ${totalSentEmails} emails sent with perfect account rotation.`);
       } else {
-        toast.success(`Campaign dispatched successfully! ${successfulDispatches.length} functions processing ${totalSentEmails} emails with perfect equal distribution across ${selectedAccounts.length} accounts.`);
+        toast.success(`Campaign dispatched successfully! ${successfulDispatches.length} functions processing ${totalSentEmails} emails with PERFECT account rotation across ${selectedAccounts.length} accounts.`);
       }
 
       return {
         success: true,
-        message: `Campaign dispatched to ${successfulDispatches.length} functions with perfect equal account rotation`,
+        message: `Campaign dispatched to ${successfulDispatches.length} functions with perfect account rotation`,
         totalEmails: totalSentEmails,
         accountsUsed: selectedAccounts.length,
         functionsUsed: successfulDispatches.length,
-        perfectDistribution: true
+        perfectRotation: true
       };
 
     } catch (error: any) {
