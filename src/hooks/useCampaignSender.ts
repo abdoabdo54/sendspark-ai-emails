@@ -5,6 +5,14 @@ import { useEmailAccounts } from './useEmailAccounts';
 import { useGcfFunctions } from './useGcfFunctions';
 import { toast } from 'sonner';
 
+interface PreparedEmail {
+  to: string;
+  from_name: string;
+  subject: string;
+  prepared_at: string;
+  rotation_index: number;
+}
+
 interface CampaignData {
   from_name: string;
   subject: string;
@@ -51,7 +59,7 @@ export const useCampaignSender = (organizationId?: string) => {
       console.log('📧 SEND: Found campaign:', {
         id: existingCampaign.id,
         status: existingCampaign.status,
-        preparedEmailsCount: existingCampaign.prepared_emails?.length || 0,
+        preparedEmailsExists: !!existingCampaign.prepared_emails,
         totalRecipients: existingCampaign.total_recipients
       });
 
@@ -60,10 +68,17 @@ export const useCampaignSender = (organizationId?: string) => {
         throw new Error(`Campaign status is '${existingCampaign.status}'. Only prepared campaigns can be sent.`);
       }
 
-      // Get prepared emails
-      const preparedEmails = existingCampaign.prepared_emails;
-      if (!preparedEmails || !Array.isArray(preparedEmails) || preparedEmails.length === 0) {
+      // Get prepared emails and properly cast from Json
+      const preparedEmailsJson = existingCampaign.prepared_emails;
+      if (!preparedEmailsJson) {
         throw new Error('No prepared emails found. Please prepare the campaign first.');
+      }
+
+      // Cast Json to PreparedEmail array
+      const preparedEmails = preparedEmailsJson as PreparedEmail[];
+      
+      if (!Array.isArray(preparedEmails) || preparedEmails.length === 0) {
+        throw new Error('Invalid prepared emails format. Please prepare the campaign again.');
       }
 
       console.log(`📧 SEND: Using ${preparedEmails.length} prepared emails`);
@@ -138,7 +153,7 @@ export const useCampaignSender = (organizationId?: string) => {
         const dispatchPayload = {
           campaignId: existingCampaign.id,
           slice: {
-            recipients: sliceEmails.map(email => email.to),
+            recipients: sliceEmails.map((email: PreparedEmail) => email.to),
             preparedEmails: sliceEmails // Include full prepared email data
           },
           campaignData: {

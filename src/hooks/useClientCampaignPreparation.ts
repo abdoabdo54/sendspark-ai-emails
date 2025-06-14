@@ -197,12 +197,12 @@ export const useClientCampaignPreparation = () => {
       console.log(`✅ CLIENT PREP: Complete - prepared ${allPreparedEmails.length} emails`);
       console.log(`📧 CLIENT PREP: Sample prepared emails:`, allPreparedEmails.slice(0, 3));
 
-      // Update campaign with prepared emails
+      // Update campaign with prepared emails - Convert to Json compatible format
       const { error: updateError } = await supabase
         .from('email_campaigns')
         .update({
           status: 'prepared',
-          prepared_emails: allPreparedEmails,
+          prepared_emails: allPreparedEmails as any, // Cast to any for Json compatibility
           total_recipients: totalEmails,
           error_message: null
         })
