@@ -19,11 +19,16 @@ import {
   Play,
   Pause,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  Clock,
+  Zap
 } from 'lucide-react';
 import { useSimpleOrganizations } from '@/contexts/SimpleOrganizationContext';
 import { useCampaigns } from '@/hooks/useCampaigns';
+import { useCampaignSender } from '@/hooks/useCampaignSender';
+import { useClientCampaignPreparation } from '@/hooks/useClientCampaignPreparation';
 import Header from '@/components/Header';
+import { toast } from 'sonner';
 
 const Campaigns = () => {
   const navigate = useNavigate();
@@ -39,11 +44,17 @@ const Campaigns = () => {
     duplicateCampaign,
     nextPage,
     prevPage,
-    search
+    search,
+    refetch
   } = useCampaigns(currentOrganization?.id);
+
+  const { sendCampaign: dispatchCampaign } = useCampaignSender(currentOrganization?.id);
+  const { prepareCampaignClientSide } = useClientCampaignPreparation();
 
   const [localSearchTerm, setLocalSearchTerm] = useState(searchTerm);
   const [sortBy, setSortBy] = useState('created_at');
+  const [preparingCampaigns, setPreparingCampaigns] = useState<Set<string>>(new Set());
+  const [sendingCampaigns, setSendingCampaigns] = useState<Set<string>>(new Set());
 
   // Handle search with debouncing
   const handleSearch = (value: string) => {
@@ -104,39 +115,110 @@ const Campaigns = () => {
     });
   };
 
-  const handleDelete = React.useCallback(async (campaignId: string) => {
-    if (confirm('Are you sure you want to delete this campaign?')) {
-      try {
-        await deleteCampaign(campaignId);
-      } catch (error) {
-        console.error('Error deleting campaign:', error);
+  const handleAction = async (action: string, campaignId: string) => {
+    try {
+      switch (action) {
+        case 'prepare':
+          console.log('🔧 Starting CLIENT-SIDE campaign preparation:', campaignId);
+          setPreparingCampaigns(prev => new Set([...prev, campaignId]));
+          
+          try {
+            const result = await prepareCampaignClientSide(campaignId);
+            console.log('✅ Client preparation completed:', result);
+            toast.success(`Campaign prepared successfully with ${result.emailCount} emails!`);
+            
+            // Refresh campaigns after 2 seconds
+            setTimeout(() => {
+              refetch();
+            }, 2000);
+            
+          } catch (error: any) {
+            console.error('❌ Client preparation failed:', error);
+            toast.error(`Preparation failed: ${error.message}`);
+          } finally {
+            setPreparingCampaigns(prev => {
+              const newSet = new Set(prev);
+              newSet.delete(campaignId);
+              return newSet;
+            });
+          }
+          break;
+          
+        case 'send':
+          const sendCampaign = campaigns.find(c => c.id === campaignId);
+          if (sendCampaign) {
+            console.log('🚀 CRITICAL: Dispatching campaign with PERFECT DISTRIBUTION:', {
+              id: campaignId,
+              sendingMode: sendCampaign.config?.sendingMode,
+              selectedAccounts: sendCampaign.config?.selectedAccounts?.length || 0
+            });
+            
+            // Mark as sending for UI tracking
+            setSendingCampaigns(prev => new Set([...prev, campaignId]));
+            
+            await dispatchCampaign({
+              from_name: sendCampaign.from_name,
+              subject: sendCampaign.subject,
+              recipients: sendCampaign.recipients,
+              html_content: sendCampaign.html_content,
+              text_content: sendCampaign.text_content,
+              send_method: sendCampaign.send_method,
+              config: sendCampaign.config
+            });
+            
+            console.log('✅ Campaign sent successfully with perfect distribution!');
+            
+            // Remove from sending tracking and refresh once
+            setSendingCampaigns(prev => {
+              const newSet = new Set(prev);
+              newSet.delete(campaignId);
+              return newSet;
+            });
+            
+            // Single refresh after sending
+            setTimeout(() => {
+              refetch();
+            }, 1000);
+          } else {
+            throw new Error('Campaign not found');
+          }
+          break;
+          
+        case 'delete':
+          if (confirm('Are you sure you want to delete this campaign?')) {
+            await deleteCampaign(campaignId);
+          }
+          break;
+          
+        case 'duplicate':
+          await duplicateCampaign(campaignId);
+          break;
+          
+        case 'pause':
+          await pauseCampaign(campaignId);
+          break;
+          
+        case 'resume':
+          await resumeCampaign(campaignId);
+          break;
       }
-    }
-  }, [deleteCampaign]);
-
-  const handleDuplicate = React.useCallback(async (campaignId: string) => {
-    try {
-      await duplicateCampaign(campaignId);
     } catch (error) {
-      console.error('Error duplicating campaign:', error);
+      console.error('❌ Action failed:', error);
+      toast.error(`Action failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      
+      // Remove from tracking on error
+      setSendingCampaigns(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(campaignId);
+        return newSet;
+      });
+      setPreparingCampaigns(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(campaignId);
+        return newSet;
+      });
     }
-  }, [duplicateCampaign]);
-
-  const handlePause = React.useCallback(async (campaignId: string) => {
-    try {
-      await pauseCampaign(campaignId);
-    } catch (error) {
-      console.error('Error pausing campaign:', error);
-    }
-  }, [pauseCampaign]);
-
-  const handleResume = React.useCallback(async (campaignId: string) => {
-    try {
-      await resumeCampaign(campaignId);
-    } catch (error) {
-      console.error('Error resuming campaign:', error);
-    }
-  }, [resumeCampaign]);
+  };
 
   const handleEdit = React.useCallback((campaign: any) => {
     localStorage.setItem('editCampaign', JSON.stringify(campaign));
@@ -278,14 +360,13 @@ const Campaigns = () => {
                 <CampaignListItem
                   key={campaign.id}
                   campaign={campaign}
-                  onDelete={handleDelete}
-                  onDuplicate={handleDuplicate}
-                  onPause={handlePause}
-                  onResume={handleResume}
+                  onAction={handleAction}
                   onEdit={handleEdit}
                   onViewAnalytics={handleViewAnalytics}
                   getStatusColor={getStatusColor}
                   formatDate={formatDate}
+                  isPrepairing={preparingCampaigns.has(campaign.id)}
+                  isSending={sendingCampaigns.has(campaign.id)}
                 />
               ))
             )}
@@ -327,17 +408,16 @@ const Campaigns = () => {
   );
 };
 
-// Memoized campaign list item component to prevent unnecessary re-renders
+// Memoized campaign list item component with action buttons
 const CampaignListItem = React.memo(({ 
   campaign, 
-  onDelete, 
-  onDuplicate, 
-  onPause, 
-  onResume, 
+  onAction, 
   onEdit, 
   onViewAnalytics,
   getStatusColor,
-  formatDate
+  formatDate,
+  isPrepairing,
+  isSending
 }: any) => (
   <div className="p-4 hover:bg-gray-50 transition-colors">
     <div className="flex items-center justify-between">
@@ -349,7 +429,7 @@ const CampaignListItem = React.memo(({
           </Badge>
         </div>
         
-        <div className="flex items-center gap-6 text-sm text-slate-600">
+        <div className="flex items-center gap-6 text-sm text-slate-600 mb-3">
           <div className="flex items-center gap-1">
             <Mail className="w-4 h-4" />
             <span>From: {campaign.from_name}</span>
@@ -366,15 +446,66 @@ const CampaignListItem = React.memo(({
             {campaign.sent_at ? formatDate(campaign.sent_at) : formatDate(campaign.created_at)}
           </div>
         </div>
+
+        {/* Campaign Configuration Display */}
+        {campaign.config && (
+          <div className="text-xs text-slate-500 mb-3 space-y-1">
+            <div className="flex gap-4 flex-wrap">
+              <span>📧 Accounts: {campaign.config.selectedAccounts?.length || 0} selected</span>
+              <span>⚡ Mode: {
+                campaign.config.sendingMode === 'zero-delay' ? '🚀 ZERO DELAY (PERFECT SPEED)' :
+                campaign.config.sendingMode === 'fast' ? 'Fast (0.5s delay)' :
+                campaign.config.sendingMode === 'controlled' ? 'Controlled (2s delay)' :
+                campaign.config.sendingMode || 'controlled'
+              }</span>
+              <span>🔄 Method: {
+                campaign.config.dispatchMethod === 'parallel' ? 'Parallel (Perfect Distribution)' :
+                campaign.config.dispatchMethod === 'round-robin' ? 'Round Robin (Rotate accounts)' :
+                campaign.config.dispatchMethod === 'sequential' ? 'Sequential' :
+                campaign.config.dispatchMethod || 'parallel'
+              }</span>
+            </div>
+            {campaign.config.sendingMode === 'zero-delay' && (
+              <div className="text-orange-600 font-medium">🚀 ZERO DELAY: Perfect distribution with maximum speed!</div>
+            )}
+          </div>
+        )}
       </div>
       
-      <div className="flex items-center gap-2">
-        {/* Action buttons with conditional rendering */}
+      <div className="flex items-center gap-2 flex-wrap">
+        {/* Prepare Button */}
+        {campaign.status === 'draft' && (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => onAction('prepare', campaign.id)}
+            disabled={isPrepairing}
+            className="flex items-center gap-1"
+          >
+            <Clock className="w-4 h-4" />
+            {isPrepairing ? 'Preparing...' : 'Prepare'}
+          </Button>
+        )}
+        
+        {/* Send Button */}
+        {campaign.status === 'prepared' && (
+          <Button
+            size="sm"
+            onClick={() => onAction('send', campaign.id)}
+            disabled={isSending}
+            className="bg-green-600 hover:bg-green-700 flex items-center gap-1"
+          >
+            <Zap className="w-4 h-4" />
+            {isSending ? 'Sending...' : campaign.config?.sendingMode === 'zero-delay' ? '🚀 SEND PERFECT SPEED' : 'Send Now'}
+          </Button>
+        )}
+        
+        {/* Pause/Resume for sending campaigns */}
         {campaign.status === 'sending' && (
           <Button 
             variant="outline" 
             size="sm"
-            onClick={() => onPause(campaign.id)}
+            onClick={() => onAction('pause', campaign.id)}
             title="Pause Campaign"
           >
             <Pause className="w-4 h-4" />
@@ -385,13 +516,14 @@ const CampaignListItem = React.memo(({
           <Button 
             variant="default" 
             size="sm"
-            onClick={() => onResume(campaign.id)}
+            onClick={() => onAction('resume', campaign.id)}
             title="Resume Campaign"
           >
             <Play className="w-4 h-4" />
           </Button>
         )}
 
+        {/* Analytics Button */}
         <Button 
           variant="outline" 
           size="sm" 
@@ -401,15 +533,17 @@ const CampaignListItem = React.memo(({
           <BarChart3 className="w-4 h-4" />
         </Button>
 
+        {/* Duplicate Button */}
         <Button 
           variant="outline" 
           size="sm"
-          onClick={() => onDuplicate(campaign.id)}
+          onClick={() => onAction('duplicate', campaign.id)}
           title="Duplicate Campaign"
         >
           <Copy className="w-4 h-4" />
         </Button>
 
+        {/* Edit Button (for drafts) */}
         {campaign.status === 'draft' && (
           <Button 
             variant="outline" 
@@ -421,10 +555,11 @@ const CampaignListItem = React.memo(({
           </Button>
         )}
 
+        {/* Delete Button */}
         <Button 
           variant="outline" 
           size="sm"
-          onClick={() => onDelete(campaign.id)}
+          onClick={() => onAction('delete', campaign.id)}
           title="Delete Campaign"
           className="text-red-600 hover:text-red-700"
         >

@@ -69,7 +69,31 @@ export const useCampaignSender = (organizationId?: string) => {
       console.log('🚀 STARTING CAMPAIGN DISPATCH');
       console.log('Campaign config:', campaignData.config);
 
-      const recipients = parseRecipients(campaignData.recipients);
+      // First, get the campaign from database to check if it has prepared emails
+      const { data: existingCampaign, error: fetchError } = await supabase
+        .from('email_campaigns')
+        .select('*')
+        .eq('subject', campaignData.subject)
+        .eq('organization_id', organizationId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single();
+
+      if (fetchError) {
+        console.error('❌ Error fetching campaign:', fetchError);
+      }
+
+      let recipients: string[] = [];
+      
+      // Use prepared emails if available, otherwise parse recipients text
+      if (existingCampaign?.prepared_emails && Array.isArray(existingCampaign.prepared_emails) && existingCampaign.prepared_emails.length > 0) {
+        console.log('✅ Using prepared emails:', existingCampaign.prepared_emails.length);
+        recipients = existingCampaign.prepared_emails.map((email: any) => email.to);
+      } else {
+        console.log('📝 Parsing recipients from text');
+        recipients = parseRecipients(campaignData.recipients);
+      }
+
       if (recipients.length === 0) {
         throw new Error('No valid recipients found');
       }
@@ -93,6 +117,7 @@ export const useCampaignSender = (organizationId?: string) => {
       console.log(`🏪 Using ${selectedAccounts.length} accounts for ${recipients.length} recipients`);
       selectedAccounts.forEach((account, index) => {
         console.log(`   Account ${index + 1}: ${account.name} (${account.email}) - ${account.type}`);
+        console.log(`   Config:`, account.config);
       });
 
       setProgress(25);
@@ -110,33 +135,52 @@ export const useCampaignSender = (organizationId?: string) => {
 
       setProgress(50);
 
-      // Create campaign record first
-      const { data: campaign, error: campaignError } = await supabase
-        .from('email_campaigns')
-        .insert({
-          organization_id: organizationId,
-          subject: campaignData.subject,
-          from_name: campaignData.from_name,
-          recipients: campaignData.recipients,
-          html_content: campaignData.html_content || '',
-          text_content: campaignData.text_content || '',
-          send_method: campaignData.send_method,
-          status: 'sending',
-          config: campaignData.config,
-          total_recipients: recipients.length,
-          sent_count: 0
-        })
-        .select()
-        .single();
+      // Create campaign record if it doesn't exist
+      let campaignId = existingCampaign?.id;
+      
+      if (!campaignId) {
+        const { data: campaign, error: campaignError } = await supabase
+          .from('email_campaigns')
+          .insert({
+            organization_id: organizationId,
+            subject: campaignData.subject,
+            from_name: campaignData.from_name,
+            recipients: campaignData.recipients,
+            html_content: campaignData.html_content || '',
+            text_content: campaignData.text_content || '',
+            send_method: campaignData.send_method,
+            status: 'sending',
+            config: campaignData.config,
+            total_recipients: recipients.length,
+            sent_count: 0
+          })
+          .select()
+          .single();
 
-      if (campaignError) {
-        console.error('❌ Failed to create campaign:', campaignError);
-        throw new Error('Failed to create campaign record');
+        if (campaignError) {
+          console.error('❌ Failed to create campaign:', campaignError);
+          throw new Error('Failed to create campaign record');
+        }
+        
+        campaignId = campaign.id;
+      } else {
+        // Update existing campaign to sending status
+        const { error: updateError } = await supabase
+          .from('email_campaigns')
+          .update({ 
+            status: 'sending',
+            sent_count: 0,
+            sent_at: null,
+            error_message: null 
+          })
+          .eq('id', campaignId);
+
+        if (updateError) {
+          console.error('❌ Failed to update campaign status:', updateError);
+        }
       }
 
-      const campaignId = campaign.id;
-      console.log(`📝 Campaign created with ID: ${campaignId}`);
-
+      console.log(`📝 Campaign ID: ${campaignId}`);
       setProgress(75);
 
       // Calculate recipients per function
@@ -172,16 +216,34 @@ export const useCampaignSender = (organizationId?: string) => {
               sendingMode: campaignData.config?.sendingMode || 'zero-delay'
             }
           },
-          accounts: selectedAccounts,
+          accounts: selectedAccounts.map(account => ({
+            id: account.id,
+            name: account.name,
+            email: account.email,
+            type: account.type,
+            config: {
+              ...account.config,
+              // Ensure script_url is properly included for apps-script accounts
+              script_url: account.config?.script_url,
+              // For SMTP accounts, ensure proper field mapping
+              host: account.config?.host,
+              port: account.config?.port || 587,
+              username: account.config?.username || account.config?.user,
+              password: account.config?.password || account.config?.pass,
+              security: account.config?.security || account.config?.encryption || 'tls',
+              use_auth: account.config?.use_auth !== false
+            }
+          })),
           organizationId: organizationId,
           globalStartIndex: startIndex
         };
 
-        console.log(`📦 Function ${func.name} payload:`, {
-          recipients: sliceRecipients.length,
-          accounts: selectedAccounts.length,
-          sendingMode: dispatchPayload.campaignData.config.sendingMode
-        });
+        console.log(`📦 Function ${func.name} payload accounts:`, dispatchPayload.accounts.map(acc => ({
+          name: acc.name,
+          type: acc.type,
+          script_url: acc.config?.script_url ? 'SET' : 'MISSING',
+          smtp_host: acc.config?.host || 'MISSING'
+        })));
 
         try {
           const controller = new AbortController();
