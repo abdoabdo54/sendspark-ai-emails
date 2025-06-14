@@ -132,29 +132,30 @@ export const useCampaignSender = (organizationId?: string) => {
 
       setProgress(75);
 
-      // Calculate recipients per function
-      const recipientsPerFunction = Math.ceil(preparedEmails.length / enabledFunctions.length);
+      // Calculate emails per function
+      const emailsPerFunction = Math.ceil(preparedEmails.length / enabledFunctions.length);
       
-      console.log(`📊 SEND: Distribution - ${recipientsPerFunction} emails per function`);
+      console.log(`📊 SEND: Distribution - ${emailsPerFunction} emails per function`);
 
       // Dispatch to functions with proper email slicing
       const functionPromises = enabledFunctions.map(async (func, funcIndex) => {
-        const startIndex = funcIndex * recipientsPerFunction;
-        const endIndex = Math.min(startIndex + recipientsPerFunction, preparedEmails.length);
-        const sliceEmails = preparedEmails.slice(startIndex, endIndex);
+        const startIndex = funcIndex * emailsPerFunction;
+        const endIndex = Math.min(startIndex + emailsPerFunction, preparedEmails.length);
+        const slicePreparedEmails = preparedEmails.slice(startIndex, endIndex);
         
-        if (sliceEmails.length === 0) {
+        if (slicePreparedEmails.length === 0) {
           console.log(`⏭️ SEND: Function ${func.name} has no emails to process`);
           return { success: true, function: func.name, result: { message: 'No emails assigned' }, url: func.url, sentCount: 0 };
         }
 
-        console.log(`🚀 SEND: Dispatching to ${func.name} with ${sliceEmails.length} emails`);
+        console.log(`🚀 SEND: Dispatching to ${func.name} with ${slicePreparedEmails.length} prepared emails`);
         
+        // CRITICAL FIX: Send preparedEmails in the slice, not recipients
         const dispatchPayload = {
           campaignId: existingCampaign.id,
           slice: {
-            recipients: sliceEmails.map((email: PreparedEmail) => email.to),
-            preparedEmails: sliceEmails // Include full prepared email data
+            preparedEmails: slicePreparedEmails, // Send actual prepared email objects
+            recipients: slicePreparedEmails.map((email: PreparedEmail) => email.to) // Keep for backward compatibility
           },
           campaignData: {
             from_name: campaignData.from_name,
@@ -179,9 +180,10 @@ export const useCampaignSender = (organizationId?: string) => {
 
         console.log(`📦 SEND: Function ${func.name} payload:`, {
           campaignId: existingCampaign.id,
-          emailCount: sliceEmails.length,
+          preparedEmailsCount: slicePreparedEmails.length,
           accountCount: selectedAccounts.length,
-          globalStartIndex: startIndex
+          globalStartIndex: startIndex,
+          samplePreparedEmail: slicePreparedEmails[0]
         });
 
         try {

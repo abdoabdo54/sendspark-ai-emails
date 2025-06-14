@@ -105,18 +105,25 @@ async function sendViaSMTP(transporter, emailData) {
 }
 
 // Process single email
-async function processEmail(recipient, account, campaignData, globalIndex, totalAccounts) {
+async function processEmail(preparedEmail, account, campaignData, globalIndex, totalAccounts) {
   try {
+    // Use prepared email data for subject and from_name, but merge with campaign data
     const emailData = {
-      to: recipient,
-      subject: campaignData.subject,
+      to: preparedEmail.to,
+      subject: preparedEmail.subject, // Use prepared subject (could be rotated)
       html: campaignData.html_content,
       text: campaignData.text_content,
-      fromName: campaignData.from_name,
+      fromName: preparedEmail.from_name, // Use prepared from_name (could be rotated)
       fromEmail: account.email
     };
 
-    console.log(`📧 Processing: ${recipient} via ${account.name} (${account.type})`);
+    console.log(`📧 Processing: ${preparedEmail.to} via ${account.name} (${account.type})`);
+    console.log(`📧 Email data:`, {
+      to: emailData.to,
+      subject: emailData.subject,
+      fromName: emailData.fromName,
+      fromEmail: emailData.fromEmail
+    });
 
     let result;
 
@@ -137,9 +144,9 @@ async function processEmail(recipient, account, campaignData, globalIndex, total
     const accountIndex = globalIndex % totalAccounts;
     
     if (result.success) {
-      console.log(`✅ SUCCESS: ${recipient} via ${account.name}`);
+      console.log(`✅ SUCCESS: ${preparedEmail.to} via ${account.name}`);
       return {
-        recipient,
+        recipient: preparedEmail.to,
         status: 'sent',
         accountType: account.type,
         accountName: account.name,
@@ -150,9 +157,9 @@ async function processEmail(recipient, account, campaignData, globalIndex, total
         timestamp: new Date().toISOString()
       };
     } else {
-      console.log(`❌ FAILED: ${recipient} via ${account.name} - ${result.error}`);
+      console.log(`❌ FAILED: ${preparedEmail.to} via ${account.name} - ${result.error}`);
       return {
-        recipient,
+        recipient: preparedEmail.to,
         status: 'failed',
         error: result.error,
         accountType: account.type,
@@ -164,9 +171,9 @@ async function processEmail(recipient, account, campaignData, globalIndex, total
       };
     }
   } catch (error) {
-    console.error(`❌ Error processing ${recipient}:`, error);
+    console.error(`❌ Error processing ${preparedEmail.to}:`, error);
     return {
-      recipient,
+      recipient: preparedEmail.to,
       status: 'failed',
       error: error.message,
       globalIndex: globalIndex + 1,
@@ -201,7 +208,8 @@ const sendEmailCampaignZeroDelay = async (req, res) => {
 
     console.log(`🚀 GCF: Received request:`, {
       campaignId,
-      recipients: slice?.recipients?.length || 0,
+      preparedEmailsCount: slice?.preparedEmails?.length || 0,
+      recipientsCount: slice?.recipients?.length || 0,
       accounts: accounts?.length || 0,
       globalStartIndex,
       hasPreparedEmails: !!slice?.preparedEmails
@@ -216,14 +224,15 @@ const sendEmailCampaignZeroDelay = async (req, res) => {
       });
     }
 
-    // Validate input
-    if (!slice?.recipients || !Array.isArray(slice.recipients) || slice.recipients.length === 0) {
-      console.error(`❌ GCF: No recipients provided`);
+    // Validate that we have prepared emails (the new way)
+    if (!slice?.preparedEmails || !Array.isArray(slice.preparedEmails) || slice.preparedEmails.length === 0) {
+      console.error(`❌ GCF: No prepared emails provided`);
       return res.status(400).json({
         success: false,
-        error: 'No recipients provided',
+        error: 'No prepared emails provided',
         received: { 
           slice: !!slice, 
+          preparedEmails: slice?.preparedEmails?.length || 0,
           recipients: slice?.recipients?.length || 0,
           accounts: accounts?.length || 0 
         }
@@ -238,7 +247,8 @@ const sendEmailCampaignZeroDelay = async (req, res) => {
       });
     }
 
-    console.log(`🚀 GCF: Processing ${slice.recipients.length} emails with ${accounts.length} accounts`);
+    const preparedEmails = slice.preparedEmails;
+    console.log(`🚀 GCF: Processing ${preparedEmails.length} prepared emails with ${accounts.length} accounts`);
     
     // Log account details
     accounts.forEach((account, index) => {
@@ -252,13 +262,13 @@ const sendEmailCampaignZeroDelay = async (req, res) => {
 
     const batchSize = 10; // Process in smaller batches for better error handling
 
-    // Process emails
-    const emailTasks = slice.recipients.map((recipient, localIndex) => {
+    // Process emails using prepared email data
+    const emailTasks = preparedEmails.map((preparedEmail, localIndex) => {
       const globalIndex = globalStartIndex + localIndex;
       const accountIndex = globalIndex % accounts.length;
       const account = accounts[accountIndex];
       
-      return () => processEmail(recipient, account, campaignData, globalIndex, accounts.length);
+      return () => processEmail(preparedEmail, account, campaignData, globalIndex, accounts.length);
     });
 
     const results = [];
@@ -304,7 +314,7 @@ const sendEmailCampaignZeroDelay = async (req, res) => {
 
     const failedCount = results.filter(r => r.status === 'failed').length;
     const processingTime = Date.now() - startTime;
-    const successRate = Math.round((totalSent / slice.recipients.length) * 100);
+    const successRate = Math.round((totalSent / preparedEmails.length) * 100);
 
     console.log(`✅ GCF: Complete - ${totalSent} sent, ${failedCount} failed (${successRate}%) in ${processingTime}ms`);
 
@@ -317,12 +327,12 @@ const sendEmailCampaignZeroDelay = async (req, res) => {
     res.status(200).json({
       success: true,
       campaignId,
-      processed: slice.recipients.length,
+      processed: preparedEmails.length,
       sent: totalSent,
       failed: failedCount,
       successRate,
       processingTimeMs: processingTime,
-      batchesProcessed: Math.ceil(slice.recipients.length / batchSize),
+      batchesProcessed: Math.ceil(preparedEmails.length / batchSize),
       globalStartIndex,
       accountDistribution: accounts.map((account, index) => ({
         accountName: account.name,
