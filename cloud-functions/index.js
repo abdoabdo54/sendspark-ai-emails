@@ -12,7 +12,7 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 function createUltraFastTransporter(account) {
   if (account.type === 'smtp') {
     const config = account.config || {};
-    return nodemailer.createTransporter({
+    return nodemailer.createTransport({
       host: config.host,
       port: config.port || 587,
       secure: config.port === 465,
