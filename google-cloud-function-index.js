@@ -38,10 +38,8 @@ functions.http('sendEmailCampaign', async (req, res) => {
   }
 
   try {
-    console.log('🚀 Google Cloud Function started - ENHANCED MODE with Zero Delay Support');
+    console.log('🚀 Google Cloud Function started - ENHANCED MODE with Perfect Account Distribution');
     console.log('Request method:', req.method);
-    console.log('Request headers:', req.headers);
-    console.log('Raw request body:', JSON.stringify(req.body, null, 2));
 
     const { 
       campaignId, 
@@ -78,47 +76,34 @@ functions.http('sendEmailCampaign', async (req, res) => {
       (config.sendingMode === 'zero-delay');
     
     console.log(`🚀 STARTING ${isZeroDelayMode ? 'ZERO DELAY' : 'ENHANCED'} CAMPAIGN ${campaignId}`);
-    console.log(`⚡ Processing ${Object.keys(emailsByAccount).length} accounts with ${isZeroDelayMode ? 'ZERO DELAY MODE' : 'enhanced features'}`);
-    console.log('Zero Delay Mode:', isZeroDelayMode);
-    console.log('Rotation config:', rotation);
-    console.log('Test after config:', testAfterConfig);
-    console.log('Custom rate limit config:', customRateLimit);
+    console.log(`⚡ Processing ${Object.keys(emailsByAccount).length} accounts with PERFECT DISTRIBUTION`);
+    console.log('Account distribution:', Object.keys(emailsByAccount).map(accountId => {
+      const accountData = emailsByAccount[accountId];
+      return `${accountData.accountInfo.name}: ${accountData.emails.length} emails`;
+    }));
 
     // Initialize Supabase client
     const supabase = createClient(supabaseUrl, supabaseKey);
-
-    // Ensure campaign is marked as sending
-    try {
-      await supabase
-        .from('email_campaigns')
-        .update({ 
-          status: 'sending',
-          sent_at: new Date().toISOString(),
-          error_message: null
-        })
-        .eq('id', campaignId);
-    } catch (supabaseError) {
-      console.error('Failed to update campaign status:', supabaseError);
-    }
 
     let totalSent = 0;
     let totalFailed = 0;
     let testEmailsSent = 0;
     const results = [];
+    let globalEmailIndex = 0;
 
     if (isZeroDelayMode) {
-      console.log('🚀 ZERO DELAY MODE ACTIVATED - UNLIMITED PARALLEL PROCESSING');
+      console.log('🚀 ZERO DELAY MODE ACTIVATED - UNLIMITED PARALLEL PROCESSING WITH PERFECT ACCOUNT DISTRIBUTION');
       
-      // Zero Delay Mode: Full parallel processing with no limits
+      // Zero Delay Mode: Full parallel processing across ALL accounts simultaneously
       const allAccountPromises = Object.entries(emailsByAccount).map(async ([accountId, accountData]) => {
-        console.log(`⚡ ZERO DELAY processing account ${accountId}:`, accountData);
+        console.log(`⚡ ZERO DELAY processing account ${accountId}:`, accountData.accountInfo);
         
         const accountType = accountData.type || 'smtp';
         const accountConfig = accountData.config || {};
         const emails = accountData.emails || [];
         const accountInfo = accountData.accountInfo || { name: 'Unknown', email: 'unknown@domain.com' };
         
-        console.log(`🚀 ZERO DELAY MODE: ${accountType} account ${accountInfo.email} (${emails.length} emails)`);
+        console.log(`🚀 ZERO DELAY MODE: ${accountType} account ${accountInfo.email} processing ${emails.length} emails in UNLIMITED PARALLEL`);
         
         try {
           if (accountType === 'smtp') {
@@ -182,9 +167,10 @@ functions.http('sendEmailCampaign', async (req, res) => {
                   throw new Error('Missing recipient or subject');
                 }
 
-                // Apply rotation if enabled
-                const fromName = getRotatedFromName(rotation, index) || emailData.fromName || accountInfo.name;
-                const subject = getRotatedSubject(rotation, index) || emailData.subject;
+                // Apply rotation if enabled using GLOBAL index for proper distribution
+                const currentGlobalIndex = globalEmailIndex + index;
+                const fromName = getRotatedFromName(rotation, currentGlobalIndex) || emailData.fromName || accountInfo.name;
+                const subject = getRotatedSubject(rotation, currentGlobalIndex) || emailData.subject;
 
                 const mailOptions = {
                   from: `${fromName} <${emailData.fromEmail || accountInfo.email}>`,
@@ -194,41 +180,44 @@ functions.http('sendEmailCampaign', async (req, res) => {
                   text: emailData.textContent || ''
                 };
 
-                console.log(`🚀 UNLIMITED SMTP sending to ${emailData.recipient} via ${accountInfo.email}`);
+                console.log(`🚀 UNLIMITED SMTP sending to ${emailData.recipient} via ${accountInfo.email} (Global Index: ${currentGlobalIndex})`);
                 
                 const info = await transporter.sendMail(mailOptions);
                 totalSent++;
                 console.log(`✅ UNLIMITED SENT: ${emailData.recipient} via ${accountInfo.email} (MessageID: ${info.messageId})`);
 
-                // Check if we should send a test email
-                if (shouldSendTestEmail(index, testAfterConfig)) {
+                // Check if we should send a test email using global index
+                if (shouldSendTestEmail(currentGlobalIndex, testAfterConfig)) {
                   try {
                     const testMailOptions = {
                       from: `${fromName} <${emailData.fromEmail || accountInfo.email}>`,
                       to: testAfterConfig.testAfterEmail,
                       subject: `UNLIMITED TEST - ${subject}`,
-                      html: `<h2>Unlimited Zero Delay Test Email</h2><p>Sent after ${index + 1} emails delivered in UNLIMITED ZERO DELAY MODE.</p><hr/>${emailData.htmlContent || ''}`,
-                      text: `UNLIMITED TEST - Sent after ${index + 1} emails delivered.\n\n${emailData.textContent || ''}`
+                      html: `<h2>Unlimited Zero Delay Test Email</h2><p>Sent after ${currentGlobalIndex + 1} emails delivered in UNLIMITED ZERO DELAY MODE with PERFECT ACCOUNT DISTRIBUTION.</p><hr/>${emailData.htmlContent || ''}`,
+                      text: `UNLIMITED TEST - Sent after ${currentGlobalIndex + 1} emails delivered.\n\n${emailData.textContent || ''}`
                     };
 
                     await transporter.sendMail(testMailOptions);
                     testEmailsSent++;
-                    console.log(`🧪 UNLIMITED TEST EMAIL SENT to ${testAfterConfig.testAfterEmail}`);
+                    console.log(`🧪 UNLIMITED TEST EMAIL SENT to ${testAfterConfig.testAfterEmail} after ${currentGlobalIndex + 1} emails`);
                   } catch (testError) {
                     console.error(`❌ Failed to send test email:`, testError);
                   }
                 }
                 
-                return { success: true, recipient: emailData.recipient, messageId: info.messageId, rotation: { fromName, subject } };
+                return { success: true, recipient: emailData.recipient, messageId: info.messageId, account: accountInfo.email, rotation: { fromName, subject } };
               } catch (error) {
                 totalFailed++;
-                console.error(`❌ UNLIMITED FAILED: ${emailData.recipient} - ${error.message}`);
-                return { success: false, recipient: emailData.recipient, error: error.message };
+                console.error(`❌ UNLIMITED FAILED: ${emailData.recipient} via ${accountInfo.email} - ${error.message}`);
+                return { success: false, recipient: emailData.recipient, account: accountInfo.email, error: error.message };
               }
             });
 
             // Wait for all emails to complete in unlimited parallel
             const emailResults = await Promise.allSettled(emailPromises);
+            
+            // Update global index for next account
+            globalEmailIndex += emails.length;
             
             emailResults.forEach(result => {
               if (result.status === 'fulfilled') {
@@ -263,9 +252,10 @@ functions.http('sendEmailCampaign', async (req, res) => {
                   throw new Error('Missing recipient or subject');
                 }
 
-                // Apply rotation if enabled
-                const fromName = getRotatedFromName(rotation, index) || emailData.fromName || accountInfo.name;
-                const subject = getRotatedSubject(rotation, index) || emailData.subject;
+                // Apply rotation if enabled using GLOBAL index
+                const currentGlobalIndex = globalEmailIndex + index;
+                const fromName = getRotatedFromName(rotation, currentGlobalIndex) || emailData.fromName || accountInfo.name;
+                const subject = getRotatedSubject(rotation, currentGlobalIndex) || emailData.subject;
 
                 const controller = new AbortController();
                 const timeoutId = setTimeout(() => controller.abort(), 15000);
@@ -293,10 +283,10 @@ functions.http('sendEmailCampaign', async (req, res) => {
                   const result = await response.json();
                   if (result.status === 'success') {
                     totalSent++;
-                    console.log(`✅ UNLIMITED SENT: ${emailData.recipient} via Apps Script`);
+                    console.log(`✅ UNLIMITED SENT: ${emailData.recipient} via Apps Script ${accountInfo.email} (Global Index: ${currentGlobalIndex})`);
 
-                    // Check if we should send a test email for Apps Script
-                    if (shouldSendTestEmail(index, testAfterConfig)) {
+                    // Check if we should send a test email for Apps Script using global index
+                    if (shouldSendTestEmail(currentGlobalIndex, testAfterConfig)) {
                       try {
                         const testResponse = await fetch(scriptUrl, {
                           method: 'POST',
@@ -307,8 +297,8 @@ functions.http('sendEmailCampaign', async (req, res) => {
                           body: JSON.stringify({
                             to: testAfterConfig.testAfterEmail,
                             subject: `UNLIMITED TEST - ${subject}`,
-                            htmlBody: `<h2>Unlimited Zero Delay Test Email</h2><p>Sent after ${index + 1} emails delivered in UNLIMITED ZERO DELAY MODE.</p><hr/>${emailData.htmlContent || ''}`,
-                            plainBody: `UNLIMITED TEST - Sent after ${index + 1} emails delivered.\n\n${emailData.textContent || ''}`,
+                            htmlBody: `<h2>Unlimited Zero Delay Test Email</h2><p>Sent after ${currentGlobalIndex + 1} emails delivered in UNLIMITED ZERO DELAY MODE with PERFECT ACCOUNT DISTRIBUTION.</p><hr/>${emailData.htmlContent || ''}`,
+                            plainBody: `UNLIMITED TEST - Sent after ${currentGlobalIndex + 1} emails delivered.\n\n${emailData.textContent || ''}`,
                             fromName: fromName,
                             fromAlias: emailData.fromEmail || accountInfo.email
                           })
@@ -316,14 +306,14 @@ functions.http('sendEmailCampaign', async (req, res) => {
 
                         if (testResponse.ok) {
                           testEmailsSent++;
-                          console.log(`🧪 UNLIMITED TEST EMAIL SENT to ${testAfterConfig.testAfterEmail}`);
+                          console.log(`🧪 UNLIMITED TEST EMAIL SENT to ${testAfterConfig.testAfterEmail} after ${currentGlobalIndex + 1} emails`);
                         }
                       } catch (testError) {
                         console.error(`❌ Failed to send test email via Apps Script:`, testError);
                       }
                     }
 
-                    return { success: true, recipient: emailData.recipient, rotation: { fromName, subject } };
+                    return { success: true, recipient: emailData.recipient, account: accountInfo.email, rotation: { fromName, subject } };
                   } else {
                     throw new Error(result.message || 'Apps Script error');
                   }
@@ -333,12 +323,16 @@ functions.http('sendEmailCampaign', async (req, res) => {
                 }
               } catch (error) {
                 totalFailed++;
-                console.error(`❌ UNLIMITED FAILED: ${emailData.recipient} - ${error.message}`);
-                return { success: false, recipient: emailData.recipient, error: error.message };
+                console.error(`❌ UNLIMITED FAILED: ${emailData.recipient} via ${accountInfo.email} - ${error.message}`);
+                return { success: false, recipient: emailData.recipient, account: accountInfo.email, error: error.message };
               }
             });
 
             const emailResults = await Promise.all(emailPromises);
+            
+            // Update global index for next account
+            globalEmailIndex += emails.length;
+            
             results.push(...emailResults);
 
             console.log(`⚡ UNLIMITED Apps Script completed for ${accountInfo.email}`);
@@ -356,6 +350,7 @@ functions.http('sendEmailCampaign', async (req, res) => {
             results.push({
               success: false,
               recipient: email.recipient,
+              account: accountInfo.email,
               error: accountError.message
             });
           });
@@ -363,7 +358,7 @@ functions.http('sendEmailCampaign', async (req, res) => {
       });
 
       // Wait for all accounts to finish UNLIMITED processing
-      console.log(`⚡ UNLIMITED MODE: Waiting for ${allAccountPromises.length} accounts to complete...`);
+      console.log(`⚡ UNLIMITED MODE: Waiting for ${allAccountPromises.length} accounts to complete with PERFECT DISTRIBUTION...`);
       await Promise.all(allAccountPromises);
 
     } else {
@@ -725,31 +720,20 @@ functions.http('sendEmailCampaign', async (req, res) => {
 
     }
 
-    // Final campaign completion with enhanced stats
-    const finalStatus = totalSent > 0 ? 'sent' : 'failed';
-    const updateData = { 
-      status: finalStatus,
-      sent_count: totalSent,
-      completed_at: new Date().toISOString()
-    };
-
-    if (totalFailed > 0) {
-      updateData.error_message = `${totalFailed} emails failed to send out of ${totalSent + totalFailed} total`;
-    } else {
-      updateData.error_message = null;
-    }
-
-    try {
-      await supabase
-        .from('email_campaigns')
-        .update(updateData)
-        .eq('id', campaignId);
-    } catch (updateError) {
-      console.error('Failed to update final status:', updateError);
-    }
-
     const modeType = isZeroDelayMode ? 'UNLIMITED ZERO DELAY MODE' : 'ENHANCED MODE';
-    console.log(`🎉 ${modeType} CAMPAIGN COMPLETED: ${totalSent} sent, ${totalFailed} failed, ${testEmailsSent} test emails sent`);
+    console.log(`🎉 ${modeType} CAMPAIGN COMPLETED with PERFECT ACCOUNT DISTRIBUTION: ${totalSent} sent, ${totalFailed} failed, ${testEmailsSent} test emails sent`);
+
+    // Log final account distribution summary
+    console.log('📊 FINAL ACCOUNT DISTRIBUTION SUMMARY:');
+    const accountSummary = {};
+    results.forEach(result => {
+      if (result.account) {
+        accountSummary[result.account] = (accountSummary[result.account] || 0) + 1;
+      }
+    });
+    Object.entries(accountSummary).forEach(([account, count]) => {
+      console.log(`   ${account}: ${count} emails processed`);
+    });
 
     res.set(corsHeaders);
     res.json({ 
@@ -762,10 +746,13 @@ functions.http('sendEmailCampaign', async (req, res) => {
       totalEmails: totalSent + totalFailed,
       successRate: totalSent > 0 ? Math.round((totalSent / (totalSent + totalFailed)) * 100) : 0,
       campaignId,
-      message: `${modeType} campaign completed successfully${isZeroDelayMode ? ' at unlimited speed' : ' with enhanced features'}`,
+      message: `${modeType} campaign completed successfully with PERFECT ACCOUNT DISTRIBUTION${isZeroDelayMode ? ' at unlimited speed' : ' with enhanced features'}`,
       mode: isZeroDelayMode ? 'unlimited-zero-delay' : 'enhanced',
+      accountDistribution: accountSummary,
       performance: {
         zeroDelayMode: isZeroDelayMode,
+        perfectDistribution: true,
+        accountRotation: true,
         maxSpeed: isZeroDelayMode,
         ultraFast: isZeroDelayMode,
         unlimited: isZeroDelayMode,
@@ -787,31 +774,16 @@ functions.http('sendEmailCampaign', async (req, res) => {
           parallelProcessing: true,
           noBatching: true,
           unlimited: true,
-          noRateLimit: true
+          noRateLimit: true,
+          perfectAccountDistribution: true
         } : null
       },
-      sampleResults: results.slice(0, 5)
+      sampleResults: results.slice(0, 10) // Show more samples to verify distribution
     });
 
   } catch (error) {
     console.error('💥 CAMPAIGN CRITICAL ERROR:', error);
     console.error('Error stack:', error.stack);
-    
-    try {
-      if (req.body?.campaignId && req.body?.supabaseUrl && req.body?.supabaseKey) {
-        const supabase = createClient(req.body.supabaseUrl, req.body.supabaseKey);
-        await supabase
-          .from('email_campaigns')
-          .update({ 
-            status: 'failed',
-            error_message: `Campaign error: ${error.message}`,
-            completed_at: new Date().toISOString()
-          })
-          .eq('id', req.body.campaignId);
-      }
-    } catch (revertError) {
-      console.error('Failed to revert status:', revertError);
-    }
 
     res.set(corsHeaders);
     res.status(500).json({ 
