@@ -38,7 +38,7 @@ export const useCampaignSender = (organizationId?: string) => {
       setIsSending(true);
       setProgress(0);
 
-      console.log('🚀 SEND: Starting campaign dispatch');
+      console.log('🚀 HYBRID ULTRA-FAST: Starting campaign dispatch with SMTP + Apps Script');
 
       // Get the campaign from database
       const { data: existingCampaign, error: fetchError } = await supabase
@@ -54,48 +54,61 @@ export const useCampaignSender = (organizationId?: string) => {
         throw new Error('Campaign not found');
       }
 
-      console.log('📧 SEND: Found campaign:', existingCampaign.id);
+      console.log('📧 HYBRID: Found campaign:', existingCampaign.id);
 
       if (existingCampaign.status !== 'prepared') {
         throw new Error(`Campaign must be prepared before sending. Current status: ${existingCampaign.status}`);
       }
 
-      // FIXED: Proper type handling for prepared emails
+      // Parse prepared emails with proper validation
       const preparedEmailsData = existingCampaign.prepared_emails;
       if (!preparedEmailsData || !Array.isArray(preparedEmailsData)) {
         throw new Error('No prepared emails found. Please prepare the campaign first.');
       }
 
-      // Type assertion with validation
-      const preparedEmails = preparedEmailsData.map((email: any) => {
-        if (!email || typeof email !== 'object') {
-          throw new Error('Invalid email data structure');
+      // Validate and convert prepared emails
+      const preparedEmails: PreparedEmail[] = [];
+      for (const emailData of preparedEmailsData) {
+        if (!emailData || typeof emailData !== 'object') {
+          console.warn('⚠️ HYBRID: Skipping invalid email data:', emailData);
+          continue;
         }
+        
+        const email = emailData as any;
         if (!email.to || !email.from_name || !email.subject) {
-          throw new Error(`Invalid email missing required fields: ${JSON.stringify(email)}`);
+          console.warn('⚠️ HYBRID: Skipping email missing required fields:', email);
+          continue;
         }
-        return {
+        
+        preparedEmails.push({
           to: String(email.to),
           from_name: String(email.from_name),
           subject: String(email.subject),
           prepared_at: String(email.prepared_at || new Date().toISOString()),
           rotation_index: Number(email.rotation_index || 0)
-        } as PreparedEmail;
-      });
+        });
+      }
 
-      console.log(`📧 SEND: Processing ${preparedEmails.length} prepared emails`);
+      if (preparedEmails.length === 0) {
+        throw new Error('No valid prepared emails found after validation');
+      }
 
-      // Get selected accounts
+      console.log(`📧 HYBRID: Processing ${preparedEmails.length} prepared emails`);
+
+      // Get both SMTP and Apps Script accounts
       const selectedAccountIds = campaignData.config?.selectedAccounts || [];
-      const selectedAccounts = accounts.filter(account => 
+      const allSelectedAccounts = accounts.filter(account => 
         selectedAccountIds.includes(account.id) && account.is_active
       );
 
-      if (selectedAccounts.length === 0) {
-        throw new Error('No active accounts selected for sending');
+      const smtpAccounts = allSelectedAccounts.filter(account => account.type === 'smtp');
+      const appsScriptAccounts = allSelectedAccounts.filter(account => account.type === 'apps-script');
+
+      if (allSelectedAccounts.length === 0) {
+        throw new Error('No active accounts selected for sending.');
       }
 
-      console.log(`🏪 SEND: Using ${selectedAccounts.length} accounts`);
+      console.log(`🏪 HYBRID ULTRA-FAST: Using ${smtpAccounts.length} SMTP + ${appsScriptAccounts.length} Apps Script accounts`);
       setProgress(25);
 
       // Get enabled functions
@@ -104,7 +117,7 @@ export const useCampaignSender = (organizationId?: string) => {
         throw new Error('No enabled Google Cloud Functions found');
       }
 
-      console.log(`🔧 SEND: Using ${enabledFunctions.length} enabled functions`);
+      console.log(`🔧 HYBRID: Using ${enabledFunctions.length} enabled functions`);
       setProgress(50);
 
       // Update campaign status to sending
@@ -118,7 +131,7 @@ export const useCampaignSender = (organizationId?: string) => {
 
       setProgress(75);
 
-      // Distribute emails across functions
+      // Distribute emails across functions for parallel processing
       const emailsPerFunction = Math.ceil(preparedEmails.length / enabledFunctions.length);
       
       const functionPromises = enabledFunctions.map(async (func, funcIndex) => {
@@ -130,9 +143,9 @@ export const useCampaignSender = (organizationId?: string) => {
           return { success: true, function: func.name, sentCount: 0 };
         }
 
-        console.log(`🚀 SEND: Function ${func.name} processing ${functionEmails.length} emails`);
+        console.log(`🚀 HYBRID: Function ${func.name} processing ${functionEmails.length} emails`);
         
-        // SIMPLIFIED PAYLOAD - exactly what GCF expects
+        // Create optimized payload for hybrid sending (SMTP + Apps Script)
         const payload = {
           campaignId: existingCampaign.id,
           slice: {
@@ -144,21 +157,41 @@ export const useCampaignSender = (organizationId?: string) => {
             html_content: campaignData.html_content || '',
             text_content: campaignData.text_content || ''
           },
-          accounts: selectedAccounts.map(account => ({
+          accounts: allSelectedAccounts.map(account => ({
             id: account.id,
             name: account.name,
             email: account.email,
-            type: account.type,
-            config: account.config
+            type: account.type, // Both 'smtp' and 'apps-script'
+            config: {
+              ...account.config,
+              // Optimized settings based on account type
+              ...(account.type === 'smtp' ? {
+                pool: true,
+                maxConnections: 50,
+                maxMessages: 100,
+                rateDelta: 1000,
+                rateLimit: 50
+              } : {
+                // Apps Script optimizations
+                dailyQuota: account.config?.daily_quota || 100,
+                batchSize: 10
+              })
+            }
           })),
           organizationId: organizationId,
-          globalStartIndex: startIndex
+          globalStartIndex: startIndex,
+          hybridMode: true, // Enable hybrid SMTP + Apps Script processing
+          accountDistribution: {
+            smtp: smtpAccounts.length,
+            appsScript: appsScriptAccounts.length
+          }
         };
 
-        console.log(`📦 SEND: Payload for ${func.name}:`, {
+        console.log(`📦 HYBRID ULTRA-FAST: Payload for ${func.name}:`, {
           preparedEmailsCount: functionEmails.length,
-          accountsCount: selectedAccounts.length,
-          firstEmail: functionEmails[0]
+          smtpAccountsCount: smtpAccounts.length,
+          appsScriptAccountsCount: appsScriptAccounts.length,
+          hybridMode: true
         });
 
         try {
@@ -174,7 +207,7 @@ export const useCampaignSender = (organizationId?: string) => {
           }
 
           const result = await response.json();
-          console.log(`✅ SEND: Function ${func.name} result:`, result);
+          console.log(`✅ HYBRID: Function ${func.name} result:`, result);
           
           return { 
             success: true, 
@@ -184,7 +217,7 @@ export const useCampaignSender = (organizationId?: string) => {
           };
 
         } catch (error: any) {
-          console.error(`❌ SEND: Function ${func.name} failed:`, error);
+          console.error(`❌ HYBRID: Function ${func.name} failed:`, error);
           return { 
             success: false, 
             function: func.name, 
@@ -200,7 +233,12 @@ export const useCampaignSender = (organizationId?: string) => {
       const successfulDispatches = results.filter(r => r.success);
       const totalSentEmails = successfulDispatches.reduce((sum, result) => sum + (result.sentCount || 0), 0);
 
-      console.log(`🎉 SEND: FINAL RESULTS - ${totalSentEmails} emails sent`);
+      console.log(`🎉 HYBRID ULTRA-FAST: FINAL RESULTS - ${totalSentEmails} emails sent`);
+
+      if (totalSentEmails === 0) {
+        const errors = results.filter(r => !r.success).map(r => r.error).join(', ');
+        throw new Error(`No emails were sent via hybrid method. Errors: ${errors}`);
+      }
 
       // Update final campaign status
       const finalStatus = totalSentEmails > 0 ? 'sent' : 'failed';
@@ -214,21 +252,17 @@ export const useCampaignSender = (organizationId?: string) => {
         })
         .eq('id', existingCampaign.id);
 
-      if (totalSentEmails === 0) {
-        throw new Error('No emails were sent. Check function logs for details.');
-      }
-
-      toast.success(`Campaign sent successfully! ${totalSentEmails} emails dispatched.`);
+      toast.success(`Hybrid Ultra-Fast: Campaign sent successfully! ${totalSentEmails} emails dispatched using SMTP + Apps Script at maximum speed.`);
 
       return {
         success: true,
-        message: `Campaign sent: ${totalSentEmails} emails`,
+        message: `Hybrid Ultra-Fast: ${totalSentEmails} emails sent via SMTP + Apps Script`,
         totalEmails: totalSentEmails
       };
 
     } catch (error: any) {
-      console.error('❌ SEND: Campaign failed:', error);
-      toast.error(`Campaign failed: ${error.message}`);
+      console.error('❌ HYBRID ULTRA-FAST: Campaign failed:', error);
+      toast.error(`Hybrid Campaign failed: ${error.message}`);
       throw error;
     } finally {
       setIsSending(false);
