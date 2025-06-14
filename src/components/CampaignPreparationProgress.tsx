@@ -1,8 +1,8 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { Progress } from "@/components/ui/progress";
 import { CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
 import { useCampaigns } from '@/hooks/useCampaigns';
+import { useClientCampaignPreparation } from '@/hooks/useClientCampaignPreparation';
 
 interface CampaignPreparationProgressProps {
   campaignId: string;
@@ -19,7 +19,8 @@ const CampaignPreparationProgress: React.FC<CampaignPreparationProgressProps> = 
   const [status, setStatus] = useState<'preparing' | 'completed' | 'error'>('preparing');
   const [message, setMessage] = useState('Starting preparation...');
   const [emailCount, setEmailCount] = useState(0);
-  const { prepareCampaign, campaigns, refetch } = useCampaigns();
+  const { campaigns, refetch } = useCampaigns();
+  const { prepareCampaignClientSide } = useClientCampaignPreparation();
   const preparationStarted = useRef(false);
 
   useEffect(() => {
@@ -63,8 +64,8 @@ const CampaignPreparationProgress: React.FC<CampaignPreparationProgressProps> = 
           });
         }, 300);
         
-        // Call the preparation function
-        const result = await prepareCampaign(campaignId);
+        // Call the client-side preparation function
+        const result = await prepareCampaignClientSide(campaignId);
         
         // Clear progress interval
         clearInterval(progressInterval);
@@ -93,7 +94,7 @@ const CampaignPreparationProgress: React.FC<CampaignPreparationProgressProps> = 
     };
 
     startPreparation();
-  }, [campaignId, prepareCampaign, campaigns, onComplete, onError, refetch]);
+  }, [campaignId, prepareCampaignClientSide, campaigns, onComplete, onError, refetch]);
 
   return (
     <div className="space-y-4">

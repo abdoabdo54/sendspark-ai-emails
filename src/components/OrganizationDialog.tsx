@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import {
   Dialog,
@@ -32,11 +31,10 @@ const OrganizationDialog: React.FC<OrganizationDialogProps> = ({ isOpen, onClose
     setIsLoading(true);
 
     try {
-      await createOrganization({
-        name: formData.name,
-        subdomain: formData.subdomain.toLowerCase().replace(/[^a-z0-9-]/g, ''),
-        domain: formData.domain || undefined
-      });
+      await createOrganization(
+        formData.name,
+        formData.subdomain.toLowerCase().replace(/[^a-z0-9-]/g, '')
+      );
       
       setFormData({ name: '', subdomain: '', domain: '' });
       onClose();
