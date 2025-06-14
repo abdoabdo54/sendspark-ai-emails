@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -12,6 +11,9 @@ import { toast } from 'sonner';
 import CampaignAnalyticsDropdown from './CampaignAnalyticsDropdown';
 import CampaignEditDialog from './CampaignEditDialog';
 import CampaignPreparationDialog from './CampaignPreparationDialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@radix-ui/react-dialog';
+import ClientCampaignPreparationProgress from './ClientCampaignPreparationProgress';
+import { useClientCampaignPreparation } from '@/hooks/useClientCampaignPreparation';
 
 const CampaignHistory = () => {
   const { currentOrganization } = useSimpleOrganizations();
@@ -26,8 +28,19 @@ const CampaignHistory = () => {
   } = useCampaigns(currentOrganization?.id);
   
   const { sendCampaign: dispatchCampaign } = useCampaignSender(currentOrganization?.id);
+  const { 
+    prepareCampaignClientSide, 
+    isProcessing: isClientProcessing,
+    progress: clientProgress,
+    currentBatch,
+    totalBatches
+  } = useClientCampaignPreparation();
+  
   const [preparingCampaignId, setPreparingCampaignId] = useState<string | null>(null);
   const [sendingCampaigns, setSendingCampaigns] = useState<Set<string>>(new Set());
+  const [clientPreparationStatus, setClientPreparationStatus] = useState<'preparing' | 'completed' | 'error'>('preparing');
+  const [clientPreparationMessage, setClientPreparationMessage] = useState('Starting preparation...');
+  const [clientEmailCount, setClientEmailCount] = useState(0);
 
   // FIXED: Smart refresh - ONLY during preparation, with proper timing
   useEffect(() => {
@@ -65,8 +78,52 @@ const CampaignHistory = () => {
     try {
       switch (action) {
         case 'prepare':
-          console.log('🔧 Starting campaign preparation:', campaignId);
+          console.log('🔧 Starting CLIENT-SIDE campaign preparation:', campaignId);
           setPreparingCampaignId(campaignId);
+          setClientPreparationStatus('preparing');
+          setClientPreparationMessage('Starting client-side preparation...');
+          
+          // Get campaign to estimate email count
+          const campaign = campaigns.find(c => c.id === campaignId);
+          if (campaign) {
+            const recipientText = campaign.recipients || '';
+            let estimatedCount = 0;
+            if (recipientText.includes(',') || recipientText.includes('\n') || recipientText.includes(';')) {
+              const separators = [',', '\n', ';'];
+              for (const sep of separators) {
+                if (recipientText.includes(sep)) {
+                  estimatedCount = Math.max(estimatedCount, recipientText.split(sep).length);
+                }
+              }
+            } else if (recipientText.trim()) {
+              estimatedCount = 1;
+            }
+            setClientEmailCount(estimatedCount);
+            setClientPreparationMessage(`Processing ${estimatedCount.toLocaleString()} emails locally...`);
+          }
+
+          try {
+            const result = await prepareCampaignClientSide(campaignId);
+            console.log('✅ Client preparation completed:', result);
+            
+            setClientPreparationStatus('completed');
+            setClientPreparationMessage(`Successfully prepared ${result.emailCount} emails!`);
+            
+            // Auto-close and refresh after 2 seconds
+            setTimeout(() => {
+              setPreparingCampaignId(null);
+              // Refresh 2 seconds after popup closes
+              setTimeout(() => {
+                console.log('🔄 Refreshing campaigns after client preparation');
+                refetch();
+              }, 2000);
+            }, 1500);
+            
+          } catch (error: any) {
+            console.error('❌ Client preparation failed:', error);
+            setClientPreparationStatus('error');
+            setClientPreparationMessage(`Preparation failed: ${error.message}`);
+          }
           break;
         case 'send':
           const campaign = campaigns.find(c => c.id === campaignId);
@@ -329,12 +386,39 @@ const CampaignHistory = () => {
 
       {/* Preparation Dialog */}
       {preparingCampaignId && (
-        <CampaignPreparationDialog
-          isOpen={true}
-          onClose={() => setPreparingCampaignId(null)}
-          campaignId={preparingCampaignId}
-          onComplete={handlePreparationComplete}
-        />
+        <Dialog open={true} onOpenChange={() => {}}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>🖥️ Client-Side Preparation</DialogTitle>
+              <DialogDescription>
+                Processing campaign locally to avoid server memory limits
+              </DialogDescription>
+            </DialogHeader>
+            
+            <div className="py-4">
+              <ClientCampaignPreparationProgress
+                isProcessing={isClientProcessing}
+                progress={clientProgress}
+                currentBatch={currentBatch}
+                totalBatches={totalBatches}
+                emailCount={clientEmailCount}
+                status={clientPreparationStatus}
+                message={clientPreparationMessage}
+              />
+            </div>
+
+            <div className="flex justify-end">
+              <Button 
+                variant="outline" 
+                onClick={() => setPreparingCampaignId(null)}
+                size="sm"
+                disabled={isClientProcessing}
+              >
+                {isClientProcessing ? 'Processing...' : 'Close'}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
       )}
     </div>
   );

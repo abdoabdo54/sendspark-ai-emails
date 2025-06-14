@@ -25,6 +25,7 @@ export interface Campaign {
 export const useCampaigns = (organizationId?: string) => {
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const fetchCampaigns = async () => {
     if (!organizationId) {
@@ -53,11 +54,7 @@ export const useCampaigns = (organizationId?: string) => {
       setCampaigns(typedCampaigns);
     } catch (error) {
       console.error('Error fetching campaigns:', error);
-      toast({
-        title: "Error",
-        description: "Failed to load campaigns",
-        variant: "destructive"
-      });
+      setError("Failed to load campaigns");
     } finally {
       setLoading(false);
     }
@@ -143,45 +140,27 @@ export const useCampaigns = (organizationId?: string) => {
   };
 
   const prepareCampaign = async (campaignId: string) => {
+    if (!organizationId) {
+      throw new Error('Organization not selected');
+    }
+
+    console.log('🔧 DEPRECATED: Server preparation being replaced by client-side');
+    
+    // This function is now deprecated in favor of client-side preparation
+    // But we keep it for backward compatibility
     try {
-      console.log('🔧 REAL PREPARATION: Starting campaign preparation for:', campaignId);
-      
-      // Call the prepare-campaign edge function for REAL preparation
       const { data, error } = await supabase.functions.invoke('prepare-campaign', {
         body: { campaignId }
       });
 
       if (error) {
-        console.error('❌ Preparation error:', error);
-        throw error;
+        console.error('❌ Server preparation failed, use client-side instead:', error);
+        throw new Error(`Server preparation failed: ${error.message}`);
       }
 
-      console.log('✅ Campaign prepared successfully:', data);
-      
-      // Refresh campaigns to show updated status
-      await fetchCampaigns();
-      
-      toast({
-        title: "Success",
-        description: data.message || "Campaign prepared successfully"
-      });
-
       return data;
-    } catch (error: any) {
-      console.error('Error preparing campaign:', error);
-      
-      // Update campaign status to failed if preparation fails
-      await updateCampaign(campaignId, { 
-        status: 'failed',
-        error_message: error.message 
-      });
-      
-      toast({
-        title: "Error",
-        description: `Failed to prepare campaign: ${error.message}`,
-        variant: "destructive"
-      });
-      
+    } catch (error) {
+      console.error('❌ Server preparation error, recommend client-side:', error);
       throw error;
     }
   };
@@ -332,16 +311,16 @@ export const useCampaigns = (organizationId?: string) => {
   }, [organizationId]);
 
   return {
-    campaigns,
+    campaigns: campaigns || [],
     loading,
+    error,
     createCampaign,
     updateCampaign,
     deleteCampaign,
-    sendCampaign,
-    prepareCampaign,
+    duplicateCampaign,
     pauseCampaign,
     resumeCampaign,
-    duplicateCampaign,
+    prepareCampaign, // Keep for backward compatibility
     refetch: fetchCampaigns
   };
 };
