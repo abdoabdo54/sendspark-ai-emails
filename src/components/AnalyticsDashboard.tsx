@@ -5,51 +5,51 @@ import { Progress } from "@/components/ui/progress";
 import { TrendingUp, TrendingDown, Mail, Users, Target, Calendar, BarChart3, MousePointer } from 'lucide-react';
 import { useSimpleOrganizations } from '@/contexts/SimpleOrganizationContext';
 import { useCampaigns } from '@/hooks/useCampaigns';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 
 const AnalyticsDashboard = () => {
   const { currentOrganization } = useSimpleOrganizations();
   const { campaigns } = useCampaigns(currentOrganization?.id);
-  const [analytics, setAnalytics] = useState({
-    totalCampaigns: 0,
-    totalEmailsSent: 0,
-    totalRecipients: 0,
-    averageOpenRate: 0,
-    averageClickRate: 0,
-    deliveryRate: 0,
-    campaignsThisWeek: 0
-  });
 
-  // Calculate real analytics from campaigns
-  useEffect(() => {
-    if (campaigns && campaigns.length > 0) {
-      const totalCampaigns = campaigns.length;
-      const totalEmailsSent = campaigns.reduce((sum, campaign) => sum + (campaign.sent_count || 0), 0);
-      const totalRecipients = campaigns.reduce((sum, campaign) => sum + (campaign.total_recipients || 0), 0);
-      
-      // Calculate campaigns from this week
-      const oneWeekAgo = new Date();
-      oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
-      const campaignsThisWeek = campaigns.filter(campaign => 
-        new Date(campaign.created_at) >= oneWeekAgo
-      ).length;
-      
-      // For now, we'll use industry averages since we don't have tracking data yet
-      // These will be replaced with real data once email tracking is implemented
-      const averageOpenRate = 24.5; // Industry average
-      const averageClickRate = 3.2; // Industry average
-      const deliveryRate = totalRecipients > 0 ? Math.round((totalEmailsSent / totalRecipients) * 100) : 98.7;
-      
-      setAnalytics({
-        totalCampaigns,
-        totalEmailsSent,
-        totalRecipients,
-        averageOpenRate,
-        averageClickRate,
-        deliveryRate,
-        campaignsThisWeek
-      });
+  // Memoize analytics calculations to prevent unnecessary recalculations
+  const analytics = useMemo(() => {
+    if (!campaigns || campaigns.length === 0) {
+      return {
+        totalCampaigns: 0,
+        totalEmailsSent: 0,
+        totalRecipients: 0,
+        averageOpenRate: 24.5,
+        averageClickRate: 3.2,
+        deliveryRate: 98.7,
+        campaignsThisWeek: 0
+      };
     }
+
+    const totalCampaigns = campaigns.length;
+    const totalEmailsSent = campaigns.reduce((sum, campaign) => sum + (campaign.sent_count || 0), 0);
+    const totalRecipients = campaigns.reduce((sum, campaign) => sum + (campaign.total_recipients || 0), 0);
+    
+    // Calculate campaigns from this week
+    const oneWeekAgo = new Date();
+    oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
+    const campaignsThisWeek = campaigns.filter(campaign => 
+      new Date(campaign.created_at) >= oneWeekAgo
+    ).length;
+    
+    // Use industry averages since we don't have tracking data yet
+    const averageOpenRate = 24.5;
+    const averageClickRate = 3.2;
+    const deliveryRate = totalRecipients > 0 ? Math.round((totalEmailsSent / totalRecipients) * 100) : 98.7;
+    
+    return {
+      totalCampaigns,
+      totalEmailsSent,
+      totalRecipients,
+      averageOpenRate,
+      averageClickRate,
+      deliveryRate,
+      campaignsThisWeek
+    };
   }, [campaigns]);
 
   if (!currentOrganization) return null;

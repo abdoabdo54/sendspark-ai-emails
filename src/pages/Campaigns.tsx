@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -30,18 +30,21 @@ const Campaigns = () => {
     campaigns, 
     loading, 
     deleteCampaign, 
-    prepareCampaign, 
-    sendCampaign, 
     pauseCampaign, 
     resumeCampaign,
     duplicateCampaign 
   } = useCampaigns(currentOrganization?.id);
   const [searchTerm, setSearchTerm] = useState('');
 
-  const filteredCampaigns = campaigns?.filter(campaign =>
-    campaign.subject.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    campaign.from_name.toLowerCase().includes(searchTerm.toLowerCase())
-  ) || [];
+  // Memoize filtered campaigns to prevent unnecessary re-renders
+  const filteredCampaigns = useMemo(() => {
+    if (!campaigns) return [];
+    
+    return campaigns.filter(campaign =>
+      campaign.subject.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      campaign.from_name.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+  }, [campaigns, searchTerm]);
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -74,7 +77,8 @@ const Campaigns = () => {
     });
   };
 
-  const handleDelete = async (campaignId: string) => {
+  // Memoized handlers to prevent re-renders
+  const handleDelete = React.useCallback(async (campaignId: string) => {
     if (confirm('Are you sure you want to delete this campaign?')) {
       try {
         await deleteCampaign(campaignId);
@@ -82,79 +86,60 @@ const Campaigns = () => {
         console.error('Error deleting campaign:', error);
       }
     }
-  };
+  }, [deleteCampaign]);
 
-  const handleDuplicate = async (campaignId: string) => {
+  const handleDuplicate = React.useCallback(async (campaignId: string) => {
     try {
       await duplicateCampaign(campaignId);
     } catch (error) {
       console.error('Error duplicating campaign:', error);
     }
-  };
+  }, [duplicateCampaign]);
 
-  const handlePrepare = async (campaignId: string) => {
-    try {
-      await prepareCampaign(campaignId);
-    } catch (error) {
-      console.error('Error preparing campaign:', error);
-    }
-  };
-
-  const handleSend = async (campaignId: string) => {
-    try {
-      // Use the sendCampaign from useCampaigns hook instead of creating a separate one
-      const campaign = campaigns?.find(c => c.id === campaignId);
-      if (!campaign) {
-        throw new Error('Campaign not found');
-      }
-
-      // Check if campaign is prepared
-      if (campaign.status !== 'prepared') {
-        throw new Error('Campaign must be prepared before sending');
-      }
-
-      // Call the function from useCampaigns hook (this will be the deprecated server-side version)
-      // In production, you'd want to use the new dispatch system from useCampaignSender
-      console.log('📧 Sending campaign via legacy method:', campaignId);
-      
-      // For now, just update the status since we don't have sendCampaign in the hook yet
-      // This should be replaced with proper dispatch logic
-      console.log('⚠️ Legacy send method - campaign status will be updated manually');
-      
-    } catch (error) {
-      console.error('Error sending campaign:', error);
-    }
-  };
-
-  const handlePause = async (campaignId: string) => {
+  const handlePause = React.useCallback(async (campaignId: string) => {
     try {
       await pauseCampaign(campaignId);
     } catch (error) {
       console.error('Error pausing campaign:', error);
     }
-  };
+  }, [pauseCampaign]);
 
-  const handleResume = async (campaignId: string) => {
+  const handleResume = React.useCallback(async (campaignId: string) => {
     try {
       await resumeCampaign(campaignId);
     } catch (error) {
       console.error('Error resuming campaign:', error);
     }
-  };
+  }, [resumeCampaign]);
 
-  const handleEdit = (campaign: any) => {
+  const handleEdit = React.useCallback((campaign: any) => {
     localStorage.setItem('editCampaign', JSON.stringify(campaign));
     navigate('/');
-  };
+  }, [navigate]);
 
-  const handleViewAnalytics = (campaignId: string) => {
+  const handleViewAnalytics = React.useCallback((campaignId: string) => {
     console.log('View analytics for campaign:', campaignId);
-    // This would typically open an analytics modal or navigate to an analytics page
-  };
+  }, []);
 
-  const handleCreateCampaign = () => {
+  const handleCreateCampaign = React.useCallback(() => {
     navigate('/');
-  };
+  }, [navigate]);
+
+  // Show organization loading state
+  if (!currentOrganization && !loading) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <Header activeTab="campaigns" />
+        <div className="container mx-auto p-6">
+          <div className="text-center py-12">
+            <Mail className="w-12 h-12 text-slate-400 mx-auto mb-4" />
+            <h3 className="text-lg font-medium text-slate-900 mb-2">No Organization Selected</h3>
+            <p className="text-slate-600">Please select an organization to view campaigns.</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -219,129 +204,18 @@ const Campaigns = () => {
               </div>
             ) : (
               filteredCampaigns.map((campaign) => (
-                <div key={campaign.id} className="p-4 hover:bg-gray-50 transition-colors">
-                  <div className="flex items-center justify-between">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-3 mb-2">
-                        <h3 className="font-medium text-slate-900">{campaign.subject}</h3>
-                        <Badge className={`text-xs ${getStatusColor(campaign.status)}`}>
-                          {campaign.status}
-                        </Badge>
-                      </div>
-                      
-                      <div className="flex items-center gap-6 text-sm text-slate-600">
-                        <div className="flex items-center gap-1">
-                          <Mail className="w-4 h-4" />
-                          <span>From: {campaign.from_name}</span>
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <Users className="w-4 h-4" />
-                          <span>Recipients: {campaign.total_recipients || 0}</span>
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <Send className="w-4 h-4" />
-                          <span>Sent: {campaign.sent_count || 0}</span>
-                        </div>
-                        <div className="text-slate-500">
-                          {campaign.sent_at ? formatDate(campaign.sent_at) : formatDate(campaign.created_at)}
-                        </div>
-                      </div>
-                    </div>
-                    
-                    <div className="flex items-center gap-2">
-                      {/* Prepare Button - only for draft campaigns */}
-                      {campaign.status === 'draft' && (
-                        <Button 
-                          variant="outline" 
-                          size="sm"
-                          onClick={() => handlePrepare(campaign.id)}
-                          title="Prepare Campaign"
-                        >
-                          <Settings className="w-4 h-4" />
-                        </Button>
-                      )}
-
-                      {/* Send Button - for prepared campaigns */}
-                      {campaign.status === 'prepared' && (
-                        <Button 
-                          variant="default" 
-                          size="sm"
-                          onClick={() => handleSend(campaign.id)}
-                          title="Send Campaign"
-                        >
-                          <Send className="w-4 h-4" />
-                        </Button>
-                      )}
-
-                      {/* Pause Button - for sending campaigns */}
-                      {campaign.status === 'sending' && (
-                        <Button 
-                          variant="outline" 
-                          size="sm"
-                          onClick={() => handlePause(campaign.id)}
-                          title="Pause Campaign"
-                        >
-                          <Pause className="w-4 h-4" />
-                        </Button>
-                      )}
-
-                      {/* Resume Button - for paused campaigns */}
-                      {campaign.status === 'paused' && (
-                        <Button 
-                          variant="default" 
-                          size="sm"
-                          onClick={() => handleResume(campaign.id)}
-                          title="Resume Campaign"
-                        >
-                          <Play className="w-4 h-4" />
-                        </Button>
-                      )}
-
-                      {/* Analytics Button */}
-                      <Button 
-                        variant="outline" 
-                        size="sm" 
-                        onClick={() => handleViewAnalytics(campaign.id)}
-                        title="View Analytics"
-                      >
-                        <BarChart3 className="w-4 h-4" />
-                      </Button>
-
-                      {/* Duplicate Button */}
-                      <Button 
-                        variant="outline" 
-                        size="sm"
-                        onClick={() => handleDuplicate(campaign.id)}
-                        title="Duplicate Campaign"
-                      >
-                        <Copy className="w-4 h-4" />
-                      </Button>
-
-                      {/* Edit Button - only for draft campaigns */}
-                      {campaign.status === 'draft' && (
-                        <Button 
-                          variant="outline" 
-                          size="sm"
-                          onClick={() => handleEdit(campaign)}
-                          title="Edit Campaign"
-                        >
-                          <Edit className="w-4 h-4" />
-                        </Button>
-                      )}
-
-                      {/* Delete Button */}
-                      <Button 
-                        variant="outline" 
-                        size="sm"
-                        onClick={() => handleDelete(campaign.id)}
-                        title="Delete Campaign"
-                        className="text-red-600 hover:text-red-700"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
-                    </div>
-                  </div>
-                </div>
+                <CampaignListItem
+                  key={campaign.id}
+                  campaign={campaign}
+                  onDelete={handleDelete}
+                  onDuplicate={handleDuplicate}
+                  onPause={handlePause}
+                  onResume={handleResume}
+                  onEdit={handleEdit}
+                  onViewAnalytics={handleViewAnalytics}
+                  getStatusColor={getStatusColor}
+                  formatDate={formatDate}
+                />
               ))
             )}
           </div>
@@ -350,5 +224,113 @@ const Campaigns = () => {
     </div>
   );
 };
+
+// Memoized campaign list item component to prevent unnecessary re-renders
+const CampaignListItem = React.memo(({ 
+  campaign, 
+  onDelete, 
+  onDuplicate, 
+  onPause, 
+  onResume, 
+  onEdit, 
+  onViewAnalytics,
+  getStatusColor,
+  formatDate
+}: any) => (
+  <div className="p-4 hover:bg-gray-50 transition-colors">
+    <div className="flex items-center justify-between">
+      <div className="flex-1">
+        <div className="flex items-center gap-3 mb-2">
+          <h3 className="font-medium text-slate-900">{campaign.subject}</h3>
+          <Badge className={`text-xs ${getStatusColor(campaign.status)}`}>
+            {campaign.status}
+          </Badge>
+        </div>
+        
+        <div className="flex items-center gap-6 text-sm text-slate-600">
+          <div className="flex items-center gap-1">
+            <Mail className="w-4 h-4" />
+            <span>From: {campaign.from_name}</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <Users className="w-4 h-4" />
+            <span>Recipients: {campaign.total_recipients || 0}</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <Send className="w-4 h-4" />
+            <span>Sent: {campaign.sent_count || 0}</span>
+          </div>
+          <div className="text-slate-500">
+            {campaign.sent_at ? formatDate(campaign.sent_at) : formatDate(campaign.created_at)}
+          </div>
+        </div>
+      </div>
+      
+      <div className="flex items-center gap-2">
+        {/* Action buttons with conditional rendering */}
+        {campaign.status === 'sending' && (
+          <Button 
+            variant="outline" 
+            size="sm"
+            onClick={() => onPause(campaign.id)}
+            title="Pause Campaign"
+          >
+            <Pause className="w-4 h-4" />
+          </Button>
+        )}
+
+        {campaign.status === 'paused' && (
+          <Button 
+            variant="default" 
+            size="sm"
+            onClick={() => onResume(campaign.id)}
+            title="Resume Campaign"
+          >
+            <Play className="w-4 h-4" />
+          </Button>
+        )}
+
+        <Button 
+          variant="outline" 
+          size="sm" 
+          onClick={() => onViewAnalytics(campaign.id)}
+          title="View Analytics"
+        >
+          <BarChart3 className="w-4 h-4" />
+        </Button>
+
+        <Button 
+          variant="outline" 
+          size="sm"
+          onClick={() => onDuplicate(campaign.id)}
+          title="Duplicate Campaign"
+        >
+          <Copy className="w-4 h-4" />
+        </Button>
+
+        {campaign.status === 'draft' && (
+          <Button 
+            variant="outline" 
+            size="sm"
+            onClick={() => onEdit(campaign)}
+            title="Edit Campaign"
+          >
+            <Edit className="w-4 h-4" />
+          </Button>
+        )}
+
+        <Button 
+          variant="outline" 
+          size="sm"
+          onClick={() => onDelete(campaign.id)}
+          title="Delete Campaign"
+          className="text-red-600 hover:text-red-700"
+        >
+          <Trash2 className="w-4 h-4" />
+        </Button>
+      </div>
+    </div>
+  </div>
+));
 
 export default Campaigns;
