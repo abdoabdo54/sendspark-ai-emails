@@ -47,9 +47,16 @@ export const SimpleOrganizationProvider: React.FC<SimpleOrganizationProviderProp
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [initialized, setInitialized] = useState(false);
+  const [lastUserId, setLastUserId] = useState<string | null>(null);
 
   const fetchOrganizations = async () => {
     if (!user?.id || loading) {
+      return;
+    }
+
+    // Prevent duplicate calls for the same user
+    if (lastUserId === user.id && initialized) {
+      console.log('⏭️ Skipping duplicate organization fetch for user:', user.id);
       return;
     }
 
@@ -57,7 +64,7 @@ export const SimpleOrganizationProvider: React.FC<SimpleOrganizationProviderProp
       setLoading(true);
       setError(null);
 
-      console.log('Fetching organizations for user:', user.id);
+      console.log('🔍 Fetching organizations for user:', user.id);
 
       const { data, error } = await supabase
         .rpc('get_user_organizations_with_roles', {
@@ -65,7 +72,7 @@ export const SimpleOrganizationProvider: React.FC<SimpleOrganizationProviderProp
         });
 
       if (error) {
-        console.error('Error fetching organizations:', error);
+        console.error('❌ Error fetching organizations:', error);
         throw error;
       }
 
@@ -81,15 +88,18 @@ export const SimpleOrganizationProvider: React.FC<SimpleOrganizationProviderProp
         created_at: org.created_at
       }));
 
+      console.log(`✅ Found ${orgs.length} organizations`);
       setOrganizations(orgs);
+      setLastUserId(user.id);
 
       // Auto-select first organization if none selected and organizations exist
       if (!currentOrganization && orgs.length > 0) {
         setCurrentOrganization(orgs[0]);
+        console.log('🎯 Auto-selected organization:', orgs[0].name);
       }
 
     } catch (error: any) {
-      console.error('Failed to fetch organizations:', error);
+      console.error('❌ Failed to fetch organizations:', error);
       setError(error.message || 'Failed to fetch organizations');
       
       // Only show toast for first load or explicit refresh
@@ -125,7 +135,7 @@ export const SimpleOrganizationProvider: React.FC<SimpleOrganizationProviderProp
         });
 
       if (error) {
-        console.error('Error creating organization:', error);
+        console.error('❌ Error creating organization:', error);
         throw error;
       }
 
@@ -144,7 +154,7 @@ export const SimpleOrganizationProvider: React.FC<SimpleOrganizationProviderProp
 
       return null;
     } catch (error: any) {
-      console.error('Failed to create organization:', error);
+      console.error('❌ Failed to create organization:', error);
       toast({
         title: "Error",
         description: error.message || "Failed to create organization",
@@ -154,16 +164,17 @@ export const SimpleOrganizationProvider: React.FC<SimpleOrganizationProviderProp
     }
   };
 
-  // Only fetch organizations once when user changes and not already loading
+  // Only fetch organizations when user changes and not already fetched
   useEffect(() => {
-    if (user?.id && !initialized && !loading) {
+    if (user?.id && !initialized && !loading && lastUserId !== user.id) {
       fetchOrganizations();
     } else if (!user?.id) {
       setOrganizations([]);
       setCurrentOrganization(null);
       setInitialized(false);
+      setLastUserId(null);
     }
-  }, [user?.id]);
+  }, [user?.id, initialized, loading, lastUserId]);
 
   const value: SimpleOrganizationContextType = {
     organizations,

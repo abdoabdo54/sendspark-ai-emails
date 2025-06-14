@@ -39,25 +39,53 @@ export const useCampaigns = (organizationId?: string) => {
       setLoading(true);
       setError(null);
       
+      console.log('🔍 Fetching campaigns with optimized query for org:', organizationId);
+      
+      // OPTIMIZED: Select only essential fields and limit results
       const { data, error } = await supabase
         .from('email_campaigns')
-        .select('*')
+        .select(`
+          id,
+          organization_id,
+          from_name,
+          subject,
+          recipients,
+          send_method,
+          status,
+          sent_count,
+          total_recipients,
+          created_at,
+          sent_at,
+          error_message,
+          completed_at
+        `)
         .eq('organization_id', organizationId)
         .order('created_at', { ascending: false })
-        .limit(50); // Limit initial load for performance
+        .limit(25); // Reduced limit for better performance
 
-      if (error) throw error;
+      if (error) {
+        console.error('❌ Campaign fetch error:', error);
+        throw error;
+      }
       
       const typedCampaigns: Campaign[] = (data || []).map(campaign => ({
         ...campaign,
-        config: campaign.config || {},
-        prepared_emails: Array.isArray(campaign.prepared_emails) ? campaign.prepared_emails : []
+        html_content: '', // Don't load heavy content initially
+        text_content: '', // Don't load heavy content initially
+        config: {},
+        prepared_emails: []
       }));
       
+      console.log(`✅ Loaded ${typedCampaigns.length} campaigns successfully`);
       setCampaigns(typedCampaigns);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error fetching campaigns:', error);
       setError("Failed to load campaigns");
+      toast({
+        title: "Error",
+        description: "Failed to load campaigns. Please try refreshing.",
+        variant: "destructive"
+      });
     } finally {
       setLoading(false);
     }
@@ -240,8 +268,10 @@ export const useCampaigns = (organizationId?: string) => {
 
   // Only fetch on mount or when organizationId changes
   useEffect(() => {
-    fetchCampaigns();
-  }, [fetchCampaigns]);
+    if (organizationId) {
+      fetchCampaigns();
+    }
+  }, [organizationId]); // Simplified dependency
 
   return {
     campaigns: campaigns || [],
