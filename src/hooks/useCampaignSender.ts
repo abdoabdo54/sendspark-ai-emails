@@ -38,7 +38,7 @@ export const useCampaignSender = (organizationId?: string) => {
       setIsSending(true);
       setProgress(0);
 
-      console.log('🚀 SMTP ULTRA-FAST: Starting campaign dispatch');
+      console.log('🚀 HYBRID ULTRA-FAST: Starting campaign dispatch with SMTP + Apps Script');
 
       // Get the campaign from database
       const { data: existingCampaign, error: fetchError } = await supabase
@@ -54,7 +54,7 @@ export const useCampaignSender = (organizationId?: string) => {
         throw new Error('Campaign not found');
       }
 
-      console.log('📧 SMTP: Found campaign:', existingCampaign.id);
+      console.log('📧 HYBRID: Found campaign:', existingCampaign.id);
 
       if (existingCampaign.status !== 'prepared') {
         throw new Error(`Campaign must be prepared before sending. Current status: ${existingCampaign.status}`);
@@ -70,13 +70,13 @@ export const useCampaignSender = (organizationId?: string) => {
       const preparedEmails: PreparedEmail[] = [];
       for (const emailData of preparedEmailsData) {
         if (!emailData || typeof emailData !== 'object') {
-          console.warn('⚠️ SMTP: Skipping invalid email data:', emailData);
+          console.warn('⚠️ HYBRID: Skipping invalid email data:', emailData);
           continue;
         }
         
         const email = emailData as any;
         if (!email.to || !email.from_name || !email.subject) {
-          console.warn('⚠️ SMTP: Skipping email missing required fields:', email);
+          console.warn('⚠️ HYBRID: Skipping email missing required fields:', email);
           continue;
         }
         
@@ -93,21 +93,22 @@ export const useCampaignSender = (organizationId?: string) => {
         throw new Error('No valid prepared emails found after validation');
       }
 
-      console.log(`📧 SMTP: Processing ${preparedEmails.length} prepared emails`);
+      console.log(`📧 HYBRID: Processing ${preparedEmails.length} prepared emails`);
 
-      // Get SMTP accounts ONLY - prioritize SMTP for ultra-fast sending
+      // Get both SMTP and Apps Script accounts
       const selectedAccountIds = campaignData.config?.selectedAccounts || [];
-      const smtpAccounts = accounts.filter(account => 
-        selectedAccountIds.includes(account.id) && 
-        account.is_active && 
-        account.type === 'smtp'
+      const allSelectedAccounts = accounts.filter(account => 
+        selectedAccountIds.includes(account.id) && account.is_active
       );
 
-      if (smtpAccounts.length === 0) {
-        throw new Error('No active SMTP accounts selected. SMTP is required for ultra-fast sending.');
+      const smtpAccounts = allSelectedAccounts.filter(account => account.type === 'smtp');
+      const appsScriptAccounts = allSelectedAccounts.filter(account => account.type === 'apps-script');
+
+      if (allSelectedAccounts.length === 0) {
+        throw new Error('No active accounts selected for sending.');
       }
 
-      console.log(`🏪 SMTP ULTRA-FAST: Using ${smtpAccounts.length} SMTP accounts`);
+      console.log(`🏪 HYBRID ULTRA-FAST: Using ${smtpAccounts.length} SMTP + ${appsScriptAccounts.length} Apps Script accounts`);
       setProgress(25);
 
       // Get enabled functions
@@ -116,7 +117,7 @@ export const useCampaignSender = (organizationId?: string) => {
         throw new Error('No enabled Google Cloud Functions found');
       }
 
-      console.log(`🔧 SMTP: Using ${enabledFunctions.length} enabled functions`);
+      console.log(`🔧 HYBRID: Using ${enabledFunctions.length} enabled functions`);
       setProgress(50);
 
       // Update campaign status to sending
@@ -142,9 +143,9 @@ export const useCampaignSender = (organizationId?: string) => {
           return { success: true, function: func.name, sentCount: 0 };
         }
 
-        console.log(`🚀 SMTP: Function ${func.name} processing ${functionEmails.length} emails`);
+        console.log(`🚀 HYBRID: Function ${func.name} processing ${functionEmails.length} emails`);
         
-        // Create optimized payload for SMTP ultra-fast sending
+        // Create optimized payload for hybrid sending (SMTP + Apps Script)
         const payload = {
           campaignId: existingCampaign.id,
           slice: {
@@ -156,30 +157,41 @@ export const useCampaignSender = (organizationId?: string) => {
             html_content: campaignData.html_content || '',
             text_content: campaignData.text_content || ''
           },
-          accounts: smtpAccounts.map(account => ({
+          accounts: allSelectedAccounts.map(account => ({
             id: account.id,
             name: account.name,
             email: account.email,
-            type: 'smtp', // Force SMTP only
+            type: account.type, // Both 'smtp' and 'apps-script'
             config: {
               ...account.config,
-              // Ultra-fast SMTP settings
-              pool: true,
-              maxConnections: 50,
-              maxMessages: 100,
-              rateDelta: 1000,
-              rateLimit: 50
+              // Optimized settings based on account type
+              ...(account.type === 'smtp' ? {
+                pool: true,
+                maxConnections: 50,
+                maxMessages: 100,
+                rateDelta: 1000,
+                rateLimit: 50
+              } : {
+                // Apps Script optimizations
+                dailyQuota: account.config?.daily_quota || 100,
+                batchSize: 10
+              })
             }
           })),
           organizationId: organizationId,
           globalStartIndex: startIndex,
-          ultraFastMode: true // Enable ultra-fast processing
+          hybridMode: true, // Enable hybrid SMTP + Apps Script processing
+          accountDistribution: {
+            smtp: smtpAccounts.length,
+            appsScript: appsScriptAccounts.length
+          }
         };
 
-        console.log(`📦 SMTP ULTRA-FAST: Payload for ${func.name}:`, {
+        console.log(`📦 HYBRID ULTRA-FAST: Payload for ${func.name}:`, {
           preparedEmailsCount: functionEmails.length,
           smtpAccountsCount: smtpAccounts.length,
-          ultraFastMode: true
+          appsScriptAccountsCount: appsScriptAccounts.length,
+          hybridMode: true
         });
 
         try {
@@ -195,7 +207,7 @@ export const useCampaignSender = (organizationId?: string) => {
           }
 
           const result = await response.json();
-          console.log(`✅ SMTP: Function ${func.name} result:`, result);
+          console.log(`✅ HYBRID: Function ${func.name} result:`, result);
           
           return { 
             success: true, 
@@ -205,7 +217,7 @@ export const useCampaignSender = (organizationId?: string) => {
           };
 
         } catch (error: any) {
-          console.error(`❌ SMTP: Function ${func.name} failed:`, error);
+          console.error(`❌ HYBRID: Function ${func.name} failed:`, error);
           return { 
             success: false, 
             function: func.name, 
@@ -221,11 +233,11 @@ export const useCampaignSender = (organizationId?: string) => {
       const successfulDispatches = results.filter(r => r.success);
       const totalSentEmails = successfulDispatches.reduce((sum, result) => sum + (result.sentCount || 0), 0);
 
-      console.log(`🎉 SMTP ULTRA-FAST: FINAL RESULTS - ${totalSentEmails} emails sent`);
+      console.log(`🎉 HYBRID ULTRA-FAST: FINAL RESULTS - ${totalSentEmails} emails sent`);
 
       if (totalSentEmails === 0) {
         const errors = results.filter(r => !r.success).map(r => r.error).join(', ');
-        throw new Error(`No emails were sent via SMTP. Errors: ${errors}`);
+        throw new Error(`No emails were sent via hybrid method. Errors: ${errors}`);
       }
 
       // Update final campaign status
@@ -240,17 +252,17 @@ export const useCampaignSender = (organizationId?: string) => {
         })
         .eq('id', existingCampaign.id);
 
-      toast.success(`SMTP Ultra-Fast: Campaign sent successfully! ${totalSentEmails} emails dispatched at maximum speed.`);
+      toast.success(`Hybrid Ultra-Fast: Campaign sent successfully! ${totalSentEmails} emails dispatched using SMTP + Apps Script at maximum speed.`);
 
       return {
         success: true,
-        message: `SMTP Ultra-Fast: ${totalSentEmails} emails sent`,
+        message: `Hybrid Ultra-Fast: ${totalSentEmails} emails sent via SMTP + Apps Script`,
         totalEmails: totalSentEmails
       };
 
     } catch (error: any) {
-      console.error('❌ SMTP ULTRA-FAST: Campaign failed:', error);
-      toast.error(`SMTP Campaign failed: ${error.message}`);
+      console.error('❌ HYBRID ULTRA-FAST: Campaign failed:', error);
+      toast.error(`Hybrid Campaign failed: ${error.message}`);
       throw error;
     } finally {
       setIsSending(false);
