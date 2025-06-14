@@ -15,25 +15,6 @@ interface CampaignData {
   config?: any;
 }
 
-interface EmailByAccount {
-  [accountId: string]: {
-    type: string;
-    config: any;
-    emails: Array<{
-      recipient: string;
-      subject: string;
-      htmlContent: string;
-      textContent: string;
-      fromName: string;
-      fromEmail: string;
-    }>;
-    accountInfo: {
-      name: string;
-      email: string;
-    };
-  };
-}
-
 export const useCampaignSender = (organizationId?: string) => {
   const [isSending, setIsSending] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -76,61 +57,6 @@ export const useCampaignSender = (organizationId?: string) => {
     return recipients;
   };
 
-  const distributeEmailsAcrossAccounts = (
-    recipients: string[], 
-    selectedAccounts: any[], 
-    campaignData: CampaignData
-  ): EmailByAccount => {
-    console.log('🔄 PERFECT DISTRIBUTION: Starting email distribution across accounts');
-    console.log(`📧 Total recipients: ${recipients.length}`);
-    console.log(`🏪 Selected accounts: ${selectedAccounts.length}`);
-
-    const emailsByAccount: EmailByAccount = {};
-
-    // Initialize each account with empty email array
-    selectedAccounts.forEach((account, accountIndex) => {
-      emailsByAccount[account.id] = {
-        type: account.type,
-        config: account.config,
-        emails: [],
-        accountInfo: {
-          name: account.name,
-          email: account.email
-        }
-      };
-      console.log(`🏪 Initialized account ${accountIndex + 1}: ${account.name} (${account.email})`);
-    });
-
-    // PERFECT ROUND-ROBIN DISTRIBUTION
-    recipients.forEach((recipient, recipientIndex) => {
-      const accountIndex = recipientIndex % selectedAccounts.length;
-      const selectedAccount = selectedAccounts[accountIndex];
-      
-      console.log(`📤 Recipient ${recipientIndex + 1}: ${recipient} → Account ${accountIndex + 1} (${selectedAccount.name})`);
-
-      emailsByAccount[selectedAccount.id].emails.push({
-        recipient: recipient,
-        subject: campaignData.subject,
-        htmlContent: campaignData.html_content || '',
-        textContent: campaignData.text_content || '',
-        fromName: campaignData.from_name,
-        fromEmail: selectedAccount.email
-      });
-    });
-
-    // Log distribution summary
-    console.log('📊 PERFECT DISTRIBUTION SUMMARY:');
-    selectedAccounts.forEach((account, index) => {
-      const emailCount = emailsByAccount[account.id].emails.length;
-      console.log(`   Account ${index + 1} (${account.name}): ${emailCount} emails`);
-    });
-
-    const totalDistributed = Object.values(emailsByAccount).reduce((sum, acc) => sum + acc.emails.length, 0);
-    console.log(`✅ PERFECT DISTRIBUTION COMPLETE: ${totalDistributed}/${recipients.length} emails distributed`);
-
-    return emailsByAccount;
-  };
-
   const sendCampaign = async (campaignData: CampaignData) => {
     if (!organizationId) {
       throw new Error('Organization not selected');
@@ -167,15 +93,6 @@ export const useCampaignSender = (organizationId?: string) => {
         console.log(`   Account ${index + 1}: ${account.name} (${account.email}) - ${account.type}`);
       });
 
-      // Distribute emails across accounts with PERFECT rotation
-      const emailsByAccount = distributeEmailsAcrossAccounts(recipients, selectedAccounts, campaignData);
-
-      // Validate distribution
-      const totalEmails = Object.values(emailsByAccount).reduce((sum, acc) => sum + acc.emails.length, 0);
-      if (totalEmails !== recipients.length) {
-        throw new Error(`Distribution mismatch: ${totalEmails} distributed vs ${recipients.length} recipients`);
-      }
-
       setProgress(25);
 
       // Get enabled functions for dispatch
@@ -191,41 +108,56 @@ export const useCampaignSender = (organizationId?: string) => {
 
       setProgress(50);
 
-      // FIXED: Use constants instead of accessing protected properties
-      const SUPABASE_URL = "https://kzatxttazxwqawefumed.supabase.co";
-      const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt6YXR4dHRhenh3cWF3ZWZ1bWVkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDgyNzE1NTAsImV4cCI6MjA2Mzg0NzU1MH0.2hJNt57jErh8GgjbXc8vNg94F0FFBZS7tXxmdQvRG_w";
-
-      // Prepare enhanced dispatch payload with perfect distribution
-      const dispatchPayload = {
-        campaignId: `dispatch-${Date.now()}`,
-        emailsByAccount: emailsByAccount,
-        supabaseUrl: SUPABASE_URL,
-        supabaseKey: SUPABASE_KEY,
-        config: {
-          ...campaignData.config,
-          sendingMode: campaignData.config?.sendingMode || 'zero-delay',
-          dispatchMethod: 'parallel',
-          perfectDistribution: true,
-          accountRotation: true
-        },
-        rotation: campaignData.config?.rotation || {},
-        testAfterConfig: campaignData.config?.testAfter || {},
-        customRateLimit: campaignData.config?.customRateLimit || {}
-      };
-
-      console.log('📦 DISPATCH PAYLOAD SUMMARY:');
-      console.log(`   Campaign ID: ${dispatchPayload.campaignId}`);
-      console.log(`   Accounts with emails: ${Object.keys(emailsByAccount).length}`);
-      console.log(`   Total emails: ${totalEmails}`);
-      console.log(`   Sending mode: ${dispatchPayload.config.sendingMode}`);
-      console.log(`   Perfect distribution: ${dispatchPayload.config.perfectDistribution}`);
+      // Calculate slice size per function for PERFECT distribution
+      const recipientsPerFunction = Math.ceil(recipients.length / enabledFunctions.length);
+      
+      console.log(`📊 PERFECT FUNCTION DISTRIBUTION: ${recipientsPerFunction} recipients per function`);
 
       setProgress(75);
 
-      // PARALLEL DISPATCH to all functions with PERFECT distribution and enhanced error handling
+      // PARALLEL DISPATCH to all functions with PERFECT distribution
       const functionPromises = enabledFunctions.map(async (func, funcIndex) => {
-        console.log(`🚀 DISPATCHING to function ${funcIndex + 1}: ${func.name} (${func.url})`);
+        const startIndex = funcIndex * recipientsPerFunction;
+        const endIndex = Math.min(startIndex + recipientsPerFunction, recipients.length);
+        const sliceRecipients = recipients.slice(startIndex, endIndex);
         
+        if (sliceRecipients.length === 0) {
+          console.log(`⏭️ Function ${func.name} has no recipients to process`);
+          return { success: true, function: func.name, result: { message: 'No recipients assigned' }, url: func.url };
+        }
+
+        console.log(`🚀 DISPATCHING to function ${funcIndex + 1}: ${func.name} with ${sliceRecipients.length} recipients`);
+        
+        // Prepare payload in the format the Cloud Function expects
+        const dispatchPayload = {
+          campaignId: `dispatch-${Date.now()}-${funcIndex}`,
+          slice: {
+            recipients: sliceRecipients
+          },
+          campaignData: {
+            from_name: campaignData.from_name,
+            subject: campaignData.subject,
+            html_content: campaignData.html_content || '',
+            text_content: campaignData.text_content || '',
+            config: {
+              ...campaignData.config,
+              sendingMode: campaignData.config?.sendingMode || 'zero-delay',
+              dispatchMethod: 'parallel',
+              perfectDistribution: true,
+              accountRotation: true
+            }
+          },
+          accounts: selectedAccounts, // Pass all accounts for rotation
+          organizationId: organizationId
+        };
+
+        console.log(`📦 Function ${func.name} payload:`, {
+          campaignId: dispatchPayload.campaignId,
+          recipientCount: sliceRecipients.length,
+          accountCount: selectedAccounts.length,
+          sendingMode: dispatchPayload.campaignData.config.sendingMode
+        });
+
         try {
           // Add timeout to prevent hanging requests
           const controller = new AbortController();
@@ -315,7 +247,7 @@ export const useCampaignSender = (organizationId?: string) => {
       return {
         success: true,
         message: `Campaign dispatched to ${successfulDispatches.length} functions with perfect account rotation`,
-        totalEmails,
+        totalEmails: recipients.length,
         accountsUsed: selectedAccounts.length,
         functionsUsed: successfulDispatches.length,
         perfectDistribution: true
