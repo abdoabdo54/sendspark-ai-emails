@@ -8,82 +8,35 @@ const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const supabase = createClient(supabaseUrl, supabaseKey);
 
-// Configure nodemailer transporter
-function createTransporter(account) {
+// Ultra-fast SMTP transporter configuration
+function createUltraFastTransporter(account) {
   if (account.type === 'smtp') {
     const config = account.config || {};
     return nodemailer.createTransporter({
       host: config.host,
       port: config.port || 587,
-      secure: config.secure || false,
+      secure: config.port === 465, // true for 465, false for other ports
       auth: {
         user: config.username || config.user,
         pass: config.password || config.pass
       },
+      // Ultra-fast settings
       pool: true,
-      maxConnections: 50,
-      maxMessages: 100
+      maxConnections: config.maxConnections || 50,
+      maxMessages: config.maxMessages || 100,
+      rateDelta: config.rateDelta || 1000,
+      rateLimit: config.rateLimit || 50,
+      // Additional optimizations
+      connectionTimeout: 60000,
+      greetingTimeout: 30000,
+      socketTimeout: 75000
     });
   }
   return null;
 }
 
-// Enhanced Apps Script sender with quota detection
-async function sendViaAppsScript(account, emailData) {
-  try {
-    const config = account.config || {};
-    const scriptUrl = config.script_url;
-    
-    if (!scriptUrl) {
-      return { success: false, error: 'Apps Script URL not configured' };
-    }
-
-    const response = await fetch(scriptUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        to: emailData.to,
-        subject: emailData.subject,
-        htmlBody: emailData.html,
-        plainBody: emailData.text || '',
-        fromName: emailData.fromName,
-        fromAlias: emailData.fromEmail
-      })
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      return { success: false, error: `HTTP ${response.status}: ${errorText}` };
-    }
-
-    const result = await response.json();
-    
-    // Enhanced quota detection
-    if (result.status === 'error' || !result.success) {
-      const errorMsg = result.message || result.error || 'Apps Script error';
-      
-      // Detect quota exceeded in multiple languages
-      if (errorMsg.includes('Service invoked too many times') || 
-          errorMsg.includes('تم تفعيل الخدمة مرات كثيرة') ||
-          errorMsg.includes('quota') ||
-          errorMsg.includes('limit exceeded')) {
-        console.log(`🚫 QUOTA EXCEEDED for account ${account.name}: ${errorMsg}`);
-        return { success: false, error: `QUOTA_EXCEEDED: ${errorMsg}` };
-      }
-      
-      return { success: false, error: errorMsg };
-    }
-    
-    return { success: true, messageId: result.messageId || 'apps-script-sent' };
-      
-  } catch (error) {
-    console.error(`❌ Apps Script error for ${account.name}:`, error);
-    return { success: false, error: error.message };
-  }
-}
-
-// Send email via SMTP
-async function sendViaSMTP(transporter, emailData) {
+// Ultra-fast SMTP sending with parallel processing
+async function sendViaUltraFastSMTP(transporter, emailData) {
   try {
     const info = await transporter.sendMail({
       from: `"${emailData.fromName}" <${emailData.fromEmail}>`,
@@ -98,39 +51,36 @@ async function sendViaSMTP(transporter, emailData) {
   }
 }
 
-// Process prepared email with enhanced error handling
-async function processEmail(preparedEmail, account, campaignData, globalIndex, totalAccounts) {
+// Process email with ultra-fast SMTP optimization
+async function processEmailUltraFast(preparedEmail, account, campaignData, globalIndex, totalAccounts) {
   try {
-    // Use the prepared email data (with rotation applied)
     const emailData = {
       to: preparedEmail.to,
-      subject: preparedEmail.subject,  // Use rotated subject
+      subject: preparedEmail.subject,
       html: campaignData.html_content,
       text: campaignData.text_content,
-      fromName: preparedEmail.from_name,  // Use rotated from_name
+      fromName: preparedEmail.from_name,
       fromEmail: account.email
     };
 
-    console.log(`📧 Processing: ${preparedEmail.to} with subject: "${emailData.subject}" from: ${emailData.fromName}`);
+    console.log(`📧 ULTRA-FAST SMTP: ${preparedEmail.to} with subject: "${emailData.subject}" from: ${emailData.fromName}`);
 
     let result;
 
     if (account.type === 'smtp') {
-      const transporter = createTransporter(account);
+      const transporter = createUltraFastTransporter(account);
       if (transporter) {
-        result = await sendViaSMTP(transporter, emailData);
-        transporter.close();
+        result = await sendViaUltraFastSMTP(transporter, emailData);
+        // Don't close transporter immediately for ultra-fast mode
       } else {
-        result = { success: false, error: 'Failed to create SMTP transporter' };
+        result = { success: false, error: 'Failed to create ultra-fast SMTP transporter' };
       }
-    } else if (account.type === 'apps-script') {
-      result = await sendViaAppsScript(account, emailData);
     } else {
-      result = { success: false, error: `Unsupported account type: ${account.type}` };
+      result = { success: false, error: `Ultra-fast mode only supports SMTP. Got: ${account.type}` };
     }
 
     if (result.success) {
-      console.log(`✅ SUCCESS: ${preparedEmail.to} sent via ${account.name}`);
+      console.log(`✅ ULTRA-FAST SUCCESS: ${preparedEmail.to} sent via ${account.name}`);
       return {
         recipient: preparedEmail.to,
         status: 'sent',
@@ -139,12 +89,7 @@ async function processEmail(preparedEmail, account, campaignData, globalIndex, t
         timestamp: new Date().toISOString()
       };
     } else {
-      // Enhanced error logging for quota issues
-      if (result.error && result.error.includes('QUOTA_EXCEEDED')) {
-        console.log(`🚫 QUOTA: ${preparedEmail.to} - Account ${account.name} quota exceeded`);
-      }
-      
-      console.log(`❌ FAILED: ${preparedEmail.to} - ${result.error}`);
+      console.log(`❌ ULTRA-FAST FAILED: ${preparedEmail.to} - ${result.error}`);
       return {
         recipient: preparedEmail.to,
         status: 'failed',
@@ -154,7 +99,7 @@ async function processEmail(preparedEmail, account, campaignData, globalIndex, t
       };
     }
   } catch (error) {
-    console.error(`❌ Error processing ${preparedEmail.to}:`, error);
+    console.error(`❌ Ultra-fast processing error ${preparedEmail.to}:`, error);
     return {
       recipient: preparedEmail.to,
       status: 'failed',
@@ -164,7 +109,7 @@ async function processEmail(preparedEmail, account, campaignData, globalIndex, t
   }
 }
 
-// Main function handler
+// Main ultra-fast function handler
 const sendEmailCampaignZeroDelay = async (req, res) => {
   res.set('Access-Control-Allow-Origin', '*');
   res.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -178,12 +123,13 @@ const sendEmailCampaignZeroDelay = async (req, res) => {
   const startTime = Date.now();
 
   try {
-    const { campaignId, slice, campaignData, accounts, organizationId, globalStartIndex = 0 } = req.body;
+    const { campaignId, slice, campaignData, accounts, organizationId, globalStartIndex = 0, ultraFastMode } = req.body;
 
-    console.log(`🚀 GCF: Received request:`, {
+    console.log(`🚀 ULTRA-FAST GCF: Received request:`, {
       campaignId,
       preparedEmailsCount: slice?.preparedEmails?.length || 0,
       accountsCount: accounts?.length || 0,
+      ultraFastMode,
       globalStartIndex
     });
 
@@ -191,14 +137,14 @@ const sendEmailCampaignZeroDelay = async (req, res) => {
     if (!campaignId) {
       return res.status(200).json({
         success: true,
-        message: "Function is healthy",
+        message: "Ultra-fast function is healthy",
         timestamp: new Date().toISOString()
       });
     }
 
     // Validate prepared emails structure
     if (!slice?.preparedEmails || !Array.isArray(slice.preparedEmails) || slice.preparedEmails.length === 0) {
-      console.error(`❌ GCF: Invalid prepared emails structure`);
+      console.error(`❌ ULTRA-FAST GCF: Invalid prepared emails structure`);
       return res.status(400).json({
         success: false,
         error: 'No valid prepared emails provided',
@@ -209,12 +155,21 @@ const sendEmailCampaignZeroDelay = async (req, res) => {
     if (!accounts || !Array.isArray(accounts) || accounts.length === 0) {
       return res.status(400).json({
         success: false,
-        error: 'No accounts provided'
+        error: 'No SMTP accounts provided for ultra-fast sending'
+      });
+    }
+
+    // Filter for SMTP accounts only in ultra-fast mode
+    const smtpAccounts = accounts.filter(account => account.type === 'smtp');
+    if (smtpAccounts.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'Ultra-fast mode requires SMTP accounts only'
       });
     }
 
     const preparedEmails = slice.preparedEmails;
-    console.log(`🚀 GCF: Processing ${preparedEmails.length} prepared emails with ${accounts.length} accounts`);
+    console.log(`🚀 ULTRA-FAST GCF: Processing ${preparedEmails.length} prepared emails with ${smtpAccounts.length} SMTP accounts`);
 
     // Validate each prepared email
     const validEmails = preparedEmails.filter(email => {
@@ -239,65 +194,63 @@ const sendEmailCampaignZeroDelay = async (req, res) => {
       });
     }
 
-    console.log(`✅ GCF: ${validEmails.length}/${preparedEmails.length} emails are valid`);
+    console.log(`✅ ULTRA-FAST GCF: ${validEmails.length}/${preparedEmails.length} emails are valid`);
 
-    // Process emails with account rotation
-    const results = [];
-    let totalSent = 0;
-    let quotaExceededAccounts = new Set();
-    
-    for (let i = 0; i < validEmails.length; i++) {
-      const preparedEmail = validEmails[i];
-      const globalIndex = globalStartIndex + i;
-      const accountIndex = globalIndex % accounts.length;
-      const account = accounts[accountIndex];
-      
-      // Skip if account quota exceeded
-      if (quotaExceededAccounts.has(account.id)) {
-        console.log(`⏭️ Skipping ${preparedEmail.to} - Account ${account.name} quota exceeded`);
-        results.push({
-          recipient: preparedEmail.to,
-          status: 'failed',
-          error: 'Account quota exceeded',
-          accountName: account.name,
-          timestamp: new Date().toISOString()
-        });
-        continue;
-      }
-      
-      console.log(`📧 Processing email ${i + 1}/${validEmails.length}: ${preparedEmail.to} via ${account.name}`);
-      
-      const result = await processEmail(preparedEmail, account, campaignData, globalIndex, accounts.length);
-      results.push(result);
-      
-      if (result.status === 'sent') {
-        totalSent++;
-      } else if (result.error && result.error.includes('QUOTA_EXCEEDED')) {
-        quotaExceededAccounts.add(account.id);
-        console.log(`🚫 QUOTA: Account ${account.name} marked as quota exceeded`);
-      }
-      
-      // Update progress every 10 emails
-      if ((i + 1) % 10 === 0 || i === validEmails.length - 1) {
-        try {
-          await supabase
-            .from('email_campaigns')
-            .update({ sent_count: supabase.sql`sent_count + ${totalSent - (results.filter(r => r.status === 'sent').length - totalSent)}` })
-            .eq('id', campaignId);
-            
-          console.log(`📝 GCF: Updated sent count`);
-        } catch (error) {
-          console.error(`❌ GCF: Progress update failed:`, error);
-        }
+    // Create transporter pool for ultra-fast processing
+    const transporters = new Map();
+    for (const account of smtpAccounts) {
+      const transporter = createUltraFastTransporter(account);
+      if (transporter) {
+        transporters.set(account.id, transporter);
       }
     }
 
+    console.log(`🚀 ULTRA-FAST: Created ${transporters.size} transporter pools`);
+
+    // Process emails with ultra-fast parallel processing
+    const results = [];
+    let totalSent = 0;
+    
+    // Process in batches for ultra-fast sending
+    const batchSize = Math.min(50, Math.ceil(validEmails.length / smtpAccounts.length));
+    const batches = [];
+    
+    for (let i = 0; i < validEmails.length; i += batchSize) {
+      batches.push(validEmails.slice(i, i + batchSize));
+    }
+
+    console.log(`🚀 ULTRA-FAST: Processing ${batches.length} batches of ~${batchSize} emails each`);
+
+    for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
+      const batch = batches[batchIndex];
+      const batchPromises = batch.map(async (preparedEmail, emailIndex) => {
+        const globalIndex = globalStartIndex + (batchIndex * batchSize) + emailIndex;
+        const accountIndex = globalIndex % smtpAccounts.length;
+        const account = smtpAccounts[accountIndex];
+        
+        return processEmailUltraFast(preparedEmail, account, campaignData, globalIndex, smtpAccounts.length);
+      });
+
+      // Process batch in parallel for ultra-fast sending
+      const batchResults = await Promise.all(batchPromises);
+      results.push(...batchResults);
+      
+      const batchSentCount = batchResults.filter(r => r.status === 'sent').length;
+      totalSent += batchSentCount;
+      
+      console.log(`✅ ULTRA-FAST: Batch ${batchIndex + 1}/${batches.length} completed - ${batchSentCount}/${batch.length} sent`);
+    }
+
+    // Close all transporters
+    for (const transporter of transporters.values()) {
+      transporter.close();
+    }
+
     const failedCount = results.filter(r => r.status === 'failed').length;
-    const quotaFailures = results.filter(r => r.error && r.error.includes('quota')).length;
     const processingTime = Date.now() - startTime;
     const successRate = Math.round((totalSent / validEmails.length) * 100);
 
-    console.log(`✅ GCF: COMPLETED - ${totalSent} sent, ${failedCount} failed (${quotaFailures} quota), ${successRate}% in ${processingTime}ms`);
+    console.log(`✅ ULTRA-FAST GCF: COMPLETED - ${totalSent} sent, ${failedCount} failed, ${successRate}% in ${processingTime}ms`);
 
     res.status(200).json({
       success: true,
@@ -305,21 +258,21 @@ const sendEmailCampaignZeroDelay = async (req, res) => {
       processed: validEmails.length,
       sent: totalSent,
       failed: failedCount,
-      quotaExceeded: quotaFailures,
-      quotaExceededAccounts: Array.from(quotaExceededAccounts),
       successRate,
       processingTimeMs: processingTime,
-      results: results.slice(-5) // Last 5 for debugging
+      ultraFastMode: true,
+      results: results.slice(-10) // Last 10 for debugging
     });
 
   } catch (error) {
     const processingTime = Date.now() - startTime;
-    console.error('❌ GCF: Critical function error:', error);
+    console.error('❌ ULTRA-FAST GCF: Critical function error:', error);
     
     res.status(500).json({
       success: false,
       error: error.message,
-      processingTimeMs: processingTime
+      processingTimeMs: processingTime,
+      ultraFastMode: true
     });
   }
 };

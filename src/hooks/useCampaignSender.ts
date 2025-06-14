@@ -38,7 +38,7 @@ export const useCampaignSender = (organizationId?: string) => {
       setIsSending(true);
       setProgress(0);
 
-      console.log('🚀 SEND: Starting campaign dispatch');
+      console.log('🚀 SMTP ULTRA-FAST: Starting campaign dispatch');
 
       // Get the campaign from database
       const { data: existingCampaign, error: fetchError } = await supabase
@@ -54,7 +54,7 @@ export const useCampaignSender = (organizationId?: string) => {
         throw new Error('Campaign not found');
       }
 
-      console.log('📧 SEND: Found campaign:', existingCampaign.id);
+      console.log('📧 SMTP: Found campaign:', existingCampaign.id);
 
       if (existingCampaign.status !== 'prepared') {
         throw new Error(`Campaign must be prepared before sending. Current status: ${existingCampaign.status}`);
@@ -70,14 +70,13 @@ export const useCampaignSender = (organizationId?: string) => {
       const preparedEmails: PreparedEmail[] = [];
       for (const emailData of preparedEmailsData) {
         if (!emailData || typeof emailData !== 'object') {
-          console.warn('⚠️ SEND: Skipping invalid email data:', emailData);
+          console.warn('⚠️ SMTP: Skipping invalid email data:', emailData);
           continue;
         }
         
-        // Cast as any first to access properties, then validate
         const email = emailData as any;
         if (!email.to || !email.from_name || !email.subject) {
-          console.warn('⚠️ SEND: Skipping email missing required fields:', email);
+          console.warn('⚠️ SMTP: Skipping email missing required fields:', email);
           continue;
         }
         
@@ -94,19 +93,21 @@ export const useCampaignSender = (organizationId?: string) => {
         throw new Error('No valid prepared emails found after validation');
       }
 
-      console.log(`📧 SEND: Processing ${preparedEmails.length} prepared emails`);
+      console.log(`📧 SMTP: Processing ${preparedEmails.length} prepared emails`);
 
-      // Get selected accounts
+      // Get SMTP accounts ONLY - prioritize SMTP for ultra-fast sending
       const selectedAccountIds = campaignData.config?.selectedAccounts || [];
-      const selectedAccounts = accounts.filter(account => 
-        selectedAccountIds.includes(account.id) && account.is_active
+      const smtpAccounts = accounts.filter(account => 
+        selectedAccountIds.includes(account.id) && 
+        account.is_active && 
+        account.type === 'smtp'
       );
 
-      if (selectedAccounts.length === 0) {
-        throw new Error('No active accounts selected for sending');
+      if (smtpAccounts.length === 0) {
+        throw new Error('No active SMTP accounts selected. SMTP is required for ultra-fast sending.');
       }
 
-      console.log(`🏪 SEND: Using ${selectedAccounts.length} accounts`);
+      console.log(`🏪 SMTP ULTRA-FAST: Using ${smtpAccounts.length} SMTP accounts`);
       setProgress(25);
 
       // Get enabled functions
@@ -115,7 +116,7 @@ export const useCampaignSender = (organizationId?: string) => {
         throw new Error('No enabled Google Cloud Functions found');
       }
 
-      console.log(`🔧 SEND: Using ${enabledFunctions.length} enabled functions`);
+      console.log(`🔧 SMTP: Using ${enabledFunctions.length} enabled functions`);
       setProgress(50);
 
       // Update campaign status to sending
@@ -129,7 +130,7 @@ export const useCampaignSender = (organizationId?: string) => {
 
       setProgress(75);
 
-      // Distribute emails across functions
+      // Distribute emails across functions for parallel processing
       const emailsPerFunction = Math.ceil(preparedEmails.length / enabledFunctions.length);
       
       const functionPromises = enabledFunctions.map(async (func, funcIndex) => {
@@ -141,9 +142,9 @@ export const useCampaignSender = (organizationId?: string) => {
           return { success: true, function: func.name, sentCount: 0 };
         }
 
-        console.log(`🚀 SEND: Function ${func.name} processing ${functionEmails.length} emails`);
+        console.log(`🚀 SMTP: Function ${func.name} processing ${functionEmails.length} emails`);
         
-        // Create payload exactly as GCF expects
+        // Create optimized payload for SMTP ultra-fast sending
         const payload = {
           campaignId: existingCampaign.id,
           slice: {
@@ -155,21 +156,30 @@ export const useCampaignSender = (organizationId?: string) => {
             html_content: campaignData.html_content || '',
             text_content: campaignData.text_content || ''
           },
-          accounts: selectedAccounts.map(account => ({
+          accounts: smtpAccounts.map(account => ({
             id: account.id,
             name: account.name,
             email: account.email,
-            type: account.type,
-            config: account.config
+            type: 'smtp', // Force SMTP only
+            config: {
+              ...account.config,
+              // Ultra-fast SMTP settings
+              pool: true,
+              maxConnections: 50,
+              maxMessages: 100,
+              rateDelta: 1000,
+              rateLimit: 50
+            }
           })),
           organizationId: organizationId,
-          globalStartIndex: startIndex
+          globalStartIndex: startIndex,
+          ultraFastMode: true // Enable ultra-fast processing
         };
 
-        console.log(`📦 SEND: Payload for ${func.name}:`, {
+        console.log(`📦 SMTP ULTRA-FAST: Payload for ${func.name}:`, {
           preparedEmailsCount: functionEmails.length,
-          accountsCount: selectedAccounts.length,
-          firstEmail: functionEmails[0]
+          smtpAccountsCount: smtpAccounts.length,
+          ultraFastMode: true
         });
 
         try {
@@ -185,7 +195,7 @@ export const useCampaignSender = (organizationId?: string) => {
           }
 
           const result = await response.json();
-          console.log(`✅ SEND: Function ${func.name} result:`, result);
+          console.log(`✅ SMTP: Function ${func.name} result:`, result);
           
           return { 
             success: true, 
@@ -195,7 +205,7 @@ export const useCampaignSender = (organizationId?: string) => {
           };
 
         } catch (error: any) {
-          console.error(`❌ SEND: Function ${func.name} failed:`, error);
+          console.error(`❌ SMTP: Function ${func.name} failed:`, error);
           return { 
             success: false, 
             function: func.name, 
@@ -211,36 +221,11 @@ export const useCampaignSender = (organizationId?: string) => {
       const successfulDispatches = results.filter(r => r.success);
       const totalSentEmails = successfulDispatches.reduce((sum, result) => sum + (result.sentCount || 0), 0);
 
-      console.log(`🎉 SEND: FINAL RESULTS - ${totalSentEmails} emails sent`);
+      console.log(`🎉 SMTP ULTRA-FAST: FINAL RESULTS - ${totalSentEmails} emails sent`);
 
-      // Enhanced error analysis
       if (totalSentEmails === 0) {
         const errors = results.filter(r => !r.success).map(r => r.error).join(', ');
-        
-        // Check for quota issues
-        if (errors.includes('Service invoked too many times') || errors.includes('تم تفعيل الخدمة مرات كثيرة')) {
-          const quotaMessage = '🚫 QUOTA EXCEEDED: Your Google Apps Script account has reached its daily email limit. Solutions:\n' +
-                              '1. Wait 24 hours for quota reset\n' +
-                              '2. Add more Google accounts with fresh Apps Script quotas\n' +
-                              '3. Switch to SMTP accounts (no daily limits)\n' +
-                              '4. Use multiple Gmail accounts for Apps Script';
-          
-          toast.error(quotaMessage, { duration: 10000 });
-          
-          // Update campaign with quota error
-          await supabase
-            .from('email_campaigns')
-            .update({ 
-              status: 'failed',
-              error_message: 'Apps Script daily quota exceeded. Add more accounts or wait 24 hours.',
-              completed_at: new Date().toISOString()
-            })
-            .eq('id', existingCampaign.id);
-          
-          throw new Error('Apps Script daily quota exceeded. Add more accounts or wait 24 hours.');
-        }
-        
-        throw new Error(`No emails were sent. Errors: ${errors}`);
+        throw new Error(`No emails were sent via SMTP. Errors: ${errors}`);
       }
 
       // Update final campaign status
@@ -255,17 +240,17 @@ export const useCampaignSender = (organizationId?: string) => {
         })
         .eq('id', existingCampaign.id);
 
-      toast.success(`Campaign sent successfully! ${totalSentEmails} emails dispatched.`);
+      toast.success(`SMTP Ultra-Fast: Campaign sent successfully! ${totalSentEmails} emails dispatched at maximum speed.`);
 
       return {
         success: true,
-        message: `Campaign sent: ${totalSentEmails} emails`,
+        message: `SMTP Ultra-Fast: ${totalSentEmails} emails sent`,
         totalEmails: totalSentEmails
       };
 
     } catch (error: any) {
-      console.error('❌ SEND: Campaign failed:', error);
-      toast.error(`Campaign failed: ${error.message}`);
+      console.error('❌ SMTP ULTRA-FAST: Campaign failed:', error);
+      toast.error(`SMTP Campaign failed: ${error.message}`);
       throw error;
     } finally {
       setIsSending(false);
