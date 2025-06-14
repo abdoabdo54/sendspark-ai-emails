@@ -8,7 +8,7 @@ const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const supabase = createClient(supabaseUrl, supabaseKey);
 
-// Configure nodemailer transporter based on account type
+// Configure nodemailer transporter based on account type - MAXIMUM SPEED
 function createTransporter(accountConfig) {
   if (accountConfig.type === 'smtp') {
     return nodemailer.createTransporter({
@@ -20,9 +20,9 @@ function createTransporter(accountConfig) {
         pass: accountConfig.pass
       },
       pool: true,
-      maxConnections: 10, // Reduced for stability
-      maxMessages: 100,   // Reduced for stability
-      rateLimit: 5        // Reduced for stability
+      maxConnections: 100, // Maximum performance
+      maxMessages: 1000,   // Maximum performance
+      rateLimit: false     // No rate limiting
     });
   }
   
@@ -146,7 +146,7 @@ async function processEmail(recipient, account, campaignData, globalIndex, total
   }
 }
 
-// OPTIMIZED: Batch database update function
+// Batch database update function
 async function updateCampaignProgress(campaignId, sentCount, isComplete = false) {
   try {
     const updateData = {
@@ -173,7 +173,7 @@ async function updateCampaignProgress(campaignId, sentCount, isComplete = false)
   }
 }
 
-// Main function handler
+// Main function handler - MAXIMUM SPEED
 const sendEmailCampaignZeroDelay = async (req, res) => {
   // Enable CORS
   res.set('Access-Control-Allow-Origin', '*');
@@ -206,14 +206,14 @@ const sendEmailCampaignZeroDelay = async (req, res) => {
       });
     }
 
-    console.log(`🚀 [${campaignId}] OPTIMIZED PROCESSING: ${slice.recipients.length} emails starting from global index ${globalStartIndex}`);
+    console.log(`🚀 [${campaignId}] MAXIMUM SPEED PROCESSING: ${slice.recipients.length} emails starting from global index ${globalStartIndex}`);
     console.log(`📊 [${campaignId}] Using ${accounts.length} accounts with perfect rotation`);
 
     const config = campaignData.config || {};
     const sendingMode = config.sendingMode || 'zero-delay';
-    const batchSize = sendingMode === 'zero-delay' ? 25 : 10; // REDUCED for stability
+    const batchSize = 50; // MAXIMUM SPEED - Larger batches
 
-    console.log(`⚡ [${campaignId}] Processing in optimized batches of ${batchSize}`);
+    console.log(`⚡ [${campaignId}] Processing in MAXIMUM SPEED batches of ${batchSize}`);
 
     // Prepare all email tasks with GLOBAL INDEXING
     const emailTasks = slice.recipients.map((recipient, localIndex) => {
@@ -226,7 +226,7 @@ const sendEmailCampaignZeroDelay = async (req, res) => {
       return () => processEmail(recipient, account, campaignData, globalIndex, accounts.length);
     });
 
-    // OPTIMIZED: Process emails in smaller batches with progress updates
+    // MAXIMUM SPEED: Process emails in larger batches with NO DELAYS
     const results = [];
     let totalSentInThisFunction = 0;
     
@@ -235,7 +235,7 @@ const sendEmailCampaignZeroDelay = async (req, res) => {
       const batchNumber = Math.floor(i/batchSize) + 1;
       const totalBatches = Math.ceil(emailTasks.length / batchSize);
       
-      console.log(`🚀 [${campaignId}] Processing batch ${batchNumber}/${totalBatches}: ${batch.length} emails`);
+      console.log(`🚀 [${campaignId}] Processing batch ${batchNumber}/${totalBatches}: ${batch.length} emails - MAXIMUM SPEED`);
       
       const batchResults = await Promise.all(batch.map(task => task()));
       results.push(...batchResults);
@@ -244,9 +244,8 @@ const sendEmailCampaignZeroDelay = async (req, res) => {
       const batchSentCount = batchResults.filter(r => r.status === 'sent').length;
       totalSentInThisFunction += batchSentCount;
       
-      // OPTIMIZED: Update database progress every batch (not every email)
+      // Update database progress every batch (not every email)
       if (batchSentCount > 0) {
-        // Get current campaign sent count and add this batch
         try {
           const { data: currentCampaign } = await supabase
             .from('email_campaigns')
@@ -261,11 +260,7 @@ const sendEmailCampaignZeroDelay = async (req, res) => {
         }
       }
       
-      // Small delay between batches for system stability
-      if (i + batchSize < emailTasks.length) {
-        const delay = sendingMode === 'zero-delay' ? 200 : 500;
-        await new Promise(resolve => setTimeout(resolve, delay));
-      }
+      // NO DELAYS - Maximum speed processing
     }
 
     // Calculate final results
@@ -274,7 +269,7 @@ const sendEmailCampaignZeroDelay = async (req, res) => {
     const processingTime = Date.now() - startTime;
     const successRate = Math.round((sentCount / slice.recipients.length) * 100);
 
-    // OPTIMIZED: Account distribution verification
+    // Account distribution verification
     console.log(`📊 [${campaignId}] FINAL ACCOUNT DISTRIBUTION:`);
     accounts.forEach((account, index) => {
       const accountResults = results.filter(r => r.accountIndex === index + 1);
@@ -282,7 +277,7 @@ const sendEmailCampaignZeroDelay = async (req, res) => {
       console.log(`   Account ${index + 1} (${account.name}): ${accountSent} emails sent`);
     });
 
-    console.log(`✅ [${campaignId}] Function completed: ${sentCount} sent, ${failedCount} failed (${successRate}%) in ${processingTime}ms`);
+    console.log(`✅ [${campaignId}] MAXIMUM SPEED completed: ${sentCount} sent, ${failedCount} failed (${successRate}%) in ${processingTime}ms`);
     console.log(`⚡ [${campaignId}] Processing rate: ${Math.round(slice.recipients.length / (processingTime / 1000))} emails/second`);
 
     res.status(200).json({
@@ -294,10 +289,10 @@ const sendEmailCampaignZeroDelay = async (req, res) => {
       successRate,
       processingTimeMs: processingTime,
       emailsPerSecond: Math.round(slice.recipients.length / (processingTime / 1000)),
-      sendingMode,
+      sendingMode: 'maximum-speed',
       batchesProcessed: Math.ceil(slice.recipients.length / batchSize),
       batchSize,
-      optimizedForStability: true,
+      maximumSpeed: true,
       globalStartIndex,
       accountDistribution: accounts.map((account, index) => ({
         accountName: account.name,
