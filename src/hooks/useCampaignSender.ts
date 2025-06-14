@@ -66,12 +66,20 @@ export const useCampaignSender = (organizationId?: string) => {
       setIsSending(true);
       setProgress(0);
 
-      console.log('🚀 CAMPAIGN DISPATCH: Starting with PERFECT GLOBAL ROTATION');
+      console.log('🚀 OPTIMIZED CAMPAIGN DISPATCH: Starting with enhanced stability');
       console.log('Campaign config:', campaignData.config);
 
       const recipients = parseRecipients(campaignData.recipients);
       if (recipients.length === 0) {
         throw new Error('No valid recipients found');
+      }
+
+      // OPTIMIZATION: Check for large campaigns and recommend chunking
+      if (recipients.length > 5000) {
+        console.warn(`⚠️ Large campaign detected: ${recipients.length} recipients. Consider breaking into smaller campaigns for better reliability.`);
+        toast.warning(`Large campaign detected (${recipients.length} recipients). For better reliability, consider breaking this into smaller campaigns of 2,000-3,000 recipients each.`, {
+          duration: 8000
+        });
       }
 
       // Get selected accounts from config
@@ -88,7 +96,7 @@ export const useCampaignSender = (organizationId?: string) => {
         throw new Error('No active accounts found from selection');
       }
 
-      console.log(`🏪 PERFECT GLOBAL ROTATION: Using ${selectedAccounts.length} accounts for ${recipients.length} recipients`);
+      console.log(`🏪 OPTIMIZED ROTATION: Using ${selectedAccounts.length} accounts for ${recipients.length} recipients`);
       selectedAccounts.forEach((account, index) => {
         console.log(`   Account ${index + 1}: ${account.name} (${account.email}) - ${account.type}`);
       });
@@ -101,7 +109,7 @@ export const useCampaignSender = (organizationId?: string) => {
         throw new Error('No enabled Google Cloud Functions found. Please add and enable at least one function in Function Manager.');
       }
 
-      console.log(`🔧 DISPATCH: Using ${enabledFunctions.length} enabled functions`);
+      console.log(`🔧 OPTIMIZED DISPATCH: Using ${enabledFunctions.length} enabled functions`);
       enabledFunctions.forEach((func, index) => {
         console.log(`   Function ${index + 1}: ${func.name} - ${func.url}`);
       });
@@ -137,12 +145,12 @@ export const useCampaignSender = (organizationId?: string) => {
 
       setProgress(75);
 
-      // PERFECT EQUAL DISTRIBUTION: Calculate recipients per function
+      // OPTIMIZED: Calculate recipients per function with better distribution
       const recipientsPerFunction = Math.ceil(recipients.length / enabledFunctions.length);
       
-      console.log(`📊 PERFECT EQUAL DISTRIBUTION: ${recipientsPerFunction} recipients per function`);
+      console.log(`📊 OPTIMIZED DISTRIBUTION: ~${recipientsPerFunction} recipients per function`);
 
-      // PARALLEL DISPATCH to all functions with PERFECT GLOBAL ROTATION
+      // ENHANCED: Parallel dispatch with better error handling and timeout
       const functionPromises = enabledFunctions.map(async (func, funcIndex) => {
         const startIndex = funcIndex * recipientsPerFunction;
         const endIndex = Math.min(startIndex + recipientsPerFunction, recipients.length);
@@ -155,7 +163,6 @@ export const useCampaignSender = (organizationId?: string) => {
 
         console.log(`🚀 DISPATCHING to function ${funcIndex + 1}: ${func.name} with ${sliceRecipients.length} recipients (global index ${startIndex} to ${endIndex - 1})`);
         
-        // CRITICAL: Pass global start index for perfect rotation
         const dispatchPayload = {
           campaignId: campaignId,
           slice: {
@@ -170,12 +177,12 @@ export const useCampaignSender = (organizationId?: string) => {
               ...campaignData.config,
               sendingMode: campaignData.config?.sendingMode || 'zero-delay',
               dispatchMethod: 'parallel',
-              perfectGlobalRotation: true
+              optimizedForStability: true
             }
           },
-          accounts: selectedAccounts, // ALL accounts for rotation
+          accounts: selectedAccounts,
           organizationId: organizationId,
-          globalStartIndex: startIndex // CRITICAL: Global start index for perfect rotation
+          globalStartIndex: startIndex
         };
 
         console.log(`📦 Function ${func.name} payload:`, {
@@ -184,12 +191,12 @@ export const useCampaignSender = (organizationId?: string) => {
           accountCount: selectedAccounts.length,
           globalStartIndex: startIndex,
           sendingMode: dispatchPayload.campaignData.config.sendingMode,
-          perfectGlobalRotation: dispatchPayload.campaignData.config.perfectGlobalRotation
+          optimizedForStability: dispatchPayload.campaignData.config.optimizedForStability
         });
 
         try {
           const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 60000);
+          const timeoutId = setTimeout(() => controller.abort(), 180000); // INCREASED: 3 minutes timeout
           
           const response = await fetch(func.url, {
             method: 'POST',
@@ -224,9 +231,22 @@ export const useCampaignSender = (organizationId?: string) => {
         } catch (error: any) {
           console.error(`❌ Function ${func.name} failed:`, error);
           
+          // Update campaign with partial failure
+          try {
+            await supabase
+              .from('email_campaigns')
+              .update({ 
+                error_message: `Function ${func.name} failed: ${error.message}`,
+                status: 'partial_failure'
+              })
+              .eq('id', campaignId);
+          } catch (dbError) {
+            console.error('❌ Failed to update campaign error status:', dbError);
+          }
+          
           let errorMessage = error.message;
           if (error.name === 'AbortError') {
-            errorMessage = 'Request timeout (60s)';
+            errorMessage = 'Request timeout (3 minutes) - consider breaking campaign into smaller chunks';
           } else if (error.message.includes('Failed to fetch')) {
             errorMessage = 'Network error - check function URL and connectivity';
           }
@@ -252,22 +272,24 @@ export const useCampaignSender = (organizationId?: string) => {
       // Calculate total sent emails across all functions
       const totalSentEmails = successfulDispatches.reduce((sum, result) => sum + (result.sentCount || 0), 0);
 
-      console.log(`🎉 DISPATCH COMPLETE: ${successfulDispatches.length} successful, ${failedDispatches.length} failed`);
+      console.log(`🎉 OPTIMIZED DISPATCH COMPLETE: ${successfulDispatches.length} successful, ${failedDispatches.length} failed`);
       console.log(`📊 TOTAL EMAILS SENT: ${totalSentEmails}/${recipients.length}`);
 
-      // Update campaign status to 'sent' after successful dispatch
+      // Update campaign status after successful dispatch
       if (successfulDispatches.length > 0) {
         try {
+          const finalStatus = failedDispatches.length === 0 ? 'sent' : 'partial_success';
           const campaignUpdate = await supabase
             .from('email_campaigns')
             .update({ 
-              status: 'sent',
+              status: finalStatus,
               sent_at: new Date().toISOString(),
+              completed_at: new Date().toISOString(),
               sent_count: totalSentEmails
             })
             .eq('id', campaignId);
 
-          console.log('📝 Campaign status updated to SENT:', campaignUpdate);
+          console.log(`📝 Campaign status updated to ${finalStatus}:`, campaignUpdate);
         } catch (updateError) {
           console.error('❌ Failed to update campaign status:', updateError);
         }
@@ -279,7 +301,11 @@ export const useCampaignSender = (organizationId?: string) => {
         // Update campaign status to failed
         await supabase
           .from('email_campaigns')
-          .update({ status: 'failed' })
+          .update({ 
+            status: 'failed',
+            error_message: errorDetails,
+            completed_at: new Date().toISOString()
+          })
           .eq('id', campaignId);
           
         throw new Error(`All ${enabledFunctions.length} function dispatches failed. Details: ${errorDetails}`);
@@ -288,23 +314,23 @@ export const useCampaignSender = (organizationId?: string) => {
       // Show appropriate success/warning message
       if (failedDispatches.length > 0) {
         console.warn(`⚠️ ${failedDispatches.length} functions failed, but ${successfulDispatches.length} succeeded`);
-        toast.warning(`Campaign dispatched with some issues: ${failedDispatches.length} functions failed, ${successfulDispatches.length} succeeded. ${totalSentEmails} emails sent with perfect global account rotation.`);
+        toast.warning(`Campaign dispatched with some issues: ${failedDispatches.length} functions failed, ${successfulDispatches.length} succeeded. ${totalSentEmails} emails sent successfully.`);
       } else {
-        toast.success(`Campaign dispatched successfully! ${successfulDispatches.length} functions processing ${totalSentEmails} emails with PERFECT GLOBAL ROTATION across ${selectedAccounts.length} accounts.`);
+        toast.success(`Campaign dispatched successfully! All ${successfulDispatches.length} functions completed processing ${totalSentEmails} emails with optimized stability.`);
       }
 
       return {
         success: true,
-        message: `Campaign dispatched to ${successfulDispatches.length} functions with perfect global account rotation`,
+        message: `Campaign dispatched to ${successfulDispatches.length} functions with optimized stability`,
         totalEmails: totalSentEmails,
         accountsUsed: selectedAccounts.length,
         functionsUsed: successfulDispatches.length,
-        perfectGlobalRotation: true,
+        optimizedForStability: true,
         campaignId: campaignId
       };
 
     } catch (error: any) {
-      console.error('❌ CAMPAIGN DISPATCH FAILED:', error);
+      console.error('❌ OPTIMIZED CAMPAIGN DISPATCH FAILED:', error);
       toast.error(`Campaign dispatch failed: ${error.message}`);
       throw error;
     } finally {

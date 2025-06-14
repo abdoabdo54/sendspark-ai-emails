@@ -20,9 +20,9 @@ function createTransporter(accountConfig) {
         pass: accountConfig.pass
       },
       pool: true,
-      maxConnections: 20,
-      maxMessages: 200,
-      rateLimit: 10
+      maxConnections: 10, // Reduced for stability
+      maxMessages: 100,   // Reduced for stability
+      rateLimit: 5        // Reduced for stability
     });
   }
   
@@ -146,6 +146,33 @@ async function processEmail(recipient, account, campaignData, globalIndex, total
   }
 }
 
+// OPTIMIZED: Batch database update function
+async function updateCampaignProgress(campaignId, sentCount, isComplete = false) {
+  try {
+    const updateData = {
+      sent_count: sentCount
+    };
+
+    if (isComplete) {
+      updateData.status = 'sent';
+      updateData.completed_at = new Date().toISOString();
+    }
+
+    const { error } = await supabase
+      .from('email_campaigns')
+      .update(updateData)
+      .eq('id', campaignId);
+
+    if (error) {
+      console.error(`❌ Database update failed:`, error);
+    } else {
+      console.log(`📝 Campaign progress updated: ${sentCount} emails sent`);
+    }
+  } catch (dbError) {
+    console.error(`❌ Database update error:`, dbError);
+  }
+}
+
 // Main function handler
 const sendEmailCampaignZeroDelay = async (req, res) => {
   // Enable CORS
@@ -167,7 +194,7 @@ const sendEmailCampaignZeroDelay = async (req, res) => {
       campaignData, 
       accounts, 
       organizationId,
-      globalStartIndex = 0 // NEW: Starting index for global rotation
+      globalStartIndex = 0
     } = req.body;
 
     // Health check
@@ -179,19 +206,19 @@ const sendEmailCampaignZeroDelay = async (req, res) => {
       });
     }
 
-    console.log(`🚀 [${campaignId}] PERFECT GLOBAL ROTATION: Processing ${slice.recipients.length} emails starting from global index ${globalStartIndex}`);
+    console.log(`🚀 [${campaignId}] OPTIMIZED PROCESSING: ${slice.recipients.length} emails starting from global index ${globalStartIndex}`);
     console.log(`📊 [${campaignId}] Using ${accounts.length} accounts with perfect rotation`);
 
     const config = campaignData.config || {};
     const sendingMode = config.sendingMode || 'zero-delay';
-    const batchSize = sendingMode === 'zero-delay' ? 50 : 10; // Parallel batch size
+    const batchSize = sendingMode === 'zero-delay' ? 25 : 10; // REDUCED for stability
 
-    console.log(`⚡ [${campaignId}] Parallel processing in batches of ${batchSize}`);
+    console.log(`⚡ [${campaignId}] Processing in optimized batches of ${batchSize}`);
 
     // Prepare all email tasks with GLOBAL INDEXING
     const emailTasks = slice.recipients.map((recipient, localIndex) => {
-      const globalIndex = globalStartIndex + localIndex; // CRITICAL: Global index calculation
-      const accountIndex = globalIndex % accounts.length; // PERFECT: Global rotation
+      const globalIndex = globalStartIndex + localIndex;
+      const accountIndex = globalIndex % accounts.length;
       const account = accounts[accountIndex];
       
       console.log(`📧 [${campaignId}] Email ${globalIndex + 1}: ${recipient} → Account ${accountIndex + 1}/${accounts.length} (${account.name})`);
@@ -199,60 +226,64 @@ const sendEmailCampaignZeroDelay = async (req, res) => {
       return () => processEmail(recipient, account, campaignData, globalIndex, accounts.length);
     });
 
-    // Process emails in parallel batches for maximum speed
+    // OPTIMIZED: Process emails in smaller batches with progress updates
     const results = [];
+    let totalSentInThisFunction = 0;
     
     for (let i = 0; i < emailTasks.length; i += batchSize) {
       const batch = emailTasks.slice(i, i + batchSize);
-      console.log(`🚀 [${campaignId}] Processing batch ${Math.floor(i/batchSize) + 1}: ${batch.length} emails in parallel`);
+      const batchNumber = Math.floor(i/batchSize) + 1;
+      const totalBatches = Math.ceil(emailTasks.length / batchSize);
+      
+      console.log(`🚀 [${campaignId}] Processing batch ${batchNumber}/${totalBatches}: ${batch.length} emails`);
       
       const batchResults = await Promise.all(batch.map(task => task()));
       results.push(...batchResults);
       
-      // Small delay between batches if not zero-delay mode
-      if (sendingMode !== 'zero-delay' && i + batchSize < emailTasks.length) {
-        await new Promise(resolve => setTimeout(resolve, 100));
+      // Count successful sends in this batch
+      const batchSentCount = batchResults.filter(r => r.status === 'sent').length;
+      totalSentInThisFunction += batchSentCount;
+      
+      // OPTIMIZED: Update database progress every batch (not every email)
+      if (batchSentCount > 0) {
+        // Get current campaign sent count and add this batch
+        try {
+          const { data: currentCampaign } = await supabase
+            .from('email_campaigns')
+            .select('sent_count')
+            .eq('id', campaignId)
+            .single();
+
+          const newSentCount = (currentCampaign?.sent_count || 0) + batchSentCount;
+          await updateCampaignProgress(campaignId, newSentCount);
+        } catch (error) {
+          console.error(`❌ Progress update failed for batch ${batchNumber}:`, error);
+        }
+      }
+      
+      // Small delay between batches for system stability
+      if (i + batchSize < emailTasks.length) {
+        const delay = sendingMode === 'zero-delay' ? 200 : 500;
+        await new Promise(resolve => setTimeout(resolve, delay));
       }
     }
 
-    // Calculate results
+    // Calculate final results
     const sentCount = results.filter(r => r.status === 'sent').length;
     const failedCount = results.filter(r => r.status === 'failed').length;
     const processingTime = Date.now() - startTime;
     const successRate = Math.round((sentCount / slice.recipients.length) * 100);
 
-    // PERFECT ACCOUNT DISTRIBUTION VERIFICATION
-    console.log(`📊 [${campaignId}] PERFECT GLOBAL ACCOUNT DISTRIBUTION:`);
+    // OPTIMIZED: Account distribution verification
+    console.log(`📊 [${campaignId}] FINAL ACCOUNT DISTRIBUTION:`);
     accounts.forEach((account, index) => {
       const accountResults = results.filter(r => r.accountIndex === index + 1);
       const accountSent = accountResults.filter(r => r.status === 'sent').length;
       console.log(`   Account ${index + 1} (${account.name}): ${accountSent} emails sent`);
     });
 
-    // Update campaign statistics
-    try {
-      const { data: currentCampaign } = await supabase
-        .from('email_campaigns')
-        .select('sent_count')
-        .eq('id', campaignId)
-        .single();
-
-      const newSentCount = (currentCampaign?.sent_count || 0) + sentCount;
-
-      await supabase
-        .from('email_campaigns')
-        .update({
-          sent_count: newSentCount
-        })
-        .eq('id', campaignId);
-
-      console.log(`📝 [${campaignId}] Updated campaign sent_count to ${newSentCount}`);
-    } catch (dbError) {
-      console.error(`❌ [${campaignId}] Database update failed:`, dbError);
-    }
-
-    console.log(`✅ [${campaignId}] Slice completed: ${sentCount} sent, ${failedCount} failed (${successRate}%) in ${processingTime}ms`);
-    console.log(`⚡ [${campaignId}] Parallel processing: ${Math.round(slice.recipients.length / (processingTime / 1000))} emails/second`);
+    console.log(`✅ [${campaignId}] Function completed: ${sentCount} sent, ${failedCount} failed (${successRate}%) in ${processingTime}ms`);
+    console.log(`⚡ [${campaignId}] Processing rate: ${Math.round(slice.recipients.length / (processingTime / 1000))} emails/second`);
 
     res.status(200).json({
       success: true,
@@ -264,9 +295,9 @@ const sendEmailCampaignZeroDelay = async (req, res) => {
       processingTimeMs: processingTime,
       emailsPerSecond: Math.round(slice.recipients.length / (processingTime / 1000)),
       sendingMode,
-      parallelBatches: Math.ceil(slice.recipients.length / batchSize),
+      batchesProcessed: Math.ceil(slice.recipients.length / batchSize),
       batchSize,
-      perfectGlobalRotation: true,
+      optimizedForStability: true,
       globalStartIndex,
       accountDistribution: accounts.map((account, index) => ({
         accountName: account.name,
@@ -274,12 +305,29 @@ const sendEmailCampaignZeroDelay = async (req, res) => {
         accountIndex: index + 1,
         emailsSent: results.filter(r => r.accountIndex === index + 1 && r.status === 'sent').length
       })),
-      results: results.slice(-10) // Last 10 for debugging
+      results: results.slice(-5) // Last 5 for debugging
     });
 
   } catch (error) {
     const processingTime = Date.now() - startTime;
     console.error('❌ Function error:', error);
+    
+    // Update campaign status to failed
+    if (req.body.campaignId) {
+      try {
+        await supabase
+          .from('email_campaigns')
+          .update({ 
+            status: 'failed', 
+            error_message: error.message,
+            completed_at: new Date().toISOString()
+          })
+          .eq('id', req.body.campaignId);
+      } catch (dbError) {
+        console.error('❌ Failed to update campaign status:', dbError);
+      }
+    }
+    
     res.status(500).json({
       success: false,
       error: error.message,
