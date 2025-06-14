@@ -74,8 +74,8 @@ export const useCampaignSender = (organizationId?: string) => {
         throw new Error('No prepared emails found. Please prepare the campaign first.');
       }
 
-      // Cast Json to PreparedEmail array
-      const preparedEmails = preparedEmailsJson as PreparedEmail[];
+      // Cast Json to PreparedEmail array with proper type assertion
+      const preparedEmails = (preparedEmailsJson as unknown) as PreparedEmail[];
       
       if (!Array.isArray(preparedEmails) || preparedEmails.length === 0) {
         throw new Error('Invalid prepared emails format. Please prepare the campaign again.');
