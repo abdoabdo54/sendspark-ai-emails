@@ -33,32 +33,33 @@ const CompactAccountSelector: React.FC<CompactAccountSelectorProps> = ({
   const selectedCount = selectedAccounts.length;
 
   const handleAccountToggle = (accountId: string) => {
-    onAccountsChange(
-      selectedAccounts.includes(accountId)
-        ? selectedAccounts.filter(id => id !== accountId)
-        : [...selectedAccounts, accountId]
-    );
+    const newSelection = selectedAccounts.includes(accountId)
+      ? selectedAccounts.filter(id => id !== accountId)
+      : [...selectedAccounts, accountId];
+    
+    console.log('🔧 Account toggle:', accountId, 'New selection:', newSelection);
+    onAccountsChange(newSelection);
   };
 
   const handleSelectAll = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    console.log('🔵 Select All clicked - calling onSelectAll');
+    console.log('🔵 Select All clicked');
+    const allAccountIds = activeAccounts.map(account => account.id);
+    onAccountsChange(allAccountIds);
     onSelectAll();
   };
 
   const handleDeselectAll = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    console.log('🔴 CRITICAL FIX: Deselect All clicked - forcing immediate clear');
+    console.log('🔴 CLEAR ALL: Forcing immediate account clear');
     
-    // CRITICAL FIX: Force immediate clear without any callbacks that might re-select
+    // FIXED: Force immediate clear and close popover
     onAccountsChange([]);
-    
-    // Close popover immediately to prevent UI conflicts
     setIsOpen(false);
     
-    // Also call the callback but after the main change
+    // Also call the callback
     setTimeout(() => {
       onDeselectAll();
     }, 10);
@@ -126,7 +127,7 @@ const CompactAccountSelector: React.FC<CompactAccountSelectorProps> = ({
                 <Button 
                   variant="outline" 
                   size="sm" 
-                  className="flex-1 bg-red-50 hover:bg-red-100 border-red-200"
+                  className="flex-1 bg-red-50 hover:bg-red-100 border-red-200 text-red-700"
                   onClick={handleDeselectAll}
                   type="button"
                 >
@@ -173,7 +174,7 @@ const CompactAccountSelector: React.FC<CompactAccountSelectorProps> = ({
             </div>
             {enabledFunctions.length > 0 && (
               <div className="p-3 border-t text-xs text-gray-500">
-                📡 {enabledFunctions.length} Google Cloud Function{enabledFunctions.length !== 1 ? 's' : ''} enabled
+                📡 {enabledFunctions.length} Google Cloud Function{enabledFunctions.length !== 1 ? 's' : ''} enabled for zero-delay sending
               </div>
             )}
           </PopoverContent>

@@ -5,6 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { 
   Search, 
   Plus, 
@@ -15,9 +16,10 @@ import {
   Edit,
   Trash2,
   Send,
-  Settings,
   Play,
-  Pause
+  Pause,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 import { useSimpleOrganizations } from '@/contexts/SimpleOrganizationContext';
 import { useCampaigns } from '@/hooks/useCampaigns';
@@ -29,22 +31,47 @@ const Campaigns = () => {
   const { 
     campaigns, 
     loading, 
+    pagination,
+    searchTerm,
     deleteCampaign, 
     pauseCampaign, 
     resumeCampaign,
-    duplicateCampaign 
+    duplicateCampaign,
+    nextPage,
+    prevPage,
+    search
   } = useCampaigns(currentOrganization?.id);
-  const [searchTerm, setSearchTerm] = useState('');
 
-  // Memoize filtered campaigns to prevent unnecessary re-renders
-  const filteredCampaigns = useMemo(() => {
+  const [localSearchTerm, setLocalSearchTerm] = useState(searchTerm);
+  const [sortBy, setSortBy] = useState('created_at');
+
+  // Handle search with debouncing
+  const handleSearch = (value: string) => {
+    setLocalSearchTerm(value);
+    // Debounce search
+    setTimeout(() => {
+      search(value);
+    }, 500);
+  };
+
+  // Memoized sorted campaigns
+  const sortedCampaigns = useMemo(() => {
     if (!campaigns) return [];
     
-    return campaigns.filter(campaign =>
-      campaign.subject.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      campaign.from_name.toLowerCase().includes(searchTerm.toLowerCase())
-    );
-  }, [campaigns, searchTerm]);
+    return [...campaigns].sort((a, b) => {
+      switch (sortBy) {
+        case 'name':
+          return a.subject.localeCompare(b.subject);
+        case 'status':
+          return a.status.localeCompare(b.status);
+        case 'recipients':
+          return (b.total_recipients || 0) - (a.total_recipients || 0);
+        case 'created_at':
+        default:
+          return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+      }
+    });
+  }, [campaigns, sortBy]);
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -77,7 +104,6 @@ const Campaigns = () => {
     });
   };
 
-  // Memoized handlers to prevent re-renders
   const handleDelete = React.useCallback(async (campaignId: string) => {
     if (confirm('Are you sure you want to delete this campaign?')) {
       try {
@@ -149,20 +175,35 @@ const Campaigns = () => {
         {/* Header Section */}
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-slate-800 mb-2">Email Campaigns</h1>
-          <p className="text-slate-600">Manage and monitor your email campaigns</p>
+          <p className="text-slate-600">
+            Manage and monitor your email campaigns ({pagination.totalCount} total)
+          </p>
         </div>
 
-        {/* Search and Create Section */}
+        {/* Search, Sort and Create Section */}
         <div className="bg-white rounded-lg border p-4 mb-6">
-          <div className="flex items-center justify-between gap-4">
-            <div className="relative flex-1 max-w-md">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-              <Input
-                placeholder="Search campaigns..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10"
-              />
+          <div className="flex items-center justify-between gap-4 flex-wrap">
+            <div className="flex items-center gap-4 flex-1">
+              <div className="relative flex-1 max-w-md">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                <Input
+                  placeholder="Search by name or subject..."
+                  value={localSearchTerm}
+                  onChange={(e) => handleSearch(e.target.value)}
+                  className="pl-10"
+                />
+              </div>
+              <Select value={sortBy} onValueChange={setSortBy}>
+                <SelectTrigger className="w-48">
+                  <SelectValue placeholder="Sort by..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="created_at">Date Created</SelectItem>
+                  <SelectItem value="name">Campaign Name</SelectItem>
+                  <SelectItem value="status">Status</SelectItem>
+                  <SelectItem value="recipients">Recipients</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <Button 
               onClick={handleCreateCampaign} 
@@ -177,11 +218,41 @@ const Campaigns = () => {
         {/* Campaigns List Section */}
         <div className="bg-white rounded-lg border">
           <div className="border-b p-4">
-            <div className="flex items-center gap-2">
-              <Mail className="w-5 h-5 text-slate-600" />
-              <h2 className="text-lg font-semibold">All Campaigns ({filteredCampaigns.length})</h2>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Mail className="w-5 h-5 text-slate-600" />
+                <h2 className="text-lg font-semibold">
+                  Campaigns (Page {pagination.currentPage} of {pagination.totalPages})
+                </h2>
+              </div>
+              
+              {/* Pagination Controls */}
+              {pagination.totalPages > 1 && (
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={prevPage}
+                    disabled={!pagination.hasPrev}
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                    Previous
+                  </Button>
+                  <span className="text-sm text-slate-600 px-2">
+                    {pagination.currentPage} / {pagination.totalPages}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={nextPage}
+                    disabled={!pagination.hasNext}
+                  >
+                    Next
+                    <ChevronRight className="w-4 h-4" />
+                  </Button>
+                </div>
+              )}
             </div>
-            <p className="text-sm text-slate-600 mt-1">View and manage your email campaigns</p>
           </div>
 
           <div className="divide-y">
@@ -190,12 +261,12 @@ const Campaigns = () => {
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mr-3"></div>
                 <span className="text-slate-600">Loading campaigns...</span>
               </div>
-            ) : filteredCampaigns.length === 0 ? (
+            ) : sortedCampaigns.length === 0 ? (
               <div className="text-center py-12">
                 <Mail className="w-12 h-12 text-slate-400 mx-auto mb-4" />
                 <h3 className="text-lg font-medium text-slate-900 mb-2">No campaigns found</h3>
                 <p className="text-slate-600 mb-4">
-                  {searchTerm ? 'No campaigns match your search.' : 'Create your first email campaign to get started.'}
+                  {localSearchTerm ? 'No campaigns match your search.' : 'Create your first email campaign to get started.'}
                 </p>
                 <Button onClick={handleCreateCampaign}>
                   <Plus className="w-4 h-4 mr-2" />
@@ -203,7 +274,7 @@ const Campaigns = () => {
                 </Button>
               </div>
             ) : (
-              filteredCampaigns.map((campaign) => (
+              sortedCampaigns.map((campaign) => (
                 <CampaignListItem
                   key={campaign.id}
                   campaign={campaign}
@@ -219,6 +290,37 @@ const Campaigns = () => {
               ))
             )}
           </div>
+
+          {/* Bottom Pagination */}
+          {pagination.totalPages > 1 && (
+            <div className="p-4 border-t bg-gray-50">
+              <div className="flex items-center justify-between">
+                <div className="text-sm text-slate-600">
+                  Showing {((pagination.currentPage - 1) * 8) + 1} to {Math.min(pagination.currentPage * 8, pagination.totalCount)} of {pagination.totalCount} campaigns
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={prevPage}
+                    disabled={!pagination.hasPrev}
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                    Previous
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={nextPage}
+                    disabled={!pagination.hasNext}
+                  >
+                    Next
+                    <ChevronRight className="w-4 h-4" />
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

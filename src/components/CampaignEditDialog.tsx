@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -52,8 +51,10 @@ const CampaignEditDialog = ({ campaign, trigger }: CampaignEditDialogProps) => {
   const [htmlContent, setHtmlContent] = useState(campaign.html_content || '');
   const [textContent, setTextContent] = useState(campaign.text_content || '');
   
-  // Configuration states
-  const [selectedAccounts, setSelectedAccounts] = useState<string[]>(campaign.config?.selectedAccounts || []);
+  // FIXED: Initialize with existing config values
+  const [selectedAccounts, setSelectedAccounts] = useState<string[]>(
+    campaign.config?.selectedAccounts || []
+  );
   const [sendingMode, setSendingMode] = useState(campaign.config?.sendingMode || 'controlled');
   const [dispatchMethod, setDispatchMethod] = useState(campaign.config?.dispatchMethod || 'parallel');
   const [useCustomConfig, setUseCustomConfig] = useState(campaign.config?.useCustomConfig || false);
@@ -77,15 +78,37 @@ const CampaignEditDialog = ({ campaign, trigger }: CampaignEditDialogProps) => {
   
   const [loading, setLoading] = useState(false);
 
+  // FIXED: Reset form when campaign changes
+  useEffect(() => {
+    if (campaign && open) {
+      setFromName(campaign.from_name);
+      setSubject(campaign.subject);
+      setRecipients(campaign.recipients);
+      setHtmlContent(campaign.html_content || '');
+      setTextContent(campaign.text_content || '');
+      setSelectedAccounts(campaign.config?.selectedAccounts || []);
+      setSendingMode(campaign.config?.sendingMode || 'controlled');
+      setDispatchMethod(campaign.config?.dispatchMethod || 'parallel');
+      setUseCustomConfig(campaign.config?.useCustomConfig || false);
+      setCustomFunctionCount(campaign.config?.customFunctionCount || 1);
+      setCustomAccountCount(campaign.config?.customAccountCount || 1);
+      
+      console.log('🔧 Form reset with campaign config:', campaign.config);
+    }
+  }, [campaign, open]);
+
   const activeAccounts = accounts.filter(account => account.is_active);
   const enabledFunctions = functions.filter(func => func.enabled);
 
   const handleAccountToggle = (accountId: string) => {
-    setSelectedAccounts(prev => 
-      prev.includes(accountId) 
+    setSelectedAccounts(prev => {
+      const newSelection = prev.includes(accountId) 
         ? prev.filter(id => id !== accountId)
-        : [...prev, accountId]
-    );
+        : [...prev, accountId];
+      
+      console.log('🔧 Account selection changed:', newSelection);
+      return newSelection;
+    });
   };
 
   const addFromNameRotation = () => {
@@ -134,19 +157,18 @@ const CampaignEditDialog = ({ campaign, trigger }: CampaignEditDialogProps) => {
     setLoading(true);
     
     try {
-      const recipientCount = recipients.split(',').filter(email => email.trim()).length;
+      // FIXED: Count recipients properly
+      const recipientCount = recipients.split(/[,\n;]/).filter(email => email.trim() && email.includes('@')).length;
       
-      // FIXED: Convert arrays to line-by-line strings for storage
-      const fromNamesText = useFromNameRotation 
-        ? fromNameRotations.filter(name => name.trim()).join('\n')
-        : '';
-      
-      const subjectsText = useSubjectRotation 
-        ? subjectRotations.filter(subject => subject.trim()).join('\n')
-        : '';
-      
-      const updatedConfig = {
+      console.log('🔧 Saving campaign with:', {
         selectedAccounts,
+        recipientCount,
+        sendingMode
+      });
+      
+      // FIXED: Properly construct config object
+      const updatedConfig = {
+        selectedAccounts: [...selectedAccounts], // Ensure it's a new array
         sendingMode,
         dispatchMethod,
         useCustomConfig,
@@ -154,9 +176,13 @@ const CampaignEditDialog = ({ campaign, trigger }: CampaignEditDialogProps) => {
         customAccountCount: useCustomConfig ? customAccountCount : selectedAccounts.length,
         rotation: {
           useFromNameRotation,
-          fromNames: fromNamesText, // Store as line-by-line string
+          fromNames: useFromNameRotation 
+            ? fromNameRotations.filter(name => name.trim()).join('\n')
+            : '',
           useSubjectRotation,
-          subjects: subjectsText // Store as line-by-line string
+          subjects: useSubjectRotation 
+            ? subjectRotations.filter(subject => subject.trim()).join('\n')
+            : ''
         },
         testAfter: {
           enabled: testAfterEnabled,
@@ -177,14 +203,17 @@ const CampaignEditDialog = ({ campaign, trigger }: CampaignEditDialogProps) => {
         status: campaign.status === 'prepared' ? 'draft' : campaign.status
       };
 
-      await updateCampaign(campaign.id, updates);
+      console.log('🔧 Updating campaign with:', updates);
+
+      const result = await updateCampaign(campaign.id, updates);
       
-      setOpen(false);
-      
-      toast({
-        title: "Success",
-        description: "Campaign updated successfully!"
-      });
+      if (result) {
+        setOpen(false);
+        toast({
+          title: "Success",
+          description: `Campaign updated successfully! ${selectedAccounts.length} accounts selected, ${recipientCount} recipients.`
+        });
+      }
     } catch (error) {
       console.error('Error updating campaign:', error);
       toast({
@@ -197,7 +226,7 @@ const CampaignEditDialog = ({ campaign, trigger }: CampaignEditDialogProps) => {
     }
   };
 
-  const recipientCount = recipients.split(',').filter(email => email.trim()).length;
+  const recipientCount = recipients.split(/[,\n;]/).filter(email => email.trim() && email.includes('@')).length;
   const validFromNames = fromNameRotations.filter(name => name.trim());
   const validSubjects = subjectRotations.filter(subject => subject.trim());
 
@@ -215,7 +244,7 @@ const CampaignEditDialog = ({ campaign, trigger }: CampaignEditDialogProps) => {
         <DialogHeader>
           <DialogTitle>Edit Campaign</DialogTitle>
           <DialogDescription>
-            Modify your email campaign settings and content. Changes will reset prepared status.
+            Modify your email campaign settings and content. Selected accounts and recipient count will be preserved.
           </DialogDescription>
         </DialogHeader>
 
@@ -565,6 +594,15 @@ const CampaignEditDialog = ({ campaign, trigger }: CampaignEditDialogProps) => {
           </TabsContent>
         </Tabs>
 
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
+          <div className="text-sm text-blue-800">
+            <strong>Current Selection:</strong> {selectedAccounts.length} accounts, {recipientCount} recipients
+            {sendingMode === 'zero-delay' && (
+              <span className="ml-2 text-orange-600 font-medium">🚀 ZERO DELAY MODE</span>
+            )}
+          </div>
+        </div>
+
         <div className="flex justify-end space-x-2 pt-4 border-t">
           <Button variant="outline" onClick={() => setOpen(false)}>
             Cancel
@@ -573,7 +611,7 @@ const CampaignEditDialog = ({ campaign, trigger }: CampaignEditDialogProps) => {
             onClick={handleSave} 
             disabled={loading || !fromName || !subject || !recipients || selectedAccounts.length === 0}
           >
-            {loading ? 'Saving...' : 'Save Changes'}
+            {loading ? 'Saving...' : `Save Changes (${selectedAccounts.length} accounts, ${recipientCount} recipients)`}
           </Button>
         </div>
       </DialogContent>

@@ -23,14 +23,55 @@ export interface Campaign {
   completed_at?: string;
 }
 
+interface CampaignFilters {
+  search?: string;
+  page?: number;
+  limit?: number;
+}
+
 export const useCampaigns = (organizationId?: string) => {
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [totalCount, setTotalCount] = useState(0);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [searchTerm, setSearchTerm] = useState('');
 
-  const fetchCampaigns = useCallback(async () => {
+  const CAMPAIGNS_PER_PAGE = 8;
+
+  // Helper function to count recipients properly
+  const countRecipients = useCallback((recipientsText: string): number => {
+    if (!recipientsText?.trim()) return 0;
+    
+    // Try different separators
+    const separators = ['\n', ',', ';'];
+    let maxCount = 0;
+    
+    for (const separator of separators) {
+      if (recipientsText.includes(separator)) {
+        const count = recipientsText
+          .split(separator)
+          .map(email => email.trim())
+          .filter(email => email && email.includes('@')).length;
+        maxCount = Math.max(maxCount, count);
+      }
+    }
+    
+    // If no separators found, check if it's a single valid email
+    if (maxCount === 0) {
+      const trimmed = recipientsText.trim();
+      if (trimmed && trimmed.includes('@')) {
+        maxCount = 1;
+      }
+    }
+    
+    return maxCount;
+  }, []);
+
+  const fetchCampaigns = useCallback(async (filters: CampaignFilters = {}) => {
     if (!organizationId) {
       setCampaigns([]);
+      setTotalCount(0);
       setLoading(false);
       return;
     }
@@ -39,10 +80,13 @@ export const useCampaigns = (organizationId?: string) => {
       setLoading(true);
       setError(null);
       
-      console.log('🔍 Fetching campaigns with optimized query for org:', organizationId);
+      const page = filters.page || currentPage;
+      const limit = filters.limit || CAMPAIGNS_PER_PAGE;
+      const search = filters.search !== undefined ? filters.search : searchTerm;
       
-      // OPTIMIZED: Select only essential fields and limit results
-      const { data, error } = await supabase
+      console.log(`🔍 Fetching campaigns - Page: ${page}, Limit: ${limit}, Search: "${search}"`);
+      
+      let query = supabase
         .from('email_campaigns')
         .select(`
           id,
@@ -50,6 +94,8 @@ export const useCampaigns = (organizationId?: string) => {
           from_name,
           subject,
           recipients,
+          html_content,
+          text_content,
           send_method,
           status,
           sent_count,
@@ -57,27 +103,44 @@ export const useCampaigns = (organizationId?: string) => {
           created_at,
           sent_at,
           error_message,
-          completed_at
-        `)
+          completed_at,
+          config,
+          prepared_emails
+        `, { count: 'exact' })
         .eq('organization_id', organizationId)
-        .order('created_at', { ascending: false })
-        .limit(25); // Reduced limit for better performance
+        .order('created_at', { ascending: false });
+
+      // Add search filters
+      if (search?.trim()) {
+        query = query.or(`subject.ilike.%${search}%,from_name.ilike.%${search}%`);
+      }
+
+      // Add pagination
+      const startIndex = (page - 1) * limit;
+      query = query.range(startIndex, startIndex + limit - 1);
+
+      const { data, error, count } = await query;
 
       if (error) {
         console.error('❌ Campaign fetch error:', error);
         throw error;
       }
       
-      const typedCampaigns: Campaign[] = (data || []).map(campaign => ({
-        ...campaign,
-        html_content: '', // Don't load heavy content initially
-        text_content: '', // Don't load heavy content initially
-        config: {},
-        prepared_emails: []
-      }));
+      const typedCampaigns: Campaign[] = (data || []).map(campaign => {
+        // FIXED: Ensure total_recipients is calculated correctly
+        const recipientCount = campaign.total_recipients || countRecipients(campaign.recipients || '');
+        
+        return {
+          ...campaign,
+          total_recipients: recipientCount,
+          config: campaign.config || {},
+          prepared_emails: Array.isArray(campaign.prepared_emails) ? campaign.prepared_emails : []
+        };
+      });
       
-      console.log(`✅ Loaded ${typedCampaigns.length} campaigns successfully`);
+      console.log(`✅ Loaded ${typedCampaigns.length} campaigns (Total: ${count})`);
       setCampaigns(typedCampaigns);
+      setTotalCount(count || 0);
     } catch (error: any) {
       console.error('Error fetching campaigns:', error);
       setError("Failed to load campaigns");
@@ -89,9 +152,9 @@ export const useCampaigns = (organizationId?: string) => {
     } finally {
       setLoading(false);
     }
-  }, [organizationId]);
+  }, [organizationId, currentPage, searchTerm, countRecipients]);
 
-  // Memoize campaign operations to prevent unnecessary re-renders
+  // Memoize campaign operations
   const campaignOperations = useMemo(() => ({
     createCampaign: async (campaignData: Omit<Campaign, 'id' | 'created_at' | 'organization_id'>) => {
       if (!organizationId) {
@@ -104,11 +167,18 @@ export const useCampaigns = (organizationId?: string) => {
       }
 
       try {
+        // FIXED: Calculate recipient count before saving
+        const recipientCount = countRecipients(campaignData.recipients);
+        
+        console.log('🔧 Creating campaign with config:', campaignData.config);
+        console.log('📧 Recipients count:', recipientCount);
+
         const { data, error } = await supabase
           .from('email_campaigns')
           .insert([{
             ...campaignData,
-            organization_id: organizationId
+            organization_id: organizationId,
+            total_recipients: recipientCount // FIXED: Set correct count
           }])
           .select()
           .single();
@@ -117,11 +187,14 @@ export const useCampaigns = (organizationId?: string) => {
 
         const typedCampaign: Campaign = {
           ...data,
+          total_recipients: recipientCount,
           config: data.config || {},
           prepared_emails: Array.isArray(data.prepared_emails) ? data.prepared_emails : []
         };
 
-        setCampaigns(prev => [typedCampaign, ...prev]);
+        setCampaigns(prev => [typedCampaign, ...prev.slice(0, CAMPAIGNS_PER_PAGE - 1)]);
+        setTotalCount(prev => prev + 1);
+        
         toast({
           title: "Success",
           description: "Campaign created successfully"
@@ -141,6 +214,13 @@ export const useCampaigns = (organizationId?: string) => {
 
     updateCampaign: async (campaignId: string, updates: Partial<Campaign>) => {
       try {
+        // FIXED: Recalculate recipient count if recipients changed
+        if (updates.recipients) {
+          updates.total_recipients = countRecipients(updates.recipients);
+        }
+
+        console.log('🔧 Updating campaign with:', updates);
+
         const { data, error } = await supabase
           .from('email_campaigns')
           .update(updates)
@@ -160,6 +240,7 @@ export const useCampaigns = (organizationId?: string) => {
           campaign.id === campaignId ? typedCampaign : campaign
         ));
 
+        console.log('✅ Campaign updated successfully');
         return typedCampaign;
       } catch (error) {
         console.error('Error updating campaign:', error);
@@ -182,6 +263,8 @@ export const useCampaigns = (organizationId?: string) => {
         if (error) throw error;
 
         setCampaigns(prev => prev.filter(campaign => campaign.id !== campaignId));
+        setTotalCount(prev => Math.max(0, prev - 1));
+        
         toast({
           title: "Success",
           description: "Campaign deleted successfully"
@@ -263,20 +346,56 @@ export const useCampaigns = (organizationId?: string) => {
           variant: "destructive"
         });
       }
-    }
-  }), [organizationId, campaigns]);
+    },
 
-  // Only fetch on mount or when organizationId changes
+    // Pagination and search functions
+    nextPage: () => {
+      const maxPage = Math.ceil(totalCount / CAMPAIGNS_PER_PAGE);
+      if (currentPage < maxPage) {
+        setCurrentPage(prev => prev + 1);
+      }
+    },
+
+    prevPage: () => {
+      if (currentPage > 1) {
+        setCurrentPage(prev => prev - 1);
+      }
+    },
+
+    setPage: (page: number) => {
+      const maxPage = Math.ceil(totalCount / CAMPAIGNS_PER_PAGE);
+      if (page >= 1 && page <= maxPage) {
+        setCurrentPage(page);
+      }
+    },
+
+    search: (term: string) => {
+      setSearchTerm(term);
+      setCurrentPage(1); // Reset to first page on search
+    }
+  }), [organizationId, campaigns, currentPage, totalCount, searchTerm, countRecipients]);
+
+  // Fetch campaigns when dependencies change
   useEffect(() => {
     if (organizationId) {
       fetchCampaigns();
     }
-  }, [organizationId]); // Simplified dependency
+  }, [organizationId, currentPage, searchTerm]);
+
+  const pagination = useMemo(() => ({
+    currentPage,
+    totalPages: Math.ceil(totalCount / CAMPAIGNS_PER_PAGE),
+    totalCount,
+    hasNext: currentPage < Math.ceil(totalCount / CAMPAIGNS_PER_PAGE),
+    hasPrev: currentPage > 1
+  }), [currentPage, totalCount]);
 
   return {
     campaigns: campaigns || [],
     loading,
     error,
+    pagination,
+    searchTerm,
     ...campaignOperations,
     refetch: fetchCampaigns
   };
