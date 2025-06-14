@@ -109,6 +109,8 @@ export const useCampaignSender = (organizationId?: string) => {
       }
 
       console.log(`🏪 HYBRID ULTRA-FAST: Using ${smtpAccounts.length} SMTP + ${appsScriptAccounts.length} Apps Script accounts`);
+      console.log('SMTP Accounts:', smtpAccounts.map(a => ({ name: a.name, email: a.email })));
+      console.log('Apps Script Accounts:', appsScriptAccounts.map(a => ({ name: a.name, email: a.email, execUrl: a.config?.exec_url })));
       setProgress(25);
 
       // Get enabled functions
@@ -164,17 +166,24 @@ export const useCampaignSender = (organizationId?: string) => {
             type: account.type, // Both 'smtp' and 'apps-script'
             config: {
               ...account.config,
-              // Optimized settings based on account type
+              // ULTRA-FAST SMTP settings - NO LIMITS
               ...(account.type === 'smtp' ? {
                 pool: true,
-                maxConnections: 50,
-                maxMessages: 100,
-                rateDelta: 1000,
-                rateLimit: 50
+                maxConnections: 100,
+                maxMessages: Infinity,
+                rateDelta: 0,
+                rateLimit: false,
+                connectionTimeout: 120000,
+                greetingTimeout: 60000,
+                socketTimeout: 120000,
+                sendTimeout: 0,
+                idleTimeout: 0
               } : {
-                // Apps Script optimizations
-                dailyQuota: account.config?.daily_quota || 100,
-                batchSize: 10
+                // Apps Script settings
+                exec_url: account.config?.exec_url,
+                api_key: account.config?.api_key,
+                script_id: account.config?.script_id,
+                deployment_id: account.config?.deployment_id
               })
             }
           })),
@@ -209,11 +218,17 @@ export const useCampaignSender = (organizationId?: string) => {
           const result = await response.json();
           console.log(`✅ HYBRID: Function ${func.name} result:`, result);
           
+          // Log any Apps Script failures for debugging
+          if (result.failures && result.failures.length > 0) {
+            console.error(`❌ Apps Script failures in ${func.name}:`, result.failures);
+          }
+          
           return { 
             success: true, 
             function: func.name, 
             result,
-            sentCount: result.sent || 0
+            sentCount: result.sent || 0,
+            breakdown: result.breakdown || {}
           };
 
         } catch (error: any) {
@@ -233,7 +248,14 @@ export const useCampaignSender = (organizationId?: string) => {
       const successfulDispatches = results.filter(r => r.success);
       const totalSentEmails = successfulDispatches.reduce((sum, result) => sum + (result.sentCount || 0), 0);
 
-      console.log(`🎉 HYBRID ULTRA-FAST: FINAL RESULTS - ${totalSentEmails} emails sent`);
+      // Calculate breakdown totals
+      const totalSmtpSent = successfulDispatches.reduce((sum, result) => sum + (result.breakdown?.smtp?.sent || 0), 0);
+      const totalAppsScriptSent = successfulDispatches.reduce((sum, result) => sum + (result.breakdown?.appsScript?.sent || 0), 0);
+      const totalSmtpFailed = successfulDispatches.reduce((sum, result) => sum + (result.breakdown?.smtp?.failed || 0), 0);
+      const totalAppsScriptFailed = successfulDispatches.reduce((sum, result) => sum + (result.breakdown?.appsScript?.failed || 0), 0);
+
+      console.log(`🎉 HYBRID ULTRA-FAST: FINAL RESULTS - ${totalSentEmails} emails sent (${totalSmtpSent} SMTP, ${totalAppsScriptSent} Apps Script)`);
+      console.log(`🎉 HYBRID FAILURES: ${totalSmtpFailed} SMTP failed, ${totalAppsScriptFailed} Apps Script failed`);
 
       if (totalSentEmails === 0) {
         const errors = results.filter(r => !r.success).map(r => r.error).join(', ');
@@ -252,12 +274,19 @@ export const useCampaignSender = (organizationId?: string) => {
         })
         .eq('id', existingCampaign.id);
 
-      toast.success(`Hybrid Ultra-Fast: Campaign sent successfully! ${totalSentEmails} emails dispatched using SMTP + Apps Script at maximum speed.`);
+      // Show detailed success message
+      const successMessage = `Hybrid Ultra-Fast: Campaign sent successfully! ${totalSentEmails} emails dispatched (${totalSmtpSent} via SMTP, ${totalAppsScriptSent} via Apps Script)${totalAppsScriptFailed > 0 ? `. ${totalAppsScriptFailed} Apps Script emails failed - check account configuration.` : ''}`;
+      
+      toast.success(successMessage);
 
       return {
         success: true,
-        message: `Hybrid Ultra-Fast: ${totalSentEmails} emails sent via SMTP + Apps Script`,
-        totalEmails: totalSentEmails
+        message: successMessage,
+        totalEmails: totalSentEmails,
+        breakdown: {
+          smtp: { sent: totalSmtpSent, failed: totalSmtpFailed },
+          appsScript: { sent: totalAppsScriptSent, failed: totalAppsScriptFailed }
+        }
       };
 
     } catch (error: any) {

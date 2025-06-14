@@ -8,7 +8,7 @@ const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const supabase = createClient(supabaseUrl, supabaseKey);
 
-// Ultra-fast SMTP transporter configuration
+// Ultra-fast SMTP transporter configuration - MAXIMUM SPEED
 function createUltraFastTransporter(account) {
   if (account.type === 'smtp') {
     const config = account.config || {};
@@ -20,21 +20,28 @@ function createUltraFastTransporter(account) {
         user: config.username || config.user,
         pass: config.password || config.pass
       },
-      // Ultra-fast settings
+      // MAXIMUM SPEED SETTINGS - NO LIMITS
       pool: true,
-      maxConnections: config.maxConnections || 50,
-      maxMessages: config.maxMessages || 100,
-      rateDelta: config.rateDelta || 1000,
-      rateLimit: config.rateLimit || 50,
-      connectionTimeout: 60000,
-      greetingTimeout: 30000,
-      socketTimeout: 75000
+      maxConnections: 100, // Increased from 50
+      maxMessages: Infinity, // No message limit
+      rateDelta: 0, // No rate limiting
+      rateLimit: false, // Disable rate limiting completely
+      connectionTimeout: 120000, // 2 minutes
+      greetingTimeout: 60000, // 1 minute
+      socketTimeout: 120000, // 2 minutes
+      // Additional speed optimizations
+      disableFileAccess: true,
+      disableUrlAccess: true,
+      keepAlive: true,
+      // Remove any delays
+      sendTimeout: 0,
+      idleTimeout: 0
     });
   }
   return null;
 }
 
-// Ultra-fast SMTP sending
+// Ultra-fast SMTP sending - NO DELAYS
 async function sendViaUltraFastSMTP(transporter, emailData) {
   try {
     const info = await transporter.sendMail({
@@ -46,15 +53,20 @@ async function sendViaUltraFastSMTP(transporter, emailData) {
     });
     return { success: true, messageId: info.messageId };
   } catch (error) {
+    console.error(`SMTP Error for ${emailData.to}:`, error.message);
     return { success: false, error: error.message };
   }
 }
 
-// Fast Apps Script sending
+// Fixed Apps Script sending with proper error handling
 async function sendViaAppsScript(account, emailData) {
   try {
     const config = account.config || {};
     
+    if (!config.exec_url) {
+      return { success: false, error: 'Apps Script execution URL not configured' };
+    }
+
     const payload = {
       to: emailData.to,
       subject: emailData.subject,
@@ -64,29 +76,41 @@ async function sendViaAppsScript(account, emailData) {
       fromAlias: emailData.fromEmail
     };
 
+    console.log(`📧 Apps Script: Sending to ${emailData.to} via ${config.exec_url}`);
+
     const response = await fetch(config.exec_url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
+      headers: { 
+        'Content-Type': 'application/json',
+        ...(config.api_key ? { 'Authorization': `Bearer ${config.api_key}` } : {})
+      },
+      body: JSON.stringify(payload),
+      timeout: 30000 // 30 second timeout
     });
+
+    console.log(`📧 Apps Script Response Status: ${response.status}`);
 
     if (response.ok) {
       const result = await response.json();
-      if (result.status === 'success') {
+      console.log(`📧 Apps Script Result:`, result);
+      
+      if (result.status === 'success' || result.success === true) {
         return { success: true, remainingQuota: result.remainingQuota };
       } else {
-        return { success: false, error: result.message || 'Apps Script error' };
+        return { success: false, error: result.message || result.error || 'Apps Script returned non-success status' };
       }
     } else {
       const errorText = await response.text();
+      console.error(`❌ Apps Script HTTP Error: ${response.status} - ${errorText}`);
       return { success: false, error: `HTTP ${response.status}: ${errorText}` };
     }
   } catch (error) {
+    console.error(`❌ Apps Script Error for ${emailData.to}:`, error.message);
     return { success: false, error: error.message };
   }
 }
 
-// Process email with hybrid method (SMTP + Apps Script)
+// Process email with hybrid method (SMTP + Apps Script) - FIXED
 async function processEmailHybrid(preparedEmail, account, campaignData, globalIndex, totalAccounts) {
   try {
     const emailData = {
@@ -98,7 +122,7 @@ async function processEmailHybrid(preparedEmail, account, campaignData, globalIn
       fromEmail: account.email
     };
 
-    console.log(`📧 HYBRID: ${preparedEmail.to} via ${account.type.toUpperCase()} (${account.name})`);
+    console.log(`📧 HYBRID: Processing ${preparedEmail.to} via ${account.type.toUpperCase()} (${account.name})`);
 
     let result;
 
@@ -106,6 +130,8 @@ async function processEmailHybrid(preparedEmail, account, campaignData, globalIn
       const transporter = createUltraFastTransporter(account);
       if (transporter) {
         result = await sendViaUltraFastSMTP(transporter, emailData);
+        // Close transporter after use
+        transporter.close();
       } else {
         result = { success: false, error: 'Failed to create SMTP transporter' };
       }
@@ -148,7 +174,7 @@ async function processEmailHybrid(preparedEmail, account, campaignData, globalIn
   }
 }
 
-// Main hybrid function handler
+// Main hybrid function handler - FIXED
 const sendEmailCampaignZeroDelay = async (req, res) => {
   res.set('Access-Control-Allow-Origin', '*');
   res.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -239,55 +265,26 @@ const sendEmailCampaignZeroDelay = async (req, res) => {
 
     console.log(`✅ HYBRID GCF: ${validEmails.length}/${preparedEmails.length} emails are valid`);
 
-    // Create transporter pool for SMTP accounts
-    const transporters = new Map();
-    for (const account of smtpAccounts) {
-      const transporter = createUltraFastTransporter(account);
-      if (transporter) {
-        transporters.set(account.id, transporter);
-      }
-    }
-
-    console.log(`🚀 HYBRID: Created ${transporters.size} SMTP transporters + ${appsScriptAccounts.length} Apps Script accounts`);
-
-    // Process emails with hybrid parallel processing
+    // Process emails with MAXIMUM SPEED parallel processing
     const results = [];
     let totalSent = 0;
     
-    // Process in batches for optimal performance
-    const batchSize = Math.min(50, Math.ceil(validEmails.length / allAccounts.length));
-    const batches = [];
+    // Process ALL emails in parallel for MAXIMUM SPEED - NO BATCHING
+    console.log(`🚀 HYBRID: Processing ALL ${validEmails.length} emails in parallel for MAXIMUM SPEED`);
+
+    const allPromises = validEmails.map(async (preparedEmail, emailIndex) => {
+      const globalIndex = globalStartIndex + emailIndex;
+      const accountIndex = globalIndex % allAccounts.length;
+      const account = allAccounts[accountIndex];
+      
+      return processEmailHybrid(preparedEmail, account, campaignData, globalIndex, allAccounts.length);
+    });
+
+    // Execute ALL emails in parallel - MAXIMUM SPEED
+    const allResults = await Promise.all(allPromises);
+    results.push(...allResults);
     
-    for (let i = 0; i < validEmails.length; i += batchSize) {
-      batches.push(validEmails.slice(i, i + batchSize));
-    }
-
-    console.log(`🚀 HYBRID: Processing ${batches.length} batches of ~${batchSize} emails each`);
-
-    for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
-      const batch = batches[batchIndex];
-      const batchPromises = batch.map(async (preparedEmail, emailIndex) => {
-        const globalIndex = globalStartIndex + (batchIndex * batchSize) + emailIndex;
-        const accountIndex = globalIndex % allAccounts.length;
-        const account = allAccounts[accountIndex];
-        
-        return processEmailHybrid(preparedEmail, account, campaignData, globalIndex, allAccounts.length);
-      });
-
-      // Process batch in parallel
-      const batchResults = await Promise.all(batchPromises);
-      results.push(...batchResults);
-      
-      const batchSentCount = batchResults.filter(r => r.status === 'sent').length;
-      totalSent += batchSentCount;
-      
-      console.log(`✅ HYBRID: Batch ${batchIndex + 1}/${batches.length} completed - ${batchSentCount}/${batch.length} sent`);
-    }
-
-    // Close all SMTP transporters
-    for (const transporter of transporters.values()) {
-      transporter.close();
-    }
+    totalSent = results.filter(r => r.status === 'sent').length;
 
     const failedCount = results.filter(r => r.status === 'failed').length;
     const processingTime = Date.now() - startTime;
@@ -296,8 +293,16 @@ const sendEmailCampaignZeroDelay = async (req, res) => {
     // Calculate method breakdown
     const smtpSent = results.filter(r => r.status === 'sent' && r.accountType === 'smtp').length;
     const appsScriptSent = results.filter(r => r.status === 'sent' && r.accountType === 'apps-script').length;
+    const smtpFailed = results.filter(r => r.status === 'failed' && r.accountType === 'smtp').length;
+    const appsScriptFailed = results.filter(r => r.status === 'failed' && r.accountType === 'apps-script').length;
 
-    console.log(`✅ HYBRID GCF: COMPLETED - ${totalSent} sent (${smtpSent} SMTP, ${appsScriptSent} Apps Script), ${failedCount} failed, ${successRate}% in ${processingTime}ms`);
+    console.log(`✅ HYBRID GCF: COMPLETED - ${totalSent} sent (${smtpSent} SMTP, ${appsScriptSent} Apps Script), ${failedCount} failed (${smtpFailed} SMTP, ${appsScriptFailed} Apps Script), ${successRate}% in ${processingTime}ms`);
+
+    // Log Apps Script failures for debugging
+    const appsScriptFailures = results.filter(r => r.status === 'failed' && r.accountType === 'apps-script');
+    if (appsScriptFailures.length > 0) {
+      console.error('❌ Apps Script Failures:', appsScriptFailures.map(f => ({ email: f.recipient, error: f.error })));
+    }
 
     res.status(200).json({
       success: true,
@@ -309,10 +314,11 @@ const sendEmailCampaignZeroDelay = async (req, res) => {
       processingTimeMs: processingTime,
       hybridMode: true,
       breakdown: {
-        smtp: smtpSent,
-        appsScript: appsScriptSent
+        smtp: { sent: smtpSent, failed: smtpFailed },
+        appsScript: { sent: appsScriptSent, failed: appsScriptFailed }
       },
-      results: results.slice(-10) // Last 10 for debugging
+      results: results.slice(-10), // Last 10 for debugging
+      failures: appsScriptFailures.slice(0, 5) // First 5 Apps Script failures for debugging
     });
 
   } catch (error) {
