@@ -82,16 +82,16 @@ async function sendViaSMTP(transporter, emailData) {
   }
 }
 
-// CRITICAL: Process prepared email with proper data structure
+// Process prepared email with proper data structure
 async function processEmail(preparedEmail, account, campaignData, globalIndex, totalAccounts) {
   try {
-    // Use the prepared email data (with rotation applied)
+    // CRITICAL: Use the prepared email data (with rotation applied)
     const emailData = {
       to: preparedEmail.to,
-      subject: preparedEmail.subject,  // Use rotated subject
+      subject: preparedEmail.subject,  // Use the rotated subject from prepared email
       html: campaignData.html_content,
       text: campaignData.text_content,
-      fromName: preparedEmail.from_name,  // Use rotated from_name
+      fromName: preparedEmail.from_name,  // Use the rotated from_name from prepared email
       fromEmail: account.email
     };
 
@@ -196,13 +196,19 @@ const sendEmailCampaignZeroDelay = async (req, res) => {
     console.log(`🚀 GCF: Processing ${preparedEmails.length} prepared emails with ${accounts.length} accounts`);
 
     // Validate each prepared email has required fields
-    const validEmails = preparedEmails.filter(email => 
-      email && 
-      email.to && 
-      email.subject && 
-      email.from_name &&
-      email.to.includes('@')
-    );
+    const validEmails = preparedEmails.filter(email => {
+      const isValid = email && 
+        email.to && 
+        email.subject && 
+        email.from_name &&
+        email.to.includes('@');
+      
+      if (!isValid) {
+        console.warn(`❌ Invalid email object:`, email);
+      }
+      
+      return isValid;
+    });
 
     if (validEmails.length === 0) {
       return res.status(400).json({
@@ -236,20 +242,12 @@ const sendEmailCampaignZeroDelay = async (req, res) => {
       // Update progress in database every 10 emails
       if ((i + 1) % 10 === 0 || i === validEmails.length - 1) {
         try {
-          const { data: currentCampaign } = await supabase
-            .from('email_campaigns')
-            .select('sent_count')
-            .eq('id', campaignId)
-            .single();
-
-          const newSentCount = (currentCampaign?.sent_count || 0) + (totalSent - (results.length - (i + 1) === 0 ? totalSent : 0));
-          
           await supabase
             .from('email_campaigns')
-            .update({ sent_count: newSentCount })
+            .update({ sent_count: supabase.sql`sent_count + ${totalSent - (results.filter(r => r.status === 'sent').length - totalSent)}` })
             .eq('id', campaignId);
             
-          console.log(`📝 GCF: Updated sent count to ${newSentCount}`);
+          console.log(`📝 GCF: Updated sent count`);
         } catch (error) {
           console.error(`❌ GCF: Progress update failed:`, error);
         }

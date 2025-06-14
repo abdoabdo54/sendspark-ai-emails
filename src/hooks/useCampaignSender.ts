@@ -60,13 +60,29 @@ export const useCampaignSender = (organizationId?: string) => {
         throw new Error(`Campaign must be prepared before sending. Current status: ${existingCampaign.status}`);
       }
 
-      // Get prepared emails - CRITICAL FIX
+      // FIXED: Proper type handling for prepared emails
       const preparedEmailsData = existingCampaign.prepared_emails;
       if (!preparedEmailsData || !Array.isArray(preparedEmailsData)) {
         throw new Error('No prepared emails found. Please prepare the campaign first.');
       }
 
-      const preparedEmails = preparedEmailsData as PreparedEmail[];
+      // Type assertion with validation
+      const preparedEmails = preparedEmailsData.map((email: any) => {
+        if (!email || typeof email !== 'object') {
+          throw new Error('Invalid email data structure');
+        }
+        if (!email.to || !email.from_name || !email.subject) {
+          throw new Error(`Invalid email missing required fields: ${JSON.stringify(email)}`);
+        }
+        return {
+          to: String(email.to),
+          from_name: String(email.from_name),
+          subject: String(email.subject),
+          prepared_at: String(email.prepared_at || new Date().toISOString()),
+          rotation_index: Number(email.rotation_index || 0)
+        } as PreparedEmail;
+      });
+
       console.log(`📧 SEND: Processing ${preparedEmails.length} prepared emails`);
 
       // Get selected accounts
@@ -102,7 +118,7 @@ export const useCampaignSender = (organizationId?: string) => {
 
       setProgress(75);
 
-      // CRITICAL FIX: Distribute emails properly across functions
+      // Distribute emails across functions
       const emailsPerFunction = Math.ceil(preparedEmails.length / enabledFunctions.length);
       
       const functionPromises = enabledFunctions.map(async (func, funcIndex) => {
@@ -116,11 +132,11 @@ export const useCampaignSender = (organizationId?: string) => {
 
         console.log(`🚀 SEND: Function ${func.name} processing ${functionEmails.length} emails`);
         
-        // FIXED PAYLOAD STRUCTURE - Send exactly what GCF expects
+        // SIMPLIFIED PAYLOAD - exactly what GCF expects
         const payload = {
           campaignId: existingCampaign.id,
           slice: {
-            preparedEmails: functionEmails  // GCF now expects this structure
+            preparedEmails: functionEmails
           },
           campaignData: {
             from_name: campaignData.from_name,
