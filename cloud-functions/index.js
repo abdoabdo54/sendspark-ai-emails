@@ -28,7 +28,7 @@ function createTransporter(account) {
   return null;
 }
 
-// Send email via Apps Script
+// Enhanced Apps Script sender with quota detection
 async function sendViaAppsScript(account, emailData) {
   try {
     const config = account.config || {};
@@ -57,11 +57,27 @@ async function sendViaAppsScript(account, emailData) {
     }
 
     const result = await response.json();
-    return result.status === 'success' || result.success 
-      ? { success: true, messageId: result.messageId || 'apps-script-sent' }
-      : { success: false, error: result.message || result.error || 'Apps Script error' };
+    
+    // Enhanced quota detection
+    if (result.status === 'error' || !result.success) {
+      const errorMsg = result.message || result.error || 'Apps Script error';
+      
+      // Detect quota exceeded in multiple languages
+      if (errorMsg.includes('Service invoked too many times') || 
+          errorMsg.includes('تم تفعيل الخدمة مرات كثيرة') ||
+          errorMsg.includes('quota') ||
+          errorMsg.includes('limit exceeded')) {
+        console.log(`🚫 QUOTA EXCEEDED for account ${account.name}: ${errorMsg}`);
+        return { success: false, error: `QUOTA_EXCEEDED: ${errorMsg}` };
+      }
+      
+      return { success: false, error: errorMsg };
+    }
+    
+    return { success: true, messageId: result.messageId || 'apps-script-sent' };
       
   } catch (error) {
+    console.error(`❌ Apps Script error for ${account.name}:`, error);
     return { success: false, error: error.message };
   }
 }
@@ -82,16 +98,16 @@ async function sendViaSMTP(transporter, emailData) {
   }
 }
 
-// Process prepared email with proper data structure
+// Process prepared email with enhanced error handling
 async function processEmail(preparedEmail, account, campaignData, globalIndex, totalAccounts) {
   try {
-    // CRITICAL: Use the prepared email data (with rotation applied)
+    // Use the prepared email data (with rotation applied)
     const emailData = {
       to: preparedEmail.to,
-      subject: preparedEmail.subject,  // Use the rotated subject from prepared email
+      subject: preparedEmail.subject,  // Use rotated subject
       html: campaignData.html_content,
       text: campaignData.text_content,
-      fromName: preparedEmail.from_name,  // Use the rotated from_name from prepared email
+      fromName: preparedEmail.from_name,  // Use rotated from_name
       fromEmail: account.email
     };
 
@@ -123,6 +139,11 @@ async function processEmail(preparedEmail, account, campaignData, globalIndex, t
         timestamp: new Date().toISOString()
       };
     } else {
+      // Enhanced error logging for quota issues
+      if (result.error && result.error.includes('QUOTA_EXCEEDED')) {
+        console.log(`🚫 QUOTA: ${preparedEmail.to} - Account ${account.name} quota exceeded`);
+      }
+      
       console.log(`❌ FAILED: ${preparedEmail.to} - ${result.error}`);
       return {
         recipient: preparedEmail.to,
@@ -175,7 +196,7 @@ const sendEmailCampaignZeroDelay = async (req, res) => {
       });
     }
 
-    // CRITICAL: Validate prepared emails structure
+    // Validate prepared emails structure
     if (!slice?.preparedEmails || !Array.isArray(slice.preparedEmails) || slice.preparedEmails.length === 0) {
       console.error(`❌ GCF: Invalid prepared emails structure`);
       return res.status(400).json({
@@ -195,7 +216,7 @@ const sendEmailCampaignZeroDelay = async (req, res) => {
     const preparedEmails = slice.preparedEmails;
     console.log(`🚀 GCF: Processing ${preparedEmails.length} prepared emails with ${accounts.length} accounts`);
 
-    // Validate each prepared email has required fields
+    // Validate each prepared email
     const validEmails = preparedEmails.filter(email => {
       const isValid = email && 
         email.to && 
@@ -223,12 +244,26 @@ const sendEmailCampaignZeroDelay = async (req, res) => {
     // Process emails with account rotation
     const results = [];
     let totalSent = 0;
+    let quotaExceededAccounts = new Set();
     
     for (let i = 0; i < validEmails.length; i++) {
       const preparedEmail = validEmails[i];
       const globalIndex = globalStartIndex + i;
       const accountIndex = globalIndex % accounts.length;
       const account = accounts[accountIndex];
+      
+      // Skip if account quota exceeded
+      if (quotaExceededAccounts.has(account.id)) {
+        console.log(`⏭️ Skipping ${preparedEmail.to} - Account ${account.name} quota exceeded`);
+        results.push({
+          recipient: preparedEmail.to,
+          status: 'failed',
+          error: 'Account quota exceeded',
+          accountName: account.name,
+          timestamp: new Date().toISOString()
+        });
+        continue;
+      }
       
       console.log(`📧 Processing email ${i + 1}/${validEmails.length}: ${preparedEmail.to} via ${account.name}`);
       
@@ -237,9 +272,12 @@ const sendEmailCampaignZeroDelay = async (req, res) => {
       
       if (result.status === 'sent') {
         totalSent++;
+      } else if (result.error && result.error.includes('QUOTA_EXCEEDED')) {
+        quotaExceededAccounts.add(account.id);
+        console.log(`🚫 QUOTA: Account ${account.name} marked as quota exceeded`);
       }
       
-      // Update progress in database every 10 emails
+      // Update progress every 10 emails
       if ((i + 1) % 10 === 0 || i === validEmails.length - 1) {
         try {
           await supabase
@@ -255,10 +293,11 @@ const sendEmailCampaignZeroDelay = async (req, res) => {
     }
 
     const failedCount = results.filter(r => r.status === 'failed').length;
+    const quotaFailures = results.filter(r => r.error && r.error.includes('quota')).length;
     const processingTime = Date.now() - startTime;
     const successRate = Math.round((totalSent / validEmails.length) * 100);
 
-    console.log(`✅ GCF: COMPLETED - ${totalSent} sent, ${failedCount} failed (${successRate}%) in ${processingTime}ms`);
+    console.log(`✅ GCF: COMPLETED - ${totalSent} sent, ${failedCount} failed (${quotaFailures} quota), ${successRate}% in ${processingTime}ms`);
 
     res.status(200).json({
       success: true,
@@ -266,6 +305,8 @@ const sendEmailCampaignZeroDelay = async (req, res) => {
       processed: validEmails.length,
       sent: totalSent,
       failed: failedCount,
+      quotaExceeded: quotaFailures,
+      quotaExceededAccounts: Array.from(quotaExceededAccounts),
       successRate,
       processingTimeMs: processingTime,
       results: results.slice(-5) // Last 5 for debugging

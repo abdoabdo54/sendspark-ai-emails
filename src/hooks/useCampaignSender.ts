@@ -60,28 +60,39 @@ export const useCampaignSender = (organizationId?: string) => {
         throw new Error(`Campaign must be prepared before sending. Current status: ${existingCampaign.status}`);
       }
 
-      // FIXED: Proper type handling for prepared emails
+      // Parse prepared emails with proper validation
       const preparedEmailsData = existingCampaign.prepared_emails;
       if (!preparedEmailsData || !Array.isArray(preparedEmailsData)) {
         throw new Error('No prepared emails found. Please prepare the campaign first.');
       }
 
-      // Type assertion with validation
-      const preparedEmails = preparedEmailsData.map((email: any) => {
-        if (!email || typeof email !== 'object') {
-          throw new Error('Invalid email data structure');
+      // Validate and convert prepared emails
+      const preparedEmails: PreparedEmail[] = [];
+      for (const emailData of preparedEmailsData) {
+        if (!emailData || typeof emailData !== 'object') {
+          console.warn('⚠️ SEND: Skipping invalid email data:', emailData);
+          continue;
         }
+        
+        // Cast as any first to access properties, then validate
+        const email = emailData as any;
         if (!email.to || !email.from_name || !email.subject) {
-          throw new Error(`Invalid email missing required fields: ${JSON.stringify(email)}`);
+          console.warn('⚠️ SEND: Skipping email missing required fields:', email);
+          continue;
         }
-        return {
+        
+        preparedEmails.push({
           to: String(email.to),
           from_name: String(email.from_name),
           subject: String(email.subject),
           prepared_at: String(email.prepared_at || new Date().toISOString()),
           rotation_index: Number(email.rotation_index || 0)
-        } as PreparedEmail;
-      });
+        });
+      }
+
+      if (preparedEmails.length === 0) {
+        throw new Error('No valid prepared emails found after validation');
+      }
 
       console.log(`📧 SEND: Processing ${preparedEmails.length} prepared emails`);
 
@@ -132,7 +143,7 @@ export const useCampaignSender = (organizationId?: string) => {
 
         console.log(`🚀 SEND: Function ${func.name} processing ${functionEmails.length} emails`);
         
-        // SIMPLIFIED PAYLOAD - exactly what GCF expects
+        // Create payload exactly as GCF expects
         const payload = {
           campaignId: existingCampaign.id,
           slice: {
@@ -202,6 +213,36 @@ export const useCampaignSender = (organizationId?: string) => {
 
       console.log(`🎉 SEND: FINAL RESULTS - ${totalSentEmails} emails sent`);
 
+      // Enhanced error analysis
+      if (totalSentEmails === 0) {
+        const errors = results.filter(r => !r.success).map(r => r.error).join(', ');
+        
+        // Check for quota issues
+        if (errors.includes('Service invoked too many times') || errors.includes('تم تفعيل الخدمة مرات كثيرة')) {
+          const quotaMessage = '🚫 QUOTA EXCEEDED: Your Google Apps Script account has reached its daily email limit. Solutions:\n' +
+                              '1. Wait 24 hours for quota reset\n' +
+                              '2. Add more Google accounts with fresh Apps Script quotas\n' +
+                              '3. Switch to SMTP accounts (no daily limits)\n' +
+                              '4. Use multiple Gmail accounts for Apps Script';
+          
+          toast.error(quotaMessage, { duration: 10000 });
+          
+          // Update campaign with quota error
+          await supabase
+            .from('email_campaigns')
+            .update({ 
+              status: 'failed',
+              error_message: 'Apps Script daily quota exceeded. Add more accounts or wait 24 hours.',
+              completed_at: new Date().toISOString()
+            })
+            .eq('id', existingCampaign.id);
+          
+          throw new Error('Apps Script daily quota exceeded. Add more accounts or wait 24 hours.');
+        }
+        
+        throw new Error(`No emails were sent. Errors: ${errors}`);
+      }
+
       // Update final campaign status
       const finalStatus = totalSentEmails > 0 ? 'sent' : 'failed';
       await supabase
@@ -213,10 +254,6 @@ export const useCampaignSender = (organizationId?: string) => {
           completed_at: new Date().toISOString()
         })
         .eq('id', existingCampaign.id);
-
-      if (totalSentEmails === 0) {
-        throw new Error('No emails were sent. Check function logs for details.');
-      }
 
       toast.success(`Campaign sent successfully! ${totalSentEmails} emails dispatched.`);
 
