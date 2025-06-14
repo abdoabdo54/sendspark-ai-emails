@@ -1,4 +1,3 @@
-
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
@@ -171,7 +170,7 @@ serve(async (req) => {
       await new Promise(resolve => setTimeout(resolve, processingDelay));
     }
 
-    // FIXED: Create proper prepared emails array with PERFECT ROTATION
+    // FIXED: Create proper prepared emails array with PERFECT ROTATION & NO CONTENT
     const preparedEmails = recipients.map((email, index) => {
       // Perfect rotation: each email gets next from name and subject in sequence
       const fromNameIndex = index % fromNames.length;
@@ -181,15 +180,15 @@ serve(async (req) => {
         to: email,
         from_name: fromNames[fromNameIndex],
         subject: subjects[subjectIndex],
-        html_content: campaign.html_content || '',
-        text_content: campaign.text_content || '',
+        // html_content and text_content are removed to fix memory limit errors.
+        // They will be sourced from the parent campaign during the sending phase.
         prepared_at: new Date().toISOString(),
         rotation_index: index // Track rotation for debugging
       };
     });
 
-    console.log(`✅ PREPARATION COMPLETE: ${recipients.length} emails processed with perfect rotation`);
-    console.log(`📧 Sample prepared emails:`, preparedEmails.slice(0, 3));
+    console.log(`✅ PREPARATION OPTIMIZED: ${recipients.length} emails processed without content duplication.`);
+    console.log(`📧 Sample prepared emails (optimized):`, preparedEmails.slice(0, 3));
 
     // Update campaign with prepared emails array
     const { error: updateError } = await supabase
