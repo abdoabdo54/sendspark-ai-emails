@@ -107,22 +107,23 @@ async function sendViaSMTP(transporter, emailData) {
 // Process single email
 async function processEmail(preparedEmail, account, campaignData, globalIndex, totalAccounts) {
   try {
-    // Use prepared email data for subject and from_name, but merge with campaign data
+    // CRITICAL FIX: Use the prepared email data properly
     const emailData = {
       to: preparedEmail.to,
-      subject: preparedEmail.subject, // Use prepared subject (could be rotated)
+      subject: preparedEmail.subject, // Use prepared subject (with rotation)
       html: campaignData.html_content,
       text: campaignData.text_content,
-      fromName: preparedEmail.from_name, // Use prepared from_name (could be rotated)
+      fromName: preparedEmail.from_name, // Use prepared from_name (with rotation)
       fromEmail: account.email
     };
 
     console.log(`📧 Processing: ${preparedEmail.to} via ${account.name} (${account.type})`);
-    console.log(`📧 Email data:`, {
+    console.log(`📧 Using prepared data:`, {
       to: emailData.to,
       subject: emailData.subject,
       fromName: emailData.fromName,
-      fromEmail: emailData.fromEmail
+      fromEmail: emailData.fromEmail,
+      rotationIndex: preparedEmail.rotation_index
     });
 
     let result;
@@ -144,7 +145,7 @@ async function processEmail(preparedEmail, account, campaignData, globalIndex, t
     const accountIndex = globalIndex % totalAccounts;
     
     if (result.success) {
-      console.log(`✅ SUCCESS: ${preparedEmail.to} via ${account.name}`);
+      console.log(`✅ SUCCESS: ${preparedEmail.to} via ${account.name} (rotation: ${preparedEmail.rotation_index})`);
       return {
         recipient: preparedEmail.to,
         status: 'sent',
@@ -154,7 +155,8 @@ async function processEmail(preparedEmail, account, campaignData, globalIndex, t
         accountId: account.id,
         globalIndex: globalIndex + 1,
         messageId: result.messageId,
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        rotationIndex: preparedEmail.rotation_index
       };
     } else {
       console.log(`❌ FAILED: ${preparedEmail.to} via ${account.name} - ${result.error}`);
@@ -167,7 +169,8 @@ async function processEmail(preparedEmail, account, campaignData, globalIndex, t
         accountIndex: accountIndex + 1,
         accountId: account.id,
         globalIndex: globalIndex + 1,
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        rotationIndex: preparedEmail.rotation_index
       };
     }
   } catch (error) {
@@ -206,13 +209,12 @@ const sendEmailCampaignZeroDelay = async (req, res) => {
       globalStartIndex = 0
     } = req.body;
 
-    console.log(`🚀 GCF: Received request:`, {
+    console.log(`🚀 GCF: Received campaign data:`, {
       campaignId,
       preparedEmailsCount: slice?.preparedEmails?.length || 0,
-      recipientsCount: slice?.recipients?.length || 0,
-      accounts: accounts?.length || 0,
+      accountsCount: accounts?.length || 0,
       globalStartIndex,
-      hasPreparedEmails: !!slice?.preparedEmails
+      samplePreparedEmail: slice?.preparedEmails?.[0]
     });
 
     // Health check
@@ -224,16 +226,20 @@ const sendEmailCampaignZeroDelay = async (req, res) => {
       });
     }
 
-    // Validate that we have prepared emails (the new way)
+    // CRITICAL: Validate prepared emails exist and are properly structured
     if (!slice?.preparedEmails || !Array.isArray(slice.preparedEmails) || slice.preparedEmails.length === 0) {
-      console.error(`❌ GCF: No prepared emails provided`);
+      console.error(`❌ GCF: Invalid prepared emails:`, {
+        hasSlice: !!slice,
+        hasPreparedEmails: !!slice?.preparedEmails,
+        isArray: Array.isArray(slice?.preparedEmails),
+        length: slice?.preparedEmails?.length
+      });
       return res.status(400).json({
         success: false,
-        error: 'No prepared emails provided',
+        error: 'No valid prepared emails provided',
         received: { 
           slice: !!slice, 
           preparedEmails: slice?.preparedEmails?.length || 0,
-          recipients: slice?.recipients?.length || 0,
           accounts: accounts?.length || 0 
         }
       });
@@ -250,6 +256,26 @@ const sendEmailCampaignZeroDelay = async (req, res) => {
     const preparedEmails = slice.preparedEmails;
     console.log(`🚀 GCF: Processing ${preparedEmails.length} prepared emails with ${accounts.length} accounts`);
     
+    // Validate each prepared email has required fields
+    const validEmails = preparedEmails.filter(email => 
+      email && 
+      typeof email === 'object' && 
+      email.to && 
+      email.subject && 
+      email.from_name
+    );
+
+    if (validEmails.length === 0) {
+      console.error(`❌ GCF: No valid email objects found in prepared emails`);
+      return res.status(400).json({
+        success: false,
+        error: 'No valid email objects found in prepared emails',
+        sampleEmail: preparedEmails[0]
+      });
+    }
+
+    console.log(`✅ GCF: ${validEmails.length}/${preparedEmails.length} emails are valid`);
+    
     // Log account details
     accounts.forEach((account, index) => {
       console.log(`   Account ${index + 1}: ${account.name} (${account.email}) - ${account.type}`);
@@ -260,10 +286,10 @@ const sendEmailCampaignZeroDelay = async (req, res) => {
       }
     });
 
-    const batchSize = 10; // Process in smaller batches for better error handling
+    const batchSize = 10; // Process in smaller batches
 
-    // Process emails using prepared email data
-    const emailTasks = preparedEmails.map((preparedEmail, localIndex) => {
+    // Process emails using VALID prepared email data
+    const emailTasks = validEmails.map((preparedEmail, localIndex) => {
       const globalIndex = globalStartIndex + localIndex;
       const accountIndex = globalIndex % accounts.length;
       const account = accounts[accountIndex];
@@ -289,7 +315,7 @@ const sendEmailCampaignZeroDelay = async (req, res) => {
       
       console.log(`✅ GCF: Batch ${batchNumber} complete: ${batchSent}/${batch.length} sent`);
       
-      // Update campaign progress
+      // Update campaign progress after each batch
       if (batchSent > 0) {
         try {
           const { data: currentCampaign } = await supabase
@@ -314,25 +340,24 @@ const sendEmailCampaignZeroDelay = async (req, res) => {
 
     const failedCount = results.filter(r => r.status === 'failed').length;
     const processingTime = Date.now() - startTime;
-    const successRate = Math.round((totalSent / preparedEmails.length) * 100);
+    const successRate = Math.round((totalSent / validEmails.length) * 100);
 
-    console.log(`✅ GCF: Complete - ${totalSent} sent, ${failedCount} failed (${successRate}%) in ${processingTime}ms`);
+    console.log(`✅ GCF: FINAL RESULT - ${totalSent} sent, ${failedCount} failed (${successRate}%) in ${processingTime}ms`);
 
-    // Log failed emails for debugging
-    const failedEmails = results.filter(r => r.status === 'failed');
-    if (failedEmails.length > 0) {
-      console.log(`❌ GCF: Failed emails:`, failedEmails.slice(0, 5).map(f => `${f.recipient}: ${f.error}`));
+    // Log sample results for debugging
+    if (results.length > 0) {
+      console.log(`📧 GCF: Sample results:`, results.slice(0, 3));
     }
 
     res.status(200).json({
       success: true,
       campaignId,
-      processed: preparedEmails.length,
+      processed: validEmails.length,
       sent: totalSent,
       failed: failedCount,
       successRate,
       processingTimeMs: processingTime,
-      batchesProcessed: Math.ceil(preparedEmails.length / batchSize),
+      batchesProcessed: Math.ceil(validEmails.length / batchSize),
       globalStartIndex,
       accountDistribution: accounts.map((account, index) => ({
         accountName: account.name,
@@ -345,7 +370,7 @@ const sendEmailCampaignZeroDelay = async (req, res) => {
 
   } catch (error) {
     const processingTime = Date.now() - startTime;
-    console.error('❌ GCF: Function error:', error);
+    console.error('❌ GCF: Critical function error:', error);
     
     // Update campaign status to failed
     if (req.body.campaignId) {

@@ -5,6 +5,14 @@ import { useEmailAccounts } from './useEmailAccounts';
 import { useGcfFunctions } from './useGcfFunctions';
 import { toast } from 'sonner';
 
+interface PreparedEmailJson {
+  to: string;
+  from_name: string;
+  subject: string;
+  prepared_at: string;
+  rotation_index: number;
+}
+
 interface PreparedEmail {
   to: string;
   from_name: string;
@@ -38,7 +46,7 @@ export const useCampaignSender = (organizationId?: string) => {
       setIsSending(true);
       setProgress(0);
 
-      console.log('🚀 SEND: Starting campaign dispatch');
+      console.log('🚀 SEND: Starting campaign dispatch with proper data validation');
       console.log('🚀 SEND: Campaign config:', campaignData.config);
 
       // Get the campaign from database to access prepared emails
@@ -68,21 +76,51 @@ export const useCampaignSender = (organizationId?: string) => {
         throw new Error(`Campaign status is '${existingCampaign.status}'. Only prepared campaigns can be sent.`);
       }
 
-      // Get prepared emails and properly cast from Json
+      // Get prepared emails and properly validate/cast them
       const preparedEmailsJson = existingCampaign.prepared_emails;
       if (!preparedEmailsJson) {
         throw new Error('No prepared emails found. Please prepare the campaign first.');
       }
 
-      // Cast Json to PreparedEmail array with proper type assertion
-      const preparedEmails = (preparedEmailsJson as unknown) as PreparedEmail[];
+      // CRITICAL FIX: Properly validate and cast the prepared emails
+      let preparedEmails: PreparedEmail[];
       
-      if (!Array.isArray(preparedEmails) || preparedEmails.length === 0) {
-        throw new Error('Invalid prepared emails format. Please prepare the campaign again.');
+      try {
+        // Cast from Json to proper type with validation
+        const rawData = preparedEmailsJson as unknown as PreparedEmailJson[];
+        
+        if (!Array.isArray(rawData)) {
+          throw new Error('Prepared emails is not an array');
+        }
+
+        // Validate each email object has required fields
+        preparedEmails = rawData.filter((email): email is PreparedEmail => {
+          return email && 
+                 typeof email === 'object' && 
+                 typeof email.to === 'string' && 
+                 typeof email.subject === 'string' && 
+                 typeof email.from_name === 'string' &&
+                 email.to.includes('@');
+        });
+
+        if (preparedEmails.length === 0) {
+          throw new Error('No valid prepared emails found after validation');
+        }
+
+        console.log(`✅ SEND: Validated ${preparedEmails.length}/${rawData.length} prepared emails`);
+        
+      } catch (validationError) {
+        console.error('❌ SEND: Prepared emails validation failed:', validationError);
+        throw new Error(`Invalid prepared emails format: ${validationError.message}`);
       }
 
-      console.log(`📧 SEND: Using ${preparedEmails.length} prepared emails`);
-      console.log(`📧 SEND: Sample prepared email:`, preparedEmails[0]);
+      console.log(`📧 SEND: Using ${preparedEmails.length} validated prepared emails`);
+      console.log(`📧 SEND: Sample prepared email:`, {
+        to: preparedEmails[0].to,
+        subject: preparedEmails[0].subject,
+        from_name: preparedEmails[0].from_name,
+        rotation_index: preparedEmails[0].rotation_index
+      });
 
       // Get selected accounts from config
       const selectedAccountIds = campaignData.config?.selectedAccounts || [];
@@ -137,7 +175,7 @@ export const useCampaignSender = (organizationId?: string) => {
       
       console.log(`📊 SEND: Distribution - ${emailsPerFunction} emails per function`);
 
-      // Dispatch to functions with proper email slicing
+      // Dispatch to functions with VALIDATED prepared emails
       const functionPromises = enabledFunctions.map(async (func, funcIndex) => {
         const startIndex = funcIndex * emailsPerFunction;
         const endIndex = Math.min(startIndex + emailsPerFunction, preparedEmails.length);
@@ -148,14 +186,13 @@ export const useCampaignSender = (organizationId?: string) => {
           return { success: true, function: func.name, result: { message: 'No emails assigned' }, url: func.url, sentCount: 0 };
         }
 
-        console.log(`🚀 SEND: Dispatching to ${func.name} with ${slicePreparedEmails.length} prepared emails`);
+        console.log(`🚀 SEND: Dispatching to ${func.name} with ${slicePreparedEmails.length} VALIDATED prepared emails`);
         
-        // CRITICAL FIX: Send preparedEmails in the slice, not recipients
+        // CRITICAL: Send properly structured payload with validated data
         const dispatchPayload = {
           campaignId: existingCampaign.id,
           slice: {
-            preparedEmails: slicePreparedEmails, // Send actual prepared email objects
-            recipients: slicePreparedEmails.map((email: PreparedEmail) => email.to) // Keep for backward compatibility
+            preparedEmails: slicePreparedEmails // Send validated prepared email objects
           },
           campaignData: {
             from_name: campaignData.from_name,
@@ -178,12 +215,16 @@ export const useCampaignSender = (organizationId?: string) => {
           globalStartIndex: startIndex
         };
 
-        console.log(`📦 SEND: Function ${func.name} payload:`, {
+        console.log(`📦 SEND: Function ${func.name} payload validation:`, {
           campaignId: existingCampaign.id,
           preparedEmailsCount: slicePreparedEmails.length,
           accountCount: selectedAccounts.length,
           globalStartIndex: startIndex,
-          samplePreparedEmail: slicePreparedEmails[0]
+          firstEmail: {
+            to: slicePreparedEmails[0]?.to,
+            subject: slicePreparedEmails[0]?.subject,
+            from_name: slicePreparedEmails[0]?.from_name
+          }
         });
 
         try {
@@ -210,7 +251,11 @@ export const useCampaignSender = (organizationId?: string) => {
           }
 
           const result = await response.json();
-          console.log(`✅ SEND: Function ${func.name} completed:`, result);
+          console.log(`✅ SEND: Function ${func.name} completed:`, {
+            sent: result.sent,
+            processed: result.processed,
+            successRate: result.successRate
+          });
           
           return { 
             success: true, 
@@ -249,7 +294,7 @@ export const useCampaignSender = (organizationId?: string) => {
       const failedDispatches = results.filter(r => !r.success);
       const totalSentEmails = successfulDispatches.reduce((sum, result) => sum + (result.sentCount || 0), 0);
 
-      console.log(`🎉 SEND: Complete - ${successfulDispatches.length} successful, ${failedDispatches.length} failed`);
+      console.log(`🎉 SEND: FINAL RESULTS - ${successfulDispatches.length} successful, ${failedDispatches.length} failed`);
       console.log(`📊 SEND: Total emails sent: ${totalSentEmails}/${preparedEmails.length}`);
 
       // Update campaign final status
@@ -265,7 +310,7 @@ export const useCampaignSender = (organizationId?: string) => {
           })
           .eq('id', existingCampaign.id);
 
-        console.log(`📝 SEND: Campaign status updated to ${finalStatus}`);
+        console.log(`📝 SEND: Campaign status updated to ${finalStatus} with ${totalSentEmails} emails sent`);
       }
 
       if (successfulDispatches.length === 0) {
@@ -283,7 +328,7 @@ export const useCampaignSender = (organizationId?: string) => {
         throw new Error(`All function dispatches failed: ${errorDetails}`);
       }
 
-      // Show results
+      // Show results with actual numbers
       if (failedDispatches.length > 0) {
         toast.warning(`Campaign sent with issues: ${failedDispatches.length} functions failed. ${totalSentEmails} emails sent.`);
       } else {
@@ -292,7 +337,7 @@ export const useCampaignSender = (organizationId?: string) => {
 
       return {
         success: true,
-        message: `Campaign dispatched to ${successfulDispatches.length} functions`,
+        message: `Campaign dispatched: ${totalSentEmails} emails sent via ${successfulDispatches.length} functions`,
         totalEmails: totalSentEmails,
         accountsUsed: selectedAccounts.length,
         functionsUsed: successfulDispatches.length,
