@@ -5,7 +5,7 @@ import { Card, CardHeader, CardContent, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
-import { Eye, Send, Rocket, Loader2 } from "lucide-react";
+import { Eye, Send, Rocket, Loader2, Zap } from "lucide-react";
 import { useClientCampaignPreparation } from "@/hooks/useClientCampaignPreparation";
 import { useCampaignSender } from "@/hooks/useCampaignSender";
 import { supabase } from "@/integrations/supabase/client";
@@ -20,17 +20,18 @@ const CampaignPrepareAndSend: React.FC<CampaignPrepareAndSendProps> = ({ campaig
   const [preparing, setPreparing] = useState(false);
   const [preparationDone, setPreparationDone] = useState(false);
   const [sending, setSending] = useState(false);
+  const [sendResults, setSendResults] = useState<any>(null);
 
   const { prepareCampaignClientSide, isProcessing, progress } = useClientCampaignPreparation();
   const { sendCampaign, isSending, progress: sendProgress } = useCampaignSender(campaign?.organization_id);
 
-  // Fetch campaign details
+  // Fetch campaign details with optimized query
   useEffect(() => {
     async function fetchCampaign() {
       setLoading(true);
       const { data, error } = await supabase
         .from("email_campaigns")
-        .select("*")
+        .select("id, subject, status, organization_id, prepared_emails, total_recipients")
         .eq("id", campaignId)
         .single();
       if (error) {
@@ -44,11 +45,11 @@ const CampaignPrepareAndSend: React.FC<CampaignPrepareAndSendProps> = ({ campaig
     fetchCampaign();
   }, [campaignId]);
 
-  // After successful preparation, refetch
+  // Optimized refresh function
   const refresh = async () => {
     const { data, error } = await supabase
       .from("email_campaigns")
-      .select("*")
+      .select("id, subject, status, organization_id, prepared_emails, total_recipients")
       .eq("id", campaignId)
       .single();
     if (!error) {
@@ -61,7 +62,7 @@ const CampaignPrepareAndSend: React.FC<CampaignPrepareAndSendProps> = ({ campaig
     setPreparing(true);
     try {
       const result = await prepareCampaignClientSide(campaignId);
-      toast.success(result?.message || "Prepared successfully!");
+      toast.success(result?.message || "Campaign prepared and pushed to Supabase!");
       await refresh();
     } catch (e: any) {
       toast.error(e?.message || "Failed to prepare campaign.");
@@ -72,10 +73,19 @@ const CampaignPrepareAndSend: React.FC<CampaignPrepareAndSendProps> = ({ campaig
 
   const handleSend = async () => {
     setSending(true);
+    setSendResults(null);
+    const startTime = Date.now();
+    
     try {
-      await sendCampaign(campaign);
-      toast.success("Send started! Check campaign status for details.");
-      // You might want to redirect or refresh
+      const result = await sendCampaign(campaign);
+      const duration = Date.now() - startTime;
+      
+      setSendResults({
+        ...result,
+        actualDuration: duration
+      });
+      
+      toast.success(`🚀 Ultra-Fast Send Complete! ${result.totalEmails} emails sent in ${duration}ms`);
       await refresh();
     } catch (e: any) {
       toast.error(e?.message || "Failed to send campaign.");
@@ -109,15 +119,22 @@ const CampaignPrepareAndSend: React.FC<CampaignPrepareAndSendProps> = ({ campaig
           <div className="text-xs text-gray-500">
             Campaign ID: {campaignId} <br />
             Status: <span className="font-semibold">{campaign.status}</span>
+            {campaign.total_recipients && (
+              <>
+                <br />Recipients: <span className="font-semibold">{campaign.total_recipients}</span>
+              </>
+            )}
           </div>
         </CardHeader>
         <Separator />
         <CardContent className="space-y-6">
           <Alert>
             <AlertDescription>
-              1. <strong>Prepare</strong>: Emails are generated in your browser and pushed to Supabase.<br/>
-              2. <strong>Send</strong>: Cloud Function will blast all emails out with zero delay, fetching all prepared recipients from Supabase.<br/>
-              <span className="text-blue-700">No emails will be sent until you click &quot;Send&quot;!</span>
+              <strong>Ultra-Fast 3-Step Process:</strong><br/>
+              1. <strong>Prepare</strong>: Process emails in browser and push to Supabase<br/>
+              2. <strong>Wait</strong>: Preparation must complete before sending<br/>
+              3. <strong>Send</strong>: Fire all emails simultaneously with zero delay<br/>
+              <span className="text-blue-700">Maximum speed parallel processing - no rate limiting!</span>
             </AlertDescription>
           </Alert>
 
@@ -127,22 +144,22 @@ const CampaignPrepareAndSend: React.FC<CampaignPrepareAndSendProps> = ({ campaig
                 size="lg"
                 onClick={handlePrepare}
                 disabled={preparing || isProcessing}
-                className="w-full"
+                className="w-full bg-blue-600 hover:bg-blue-700"
               >
                 {preparing || isProcessing ? (
                   <>
-                    <Loader2 className="animate-spin w-4 h-4 mr-1" /> Preparing...
+                    <Loader2 className="animate-spin w-4 h-4 mr-1" /> Preparing & Pushing to Supabase...
                   </>
                 ) : (
                   <>
                     <Eye className="w-4 h-4 mr-2" />
-                    Prepare and Push Campaign to Supabase
+                    1. Prepare Campaign (Browser Processing)
                   </>
                 )}
               </Button>
               {progress > 0 && (
                 <div className="mt-2 text-xs text-blue-700">
-                  Preparation in progress: {progress}%
+                  Preparation progress: {progress}%
                 </div>
               )}
             </div>
@@ -152,31 +169,45 @@ const CampaignPrepareAndSend: React.FC<CampaignPrepareAndSendProps> = ({ campaig
             <div className="space-y-4">
               <Alert className="border-green-200 bg-green-50">
                 <AlertDescription>
-                  Preparation complete. You may now send this campaign.
+                  ✅ Campaign prepared and pushed to Supabase! Ready for ultra-fast sending.
                 </AlertDescription>
               </Alert>
+              
               <Button
                 size="lg"
                 variant="default"
                 onClick={handleSend}
                 disabled={sending || isSending || campaign.status === "sent"}
-                className="w-full"
+                className="w-full bg-red-600 hover:bg-red-700 text-white"
               >
                 {(sending || isSending) ? (
                   <>
-                    <Loader2 className="animate-spin w-4 h-4 mr-1" /> Sending...
+                    <Loader2 className="animate-spin w-4 h-4 mr-1" /> Sending Ultra-Fast...
                   </>
                 ) : (
                   <>
-                    <Send className="w-4 h-4 mr-2" />
-                    Send Now (Ultra Fast)
+                    <Zap className="w-4 h-4 mr-2" />
+                    2. Send Now (Ultra-Fast Parallel)
                   </>
                 )}
               </Button>
+              
               {sendProgress > 0 && (
                 <div className="mt-2 text-xs text-green-700">
-                  Sending in progress: {sendProgress}%
+                  Sending progress: {sendProgress}%
                 </div>
+              )}
+
+              {sendResults && (
+                <Alert className="border-green-200 bg-green-50">
+                  <AlertDescription>
+                    <strong>🚀 Send Results:</strong><br/>
+                    • Emails sent: {sendResults.totalEmails}<br/>
+                    • Duration: {sendResults.actualDuration}ms<br/>
+                    • Speed: {Math.round(sendResults.totalEmails / (sendResults.actualDuration / 1000))} emails/second<br/>
+                    {sendResults.speed && <span>• Cloud Function Speed: {sendResults.speed} emails/second</span>}
+                  </AlertDescription>
+                </Alert>
               )}
             </div>
           )}
