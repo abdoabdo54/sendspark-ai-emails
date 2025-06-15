@@ -6,6 +6,8 @@ interface SMTPConfig {
   password: string;
   encryption: 'none' | 'tls' | 'ssl';
   auth_required: boolean;
+  security?: 'none' | 'tls' | 'ssl';
+  use_auth?: boolean;
 }
 
 export async function sendEmailViaSMTP(
@@ -18,58 +20,135 @@ export async function sendEmailViaSMTP(
   textContent?: string
 ): Promise<{ success: boolean; error?: string; logs?: string[] }> {
   try {
-    console.log('Sending email via SMTP function:', { to: toEmail, subject });
+    console.log('📧 Sending email via SMTP function:', { 
+      to: toEmail, 
+      subject,
+      host: config.host,
+      port: config.port,
+      encryption: config.encryption || config.security
+    });
     
-    // Simulate SMTP sending in demo mode
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    // Use Supabase Edge Function for SMTP sending instead of demo mode
+    const { supabase } = await import('@/integrations/supabase/client');
     
-    console.log('✓ Email sent successfully via SMTP (Demo Mode)');
-    return { 
-      success: true, 
-      logs: [
-        `Starting SMTP send to ${toEmail} via ${config.host}:${config.port}`,
-        `Encryption: ${config.encryption}, Auth required: ${config.auth_required}`,
-        'Using demo mode connection',
-        '✓ Demo SMTP connection established',
-        '✓ Authentication successful (Demo)',
-        '✓ Email sent successfully'
-      ]
+    const emailData = {
+      from: { email: fromEmail, name: fromName },
+      to: toEmail,
+      subject: subject,
+      html: htmlContent,
+      text: textContent || htmlContent?.replace(/<[^>]*>/g, '') || ''
     };
+
+    console.log('📧 Calling SMTP edge function with config:', {
+      host: config.host,
+      port: config.port,
+      username: config.username,
+      encryption: config.encryption || config.security,
+      auth_required: config.auth_required !== false
+    });
+
+    const { data, error } = await supabase.functions.invoke('send-smtp-email', {
+      body: {
+        config: {
+          host: config.host,
+          port: config.port,
+          username: config.username,
+          password: config.password,
+          encryption: config.encryption || config.security || 'tls',
+          auth_required: config.auth_required !== false
+        },
+        emailData: emailData
+      }
+    });
+
+    if (error) {
+      console.error('❌ SMTP Edge Function Error:', error);
+      return { 
+        success: false, 
+        error: error.message || 'SMTP edge function failed',
+        logs: [`❌ Edge function error: ${error.message}`]
+      };
+    }
+
+    if (data && data.success) {
+      console.log('✅ SMTP Email sent successfully via edge function');
+      return { 
+        success: true, 
+        logs: data.logs || ['✅ Email sent successfully via SMTP edge function']
+      };
+    } else {
+      console.error('❌ SMTP sending failed:', data);
+      return { 
+        success: false, 
+        error: data?.error || 'SMTP sending failed',
+        logs: data?.logs || [`❌ SMTP error: ${data?.error || 'Unknown error'}`]
+      };
+    }
   } catch (error) {
-    console.error('✗ SMTP error:', error);
+    console.error('❌ SMTP function error:', error);
     return { 
       success: false, 
       error: error instanceof Error ? error.message : 'Unknown error',
-      logs: [`✗ SMTP error: ${error instanceof Error ? error.message : 'Unknown error'}`]
+      logs: [`❌ Fatal SMTP error: ${error instanceof Error ? error.message : 'Unknown error'}`]
     };
   }
 }
 
 export async function testSMTPConnection(config: SMTPConfig): Promise<{ success: boolean; error?: string; logs?: string[] }> {
   try {
-    console.log('Testing SMTP connection:', { host: config.host, port: config.port });
+    console.log('🔍 Testing SMTP connection:', { 
+      host: config.host, 
+      port: config.port,
+      encryption: config.encryption || config.security
+    });
     
-    // Simulate connection test
-    await new Promise(resolve => setTimeout(resolve, 1500));
+    // Use Supabase Edge Function for SMTP testing
+    const { supabase } = await import('@/integrations/supabase/client');
     
-    console.log('✓ SMTP connection test successful (Demo Mode)');
-    return { 
-      success: true, 
-      logs: [
-        `Testing SMTP connection to ${config.host}:${config.port}`,
-        `Encryption: ${config.encryption}`,
-        'Using demo mode connection',
-        '✓ Demo connection established',
-        '✓ Authentication test passed',
-        '✓ Connection test successful'
-      ]
-    };
+    console.log('🔍 Calling SMTP test edge function');
+
+    const { data, error } = await supabase.functions.invoke('smtp-test', {
+      body: {
+        config: {
+          host: config.host,
+          port: config.port,
+          username: config.username,
+          password: config.password,
+          encryption: config.encryption || config.security || 'tls',
+          auth_required: config.auth_required !== false
+        }
+      }
+    });
+
+    if (error) {
+      console.error('❌ SMTP Test Edge Function Error:', error);
+      return { 
+        success: false, 
+        error: error.message || 'SMTP test edge function failed',
+        logs: [`❌ Edge function error: ${error.message}`]
+      };
+    }
+
+    if (data) {
+      console.log('📋 SMTP Test Result:', data);
+      return {
+        success: data.success || false,
+        error: data.error,
+        logs: data.logs || []
+      };
+    } else {
+      return { 
+        success: false, 
+        error: 'No response from SMTP test function',
+        logs: ['❌ No response from SMTP test function']
+      };
+    }
   } catch (error) {
-    console.error('✗ SMTP test error:', error);
+    console.error('❌ SMTP test error:', error);
     return { 
       success: false, 
       error: error instanceof Error ? error.message : 'Unknown error',
-      logs: [`✗ SMTP test error: ${error instanceof Error ? error.message : 'Unknown error'}`]
+      logs: [`❌ SMTP test error: ${error instanceof Error ? error.message : 'Unknown error'}`]
     };
   }
 }
@@ -77,10 +156,29 @@ export async function testSMTPConnection(config: SMTPConfig): Promise<{ success:
 export function validateSMTPConfig(config: SMTPConfig): { valid: boolean; errors: string[] } {
   const errors: string[] = [];
 
-  if (!config.host) errors.push('SMTP host is required');
-  if (!config.port || config.port < 1 || config.port > 65535) errors.push('Valid SMTP port is required');
-  if (!config.username) errors.push('SMTP username is required');
-  if (!config.password) errors.push('SMTP password is required');
+  if (!config.host || config.host.trim() === '') {
+    errors.push('SMTP host is required');
+  }
+  
+  if (!config.port || config.port < 1 || config.port > 65535) {
+    errors.push('Valid SMTP port is required (1-65535)');
+  }
+  
+  if (config.auth_required !== false && config.use_auth !== false) {
+    if (!config.username || config.username.trim() === '') {
+      errors.push('SMTP username is required when authentication is enabled');
+    }
+    if (!config.password || config.password.trim() === '') {
+      errors.push('SMTP password is required when authentication is enabled');
+    }
+  }
+
+  // Validate encryption setting
+  const validEncryptions = ['none', 'tls', 'ssl'];
+  const encryption = config.encryption || config.security || 'tls';
+  if (!validEncryptions.includes(encryption)) {
+    errors.push('Invalid encryption setting. Must be none, tls, or ssl');
+  }
 
   return {
     valid: errors.length === 0,

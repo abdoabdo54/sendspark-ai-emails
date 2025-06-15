@@ -7,7 +7,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Eye, EyeOff, Shield } from 'lucide-react';
+import { Eye, EyeOff, Shield, TestTube } from 'lucide-react';
+import { toast } from '@/hooks/use-toast';
+import { testSMTPConnection, validateSMTPConfig } from '@/utils/emailSender';
 
 interface SMTPConfig {
   host: string;
@@ -32,6 +34,7 @@ const SMTPConfigForm = ({ onSubmit, onCancel, initialData }: SMTPConfigFormProps
   const [name, setName] = useState(initialData?.name || '');
   const [email, setEmail] = useState(initialData?.email || '');
   const [showPassword, setShowPassword] = useState(false);
+  const [isTesting, setIsTesting] = useState(false);
   const [config, setConfig] = useState<SMTPConfig>(initialData?.config || {
     host: '',
     port: 587,
@@ -43,11 +46,69 @@ const SMTPConfigForm = ({ onSubmit, onCancel, initialData }: SMTPConfigFormProps
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // Validate configuration
+    const validation = validateSMTPConfig({
+      ...config,
+      encryption: config.security,
+      auth_required: config.use_auth
+    });
+
+    if (!validation.valid) {
+      toast({
+        title: "Configuration Error",
+        description: validation.errors.join(', '),
+        variant: "destructive"
+      });
+      return;
+    }
+
     onSubmit(name, email, config);
   };
 
   const updateConfig = (key: keyof SMTPConfig, value: any) => {
     setConfig(prev => ({ ...prev, [key]: value }));
+  };
+
+  const handleTestConnection = async () => {
+    if (!config.host || !config.username || !config.password) {
+      toast({
+        title: "Missing Information",
+        description: "Please fill in host, username, and password to test the connection",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    setIsTesting(true);
+    try {
+      const result = await testSMTPConnection({
+        ...config,
+        encryption: config.security,
+        auth_required: config.use_auth
+      });
+
+      if (result.success) {
+        toast({
+          title: "Connection Successful!",
+          description: "SMTP configuration is working correctly"
+        });
+      } else {
+        toast({
+          title: "Connection Failed",
+          description: result.error || "Unable to connect to SMTP server",
+          variant: "destructive"
+        });
+      }
+    } catch (error) {
+      toast({
+        title: "Test Error",
+        description: error instanceof Error ? error.message : "Unknown error occurred",
+        variant: "destructive"
+      });
+    } finally {
+      setIsTesting(false);
+    }
   };
 
   return (
@@ -61,7 +122,7 @@ const SMTPConfigForm = ({ onSubmit, onCancel, initialData }: SMTPConfigFormProps
       <CardContent>
         <Alert className="mb-6">
           <AlertDescription>
-            Configure your SMTP server settings. Rate limits are now controlled at the campaign level for optimal performance and speed.
+            Configure your SMTP server settings. Make sure to use the correct port and security settings for your email provider.
           </AlertDescription>
         </Alert>
 
@@ -121,9 +182,9 @@ const SMTPConfigForm = ({ onSubmit, onCancel, initialData }: SMTPConfigFormProps
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="none">None</SelectItem>
-                <SelectItem value="tls">TLS</SelectItem>
-                <SelectItem value="ssl">SSL</SelectItem>
+                <SelectItem value="none">None (Plain)</SelectItem>
+                <SelectItem value="tls">TLS/STARTTLS (Port 587)</SelectItem>
+                <SelectItem value="ssl">SSL (Port 465)</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -174,13 +235,34 @@ const SMTPConfigForm = ({ onSubmit, onCancel, initialData }: SMTPConfigFormProps
             </div>
           )}
 
-          <div className="flex justify-end space-x-3">
-            <Button type="button" variant="outline" onClick={onCancel}>
-              Cancel
+          <div className="flex justify-between space-x-3">
+            <Button 
+              type="button" 
+              variant="outline" 
+              onClick={handleTestConnection}
+              disabled={isTesting || !config.host || !config.username || !config.password}
+            >
+              {isTesting ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-current mr-2"></div>
+                  Testing...
+                </>
+              ) : (
+                <>
+                  <TestTube className="w-4 h-4 mr-2" />
+                  Test Connection
+                </>
+              )}
             </Button>
-            <Button type="submit">
-              {initialData ? 'Update Account' : 'Add Account'}
-            </Button>
+            
+            <div className="flex space-x-3">
+              <Button type="button" variant="outline" onClick={onCancel}>
+                Cancel
+              </Button>
+              <Button type="submit">
+                {initialData ? 'Update Account' : 'Add Account'}
+              </Button>
+            </div>
           </div>
         </form>
       </CardContent>

@@ -1,4 +1,3 @@
-
 const functions = require('@google-cloud/functions-framework');
 const { createClient } = require('@supabase/supabase-js');
 const nodemailer = require('nodemailer');
@@ -8,33 +7,65 @@ const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const supabase = createClient(supabaseUrl, supabaseKey);
 
-// Enhanced SMTP transporter configuration with better error handling
+// Enhanced SMTP transporter configuration with proper error handling
 function createUltraFastTransporter(account) {
   if (account.type === 'smtp') {
     const config = account.config || {};
     try {
-      return nodemailer.createTransporter({
+      console.log(`🔧 Creating SMTP transporter for ${account.name}:`, {
+        host: config.host,
+        port: config.port,
+        secure: config.port === 465,
+        encryption: config.security || config.encryption,
+        username: config.username,
+        hasPassword: !!config.password
+      });
+
+      // Determine security settings
+      let secure = false;
+      let requireTLS = false;
+      
+      if (config.port === 465 || config.security === 'ssl' || config.encryption === 'ssl') {
+        secure = true;
+      } else if (config.port === 587 || config.security === 'tls' || config.encryption === 'tls') {
+        requireTLS = true;
+      }
+
+      const transporterConfig = {
         host: config.host,
         port: config.port || 587,
-        secure: config.port === 465,
-        auth: {
+        secure: secure,
+        requireTLS: requireTLS,
+        auth: config.use_auth !== false ? {
           user: config.username || config.user,
           pass: config.password || config.pass
-        },
-        // MAXIMUM SPEED SETTINGS - NO LIMITS
+        } : undefined,
+        // Enhanced connection settings
         pool: true,
-        maxConnections: 500, // Increased connections
-        maxMessages: Infinity, // No message limit
-        rateDelta: 0, // No rate limiting
-        rateLimit: false, // Disable rate limiting completely
-        connectionTimeout: 60000, // Reduced timeout
+        maxConnections: 20,
+        maxMessages: 100,
+        rateDelta: 0,
+        rateLimit: false,
+        connectionTimeout: 60000,
         greetingTimeout: 30000,
         socketTimeout: 60000,
-        sendTimeout: 0,
-        idleTimeout: 0,
-        keepAlive: true,
-        concurrentConnections: 100 // More concurrent connections
+        logger: true,
+        debug: true,
+        // Handle TLS issues
+        tls: {
+          rejectUnauthorized: false,
+          ciphers: 'SSLv3'
+        },
+        // Ignore certificate errors for testing
+        ignoreTLS: false
+      };
+
+      console.log(`🔧 SMTP Config for ${account.name}:`, {
+        ...transporterConfig,
+        auth: transporterConfig.auth ? { user: transporterConfig.auth.user, pass: '***' } : undefined
       });
+
+      return nodemailer.createTransporter(transporterConfig);
     } catch (error) {
       console.error(`❌ Failed to create SMTP transporter for ${account.name}:`, error.message);
       return null;
@@ -43,20 +74,69 @@ function createUltraFastTransporter(account) {
   return null;
 }
 
-// Enhanced SMTP sending with better error handling
-async function sendViaUltraFastSMTP(transporter, emailData) {
+// Enhanced SMTP sending with comprehensive error handling
+async function sendViaUltraFastSMTP(transporter, emailData, accountName) {
   try {
-    const info = await transporter.sendMail({
+    console.log(`📧 SMTP: Attempting to send email to ${emailData.to} via ${accountName}`);
+    
+    // Verify transporter first
+    try {
+      await transporter.verify();
+      console.log(`✅ SMTP transporter verified for ${accountName}`);
+    } catch (verifyError) {
+      console.error(`❌ SMTP verification failed for ${accountName}:`, verifyError.message);
+      return { success: false, error: `SMTP verification failed: ${verifyError.message}` };
+    }
+
+    const mailOptions = {
       from: `"${emailData.fromName}" <${emailData.fromEmail}>`,
       to: emailData.to,
       subject: emailData.subject,
       html: emailData.html,
-      text: emailData.text
+      text: emailData.text || emailData.html?.replace(/<[^>]*>/g, '') || ''
+    };
+
+    console.log(`📧 SMTP Mail Options:`, {
+      from: mailOptions.from,
+      to: mailOptions.to,
+      subject: mailOptions.subject,
+      hasHtml: !!mailOptions.html,
+      hasText: !!mailOptions.text
     });
-    return { success: true, messageId: info.messageId };
+
+    const info = await transporter.sendMail(mailOptions);
+    console.log(`✅ SMTP Success for ${emailData.to}:`, {
+      messageId: info.messageId,
+      response: info.response,
+      accepted: info.accepted,
+      rejected: info.rejected
+    });
+
+    return { 
+      success: true, 
+      messageId: info.messageId,
+      response: info.response,
+      accepted: info.accepted,
+      rejected: info.rejected
+    };
   } catch (error) {
-    console.error(`❌ SMTP Error for ${emailData.to}:`, error.message);
-    return { success: false, error: error.message };
+    console.error(`❌ SMTP Error for ${emailData.to} via ${accountName}:`, {
+      message: error.message,
+      code: error.code,
+      command: error.command,
+      response: error.response,
+      responseCode: error.responseCode
+    });
+    
+    return { 
+      success: false, 
+      error: `${error.code || 'SMTP_ERROR'}: ${error.message}`,
+      details: {
+        code: error.code,
+        command: error.command,
+        response: error.response
+      }
+    };
   }
 }
 
@@ -132,7 +212,7 @@ async function sendViaAppsScript(account, emailData) {
   }
 }
 
-// Enhanced email processing with better error handling
+// Enhanced email processing with better SMTP handling
 async function processEmailHybrid(preparedEmail, account, campaignData, globalIndex, totalAccounts) {
   try {
     const emailData = {
@@ -149,13 +229,32 @@ async function processEmailHybrid(preparedEmail, account, campaignData, globalIn
     let result;
 
     if (account.type === 'smtp') {
+      console.log(`🔧 SMTP: Creating transporter for ${account.name}`);
       const transporter = createUltraFastTransporter(account);
-      if (transporter) {
-        result = await sendViaUltraFastSMTP(transporter, emailData);
-        // Close transporter after use
-        transporter.close();
-      } else {
-        result = { success: false, error: 'Failed to create SMTP transporter' };
+      
+      if (!transporter) {
+        console.error(`❌ SMTP: Failed to create transporter for ${account.name}`);
+        return {
+          recipient: preparedEmail.to,
+          status: 'failed',
+          error: 'Failed to create SMTP transporter',
+          accountName: account.name,
+          accountType: account.type,
+          timestamp: new Date().toISOString()
+        };
+      }
+
+      try {
+        result = await sendViaUltraFastSMTP(transporter, emailData, account.name);
+        console.log(`📧 SMTP Result for ${preparedEmail.to}:`, result);
+      } finally {
+        // Always close transporter
+        try {
+          transporter.close();
+          console.log(`🔧 SMTP: Transporter closed for ${account.name}`);
+        } catch (closeError) {
+          console.warn(`⚠️ SMTP: Error closing transporter for ${account.name}:`, closeError.message);
+        }
       }
     } else if (account.type === 'apps-script') {
       result = await sendViaAppsScript(account, emailData);
@@ -172,7 +271,8 @@ async function processEmailHybrid(preparedEmail, account, campaignData, globalIn
         accountType: account.type,
         messageId: result.messageId,
         remainingQuota: result.remainingQuota,
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        details: result.response || result.details
       };
     } else {
       console.log(`❌ HYBRID FAILED: ${preparedEmail.to} via ${account.type.toUpperCase()} - ${result.error}`);
@@ -182,7 +282,8 @@ async function processEmailHybrid(preparedEmail, account, campaignData, globalIn
         error: result.error,
         accountName: account.name,
         accountType: account.type,
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        details: result.details
       };
     }
   } catch (error) {
