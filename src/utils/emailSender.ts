@@ -1,3 +1,4 @@
+
 interface SMTPConfig {
   host: string;
   port: number;
