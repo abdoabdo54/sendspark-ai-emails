@@ -24,20 +24,26 @@ const PowerMTAServerManager: React.FC = () => {
     );
   }
 
-  const handleAddServer = async (config: any) => {
+  const handleAddServer = async (name: string, email: string, config: any) => {
     try {
-      await addServer(config);
+      await addServer({ 
+        name, 
+        ...config 
+      });
       setShowAddForm(false);
     } catch (error) {
       // Error already handled in the hook
     }
   };
 
-  const handleUpdateServer = async (config: any) => {
+  const handleUpdateServer = async (name: string, email: string, config: any) => {
     if (!editingServer) return;
     
     try {
-      await updateServer(editingServer.id, config);
+      await updateServer(editingServer.id, { 
+        name, 
+        ...config 
+      });
       setEditingServer(null);
     } catch (error) {
       // Error already handled in the hook
@@ -48,6 +54,11 @@ const PowerMTAServerManager: React.FC = () => {
     if (confirm('Are you sure you want to delete this PowerMTA server?')) {
       await deleteServer(serverId);
     }
+  };
+
+  const handleCancel = () => {
+    setShowAddForm(false);
+    setEditingServer(null);
   };
 
   return (
@@ -86,26 +97,22 @@ const PowerMTAServerManager: React.FC = () => {
 
       {(showAddForm || editingServer) && (
         <PowerMTAConfigForm
-          onSave={editingServer ? handleUpdateServer : handleAddServer}
-          initialConfig={editingServer}
-          isEditing={!!editingServer}
+          onSubmit={editingServer ? handleUpdateServer : handleAddServer}
+          onCancel={handleCancel}
+          initialData={editingServer ? {
+            name: editingServer.name,
+            email: '',
+            config: {
+              server_host: editingServer.server_host,
+              ssh_port: editingServer.ssh_port,
+              username: editingServer.username,
+              password: editingServer.password,
+              api_port: editingServer.api_port,
+              virtual_mta: editingServer.virtual_mta,
+              job_pool: editingServer.job_pool
+            }
+          } : undefined}
         />
-      )}
-
-      {showAddForm && (
-        <div className="flex justify-end">
-          <Button variant="outline" onClick={() => setShowAddForm(false)}>
-            Cancel
-          </Button>
-        </div>
-      )}
-
-      {editingServer && (
-        <div className="flex justify-end">
-          <Button variant="outline" onClick={() => setEditingServer(null)}>
-            Cancel Edit
-          </Button>
-        </div>
       )}
 
       <Card>
