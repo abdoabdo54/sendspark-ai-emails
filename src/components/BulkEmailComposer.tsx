@@ -35,7 +35,7 @@ const BulkEmailComposer: React.FC<BulkEmailComposerProps> = ({ onSend }) => {
   const [selectedAccounts, setSelectedAccounts] = useState<string[]>([]);
   const [sending, setSending] = useState(false);
 
-  // Send method configuration
+  // Send method configuration - ONLY CHANGE: PowerMTA vs Cloud Functions
   const [sendMethod, setSendMethod] = useState<'cloud_functions' | 'powermta'>('cloud_functions');
   const [selectedPowerMTAServer, setSelectedPowerMTAServer] = useState<string>('');
 
@@ -258,6 +258,67 @@ const BulkEmailComposer: React.FC<BulkEmailComposerProps> = ({ onSend }) => {
             </CardContent>
           </Card>
 
+          {/* Dispatch Method - ONLY MODIFICATION */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg flex items-center">
+                <Target className="w-5 h-5 mr-2" />
+                Dispatch Method
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <Button
+                  variant={sendMethod === 'cloud_functions' ? 'default' : 'outline'}
+                  onClick={() => setSendMethod('cloud_functions')}
+                  className="h-auto p-4 flex flex-col items-center justify-center space-y-2"
+                  disabled={!hasFunctions}
+                >
+                  <Cloud className="w-6 h-6" />
+                  <div className="text-center">
+                    <div className="font-medium">Cloud Functions</div>
+                    <div className="text-xs opacity-70">{enabledFunctions.length} functions available</div>
+                  </div>
+                </Button>
+                
+                <Button
+                  variant={sendMethod === 'powermta' ? 'default' : 'outline'}
+                  onClick={() => setSendMethod('powermta')}
+                  className="h-auto p-4 flex flex-col items-center justify-center space-y-2"
+                  disabled={!hasPowerMTAServers}
+                >
+                  <Server className="w-6 h-6" />
+                  <div className="text-center">
+                    <div className="font-medium">PowerMTA</div>
+                    <div className="text-xs opacity-70">
+                      {hasPowerMTAServers ? `${activeServers.length} servers` : 'Setup Required'}
+                    </div>
+                  </div>
+                </Button>
+              </div>
+
+              {sendMethod === 'powermta' && hasPowerMTAServers && (
+                <div className="mt-4">
+                  <Label className="text-sm font-medium mb-2 block">Select PowerMTA Server:</Label>
+                  <div className="space-y-2">
+                    {activeServers.map((server) => (
+                      <Button
+                        key={server.id}
+                        variant={selectedPowerMTAServer === server.id ? 'default' : 'outline'}
+                        onClick={() => setSelectedPowerMTAServer(server.id)}
+                        className="w-full justify-start"
+                        size="sm"
+                      >
+                        <Server className="w-4 h-4 mr-2" />
+                        {server.name} ({server.server_host})
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
           {/* Content Rotation */}
           <Card>
             <CardHeader>
@@ -383,66 +444,9 @@ const BulkEmailComposer: React.FC<BulkEmailComposerProps> = ({ onSend }) => {
           {/* Sending Configuration */}
           <Card>
             <CardHeader>
-              <CardTitle className="text-lg flex items-center">
-                <Target className="w-5 h-5 mr-2" />
-                Sending Configuration
-              </CardTitle>
+              <CardTitle className="text-lg">Sending Configuration</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              {/* Dispatch Method */}
-              <div>
-                <Label className="text-sm font-medium mb-3 block">Dispatch Method</Label>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <Button
-                    variant={sendMethod === 'cloud_functions' ? 'default' : 'outline'}
-                    onClick={() => setSendMethod('cloud_functions')}
-                    className="h-auto p-4 flex flex-col items-center justify-center space-y-2"
-                    disabled={!hasFunctions}
-                  >
-                    <Cloud className="w-6 h-6" />
-                    <div className="text-center">
-                      <div className="font-medium">Parallel (All functions)</div>
-                      <div className="text-xs opacity-70">{enabledFunctions.length} functions</div>
-                    </div>
-                  </Button>
-                  
-                  <Button
-                    variant={sendMethod === 'powermta' ? 'default' : 'outline'}
-                    onClick={() => setSendMethod('powermta')}
-                    className="h-auto p-4 flex flex-col items-center justify-center space-y-2"
-                    disabled={!hasPowerMTAServers}
-                  >
-                    <Server className="w-6 h-6" />
-                    <div className="text-center">
-                      <div className="font-medium">Round Robin (Rotate accounts)</div>
-                      <div className="text-xs opacity-70">
-                        {hasPowerMTAServers ? `${activeServers.length} servers` : 'Setup Required'}
-                      </div>
-                    </div>
-                  </Button>
-                </div>
-
-                {sendMethod === 'powermta' && hasPowerMTAServers && (
-                  <div className="mt-4">
-                    <Label className="text-sm font-medium mb-2 block">Select PowerMTA Server:</Label>
-                    <div className="space-y-2">
-                      {activeServers.map((server) => (
-                        <Button
-                          key={server.id}
-                          variant={selectedPowerMTAServer === server.id ? 'default' : 'outline'}
-                          onClick={() => setSelectedPowerMTAServer(server.id)}
-                          className="w-full justify-start"
-                          size="sm"
-                        >
-                          <Server className="w-4 h-4 mr-2" />
-                          {server.name} ({server.server_host})
-                        </Button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-
               {/* Sending Mode */}
               <div>
                 <Label className="text-sm font-medium mb-3 block">Sending Mode</Label>
@@ -602,7 +606,6 @@ const BulkEmailComposer: React.FC<BulkEmailComposerProps> = ({ onSend }) => {
               {smartConfigEnabled && (
                 <><br/><strong>Smart Config:</strong> Advanced timing and retry settings will be applied.</>
               )}
-              <br/><strong>PowerMTA Servers:</strong> Configure PowerMTA servers in Settings → PowerMTA Servers tab.
             </AlertDescription>
           </Alert>
         </CardContent>
