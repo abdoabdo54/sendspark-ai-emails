@@ -39,11 +39,6 @@ export const usePowerMTAServers = (organizationId?: string) => {
 
       if (error) {
         console.error('Error fetching PowerMTA servers:', error);
-        // If table doesn't exist yet, just return empty array
-        if (error.code === '42P01') {
-          setServers([]);
-          return;
-        }
         toast.error(`Failed to load PowerMTA servers: ${error.message}`);
         return;
       }

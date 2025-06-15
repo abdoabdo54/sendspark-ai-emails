@@ -15,6 +15,12 @@ interface CampaignPrepareAndSendProps {
   campaignId: string;
 }
 
+interface CampaignConfig {
+  sendMethod?: 'cloud_functions' | 'powermta';
+  selectedPowerMTAServer?: string;
+  [key: string]: any;
+}
+
 const CampaignPrepareAndSend: React.FC<CampaignPrepareAndSendProps> = ({ campaignId }) => {
   const [campaign, setCampaign] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -44,11 +50,12 @@ const CampaignPrepareAndSend: React.FC<CampaignPrepareAndSendProps> = ({ campaig
         setPreparationDone(data.status === "prepared" || data.status === "sent");
         
         // Load previous send method from campaign config if available
-        if (data.config?.sendMethod) {
-          setSendMethod(data.config.sendMethod);
+        const config = data.config as CampaignConfig;
+        if (config?.sendMethod) {
+          setSendMethod(config.sendMethod);
         }
-        if (data.config?.selectedPowerMTAServer) {
-          setSelectedPowerMTAServer(data.config.selectedPowerMTAServer);
+        if (config?.selectedPowerMTAServer) {
+          setSelectedPowerMTAServer(config.selectedPowerMTAServer);
         }
       }
       setLoading(false);

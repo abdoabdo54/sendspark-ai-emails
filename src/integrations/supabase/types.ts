@@ -607,6 +607,54 @@ export type Database = {
         }
         Relationships: []
       }
+      powermta_servers: {
+        Row: {
+          api_port: number | null
+          created_at: string
+          id: string
+          is_active: boolean
+          job_pool: string | null
+          name: string
+          organization_id: string
+          password: string
+          server_host: string
+          ssh_port: number
+          updated_at: string
+          username: string
+          virtual_mta: string | null
+        }
+        Insert: {
+          api_port?: number | null
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          job_pool?: string | null
+          name: string
+          organization_id: string
+          password: string
+          server_host: string
+          ssh_port?: number
+          updated_at?: string
+          username: string
+          virtual_mta?: string | null
+        }
+        Update: {
+          api_port?: number | null
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          job_pool?: string | null
+          name?: string
+          organization_id?: string
+          password?: string
+          server_host?: string
+          ssh_port?: number
+          updated_at?: string
+          username?: string
+          virtual_mta?: string | null
+        }
+        Relationships: []
+      }
       servers: {
         Row: {
           created_at: string
