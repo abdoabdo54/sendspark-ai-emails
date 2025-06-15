@@ -28,7 +28,7 @@ export async function sendEmailViaSMTP(
       encryption: config.encryption || config.security
     });
     
-    // Use Supabase Edge Function for SMTP sending instead of demo mode
+    // Use Supabase Edge Function for SMTP sending
     const { supabase } = await import('@/integrations/supabase/client');
     
     const emailData = {
@@ -39,24 +39,30 @@ export async function sendEmailViaSMTP(
       text: textContent || htmlContent?.replace(/<[^>]*>/g, '') || ''
     };
 
-    console.log('📧 Calling SMTP edge function with config:', {
+    // Enhanced configuration mapping for better compatibility
+    const smtpConfig = {
       host: config.host,
       port: config.port,
       username: config.username,
-      encryption: config.encryption || config.security,
-      auth_required: config.auth_required !== false
+      password: config.password,
+      encryption: config.encryption || config.security || 'tls',
+      auth_required: config.auth_required !== false && config.use_auth !== false,
+      // Ensure backward compatibility
+      security: config.security || config.encryption || 'tls',
+      use_auth: config.use_auth !== false && config.auth_required !== false
+    };
+
+    console.log('📧 Calling SMTP edge function with enhanced config:', {
+      host: smtpConfig.host,
+      port: smtpConfig.port,
+      username: smtpConfig.username,
+      encryption: smtpConfig.encryption,
+      auth_required: smtpConfig.auth_required
     });
 
     const { data, error } = await supabase.functions.invoke('send-smtp-email', {
       body: {
-        config: {
-          host: config.host,
-          port: config.port,
-          username: config.username,
-          password: config.password,
-          encryption: config.encryption || config.security || 'tls',
-          auth_required: config.auth_required !== false
-        },
+        config: smtpConfig,
         emailData: emailData
       }
     });
@@ -107,16 +113,21 @@ export async function testSMTPConnection(config: SMTPConfig): Promise<{ success:
     
     console.log('🔍 Calling SMTP test edge function');
 
+    // Enhanced configuration for testing
+    const testConfig = {
+      host: config.host,
+      port: config.port,
+      username: config.username,
+      password: config.password,
+      encryption: config.encryption || config.security || 'tls',
+      auth_required: config.auth_required !== false && config.use_auth !== false,
+      security: config.security || config.encryption || 'tls',
+      use_auth: config.use_auth !== false && config.auth_required !== false
+    };
+
     const { data, error } = await supabase.functions.invoke('smtp-test', {
       body: {
-        config: {
-          host: config.host,
-          port: config.port,
-          username: config.username,
-          password: config.password,
-          encryption: config.encryption || config.security || 'tls',
-          auth_required: config.auth_required !== false
-        }
+        config: testConfig
       }
     });
 

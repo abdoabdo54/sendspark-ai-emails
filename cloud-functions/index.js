@@ -21,7 +21,7 @@ function createUltraFastTransporter(account) {
         hasPassword: !!config.password
       });
 
-      // Determine security settings
+      // Determine security settings properly
       let secure = false;
       let requireTLS = false;
       
@@ -31,41 +31,53 @@ function createUltraFastTransporter(account) {
         requireTLS = true;
       }
 
+      // Check if authentication is required
+      const useAuth = config.use_auth !== false && config.auth_required !== false;
+
       const transporterConfig = {
         host: config.host,
-        port: config.port || 587,
+        port: parseInt(config.port) || 587,
         secure: secure,
         requireTLS: requireTLS,
-        auth: config.use_auth !== false ? {
+        auth: useAuth ? {
           user: config.username || config.user,
           pass: config.password || config.pass
         } : undefined,
-        // Enhanced connection settings
+        // Enhanced connection settings for better reliability
         pool: true,
-        maxConnections: 20,
+        maxConnections: 5,
         maxMessages: 100,
-        rateDelta: 0,
-        rateLimit: false,
+        rateDelta: 1000,
+        rateLimit: 10,
         connectionTimeout: 60000,
         greetingTimeout: 30000,
         socketTimeout: 60000,
         logger: true,
-        debug: true,
-        // Handle TLS issues
+        debug: false,
+        // Handle TLS issues gracefully
         tls: {
           rejectUnauthorized: false,
           ciphers: 'SSLv3'
-        },
-        // Ignore certificate errors for testing
-        ignoreTLS: false
+        }
       };
 
-      console.log(`🔧 SMTP Config for ${account.name}:`, {
+      console.log(`🔧 Final SMTP Config for ${account.name}:`, {
         ...transporterConfig,
-        auth: transporterConfig.auth ? { user: transporterConfig.auth.user, pass: '***' } : undefined
+        auth: transporterConfig.auth ? { user: transporterConfig.auth.user, pass: '***' } : 'disabled'
       });
 
-      return nodemailer.createTransporter(transporterConfig);
+      const transporter = nodemailer.createTransporter(transporterConfig);
+      
+      // Test the transporter configuration
+      transporter.verify((error, success) => {
+        if (error) {
+          console.error(`❌ SMTP verification failed for ${account.name}:`, error.message);
+        } else {
+          console.log(`✅ SMTP server ready for ${account.name}`);
+        }
+      });
+
+      return transporter;
     } catch (error) {
       console.error(`❌ Failed to create SMTP transporter for ${account.name}:`, error.message);
       return null;
@@ -79,13 +91,8 @@ async function sendViaUltraFastSMTP(transporter, emailData, accountName) {
   try {
     console.log(`📧 SMTP: Attempting to send email to ${emailData.to} via ${accountName}`);
     
-    // Verify transporter first
-    try {
-      await transporter.verify();
-      console.log(`✅ SMTP transporter verified for ${accountName}`);
-    } catch (verifyError) {
-      console.error(`❌ SMTP verification failed for ${accountName}:`, verifyError.message);
-      return { success: false, error: `SMTP verification failed: ${verifyError.message}` };
+    if (!transporter) {
+      throw new Error('SMTP transporter is not available');
     }
 
     const mailOptions = {
@@ -96,7 +103,7 @@ async function sendViaUltraFastSMTP(transporter, emailData, accountName) {
       text: emailData.text || emailData.html?.replace(/<[^>]*>/g, '') || ''
     };
 
-    console.log(`📧 SMTP Mail Options:`, {
+    console.log(`📧 SMTP Mail Options for ${accountName}:`, {
       from: mailOptions.from,
       to: mailOptions.to,
       subject: mailOptions.subject,
@@ -105,7 +112,7 @@ async function sendViaUltraFastSMTP(transporter, emailData, accountName) {
     });
 
     const info = await transporter.sendMail(mailOptions);
-    console.log(`✅ SMTP Success for ${emailData.to}:`, {
+    console.log(`✅ SMTP Success for ${emailData.to} via ${accountName}:`, {
       messageId: info.messageId,
       response: info.response,
       accepted: info.accepted,
