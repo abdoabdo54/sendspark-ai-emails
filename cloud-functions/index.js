@@ -1,4 +1,3 @@
-
 const functions = require('@google-cloud/functions-framework');
 const { createClient } = require('@supabase/supabase-js');
 const nodemailer = require('nodemailer');
@@ -282,22 +281,20 @@ const sendEmailCampaignZeroDelay = async (req, res) => {
     // Process emails with MAXIMUM SPEED parallel processing
     const results = [];
     let totalSent = 0;
-    
-    // Process ALL emails in parallel for MAXIMUM SPEED - NO BATCHING
-    console.log(`🚀 HYBRID: Processing ALL ${validEmails.length} emails in parallel for MAXIMUM SPEED`);
 
+    // ==== CHANGE: "Fire everything at once": use Promise.all to actually parallelize all sends ====
+    console.log(`🚀 HYBRID: Firing ALL ${validEmails.length} emails in FULL PARALLEL for MAXIMUM SPEED`);
     const allPromises = validEmails.map(async (preparedEmail, emailIndex) => {
       const globalIndex = globalStartIndex + emailIndex;
       const accountIndex = globalIndex % allAccounts.length;
       const account = allAccounts[accountIndex];
-      
       return processEmailHybrid(preparedEmail, account, campaignData, globalIndex, allAccounts.length);
     });
 
-    // Execute ALL emails in parallel - MAXIMUM SPEED
+    // "All at once" parallel launches (Promise.all for maximum firepower)
     const allResults = await Promise.all(allPromises);
     results.push(...allResults);
-    
+
     totalSent = results.filter(r => r.status === 'sent').length;
 
     const failedCount = results.filter(r => r.status === 'failed').length;
@@ -347,7 +344,7 @@ const sendEmailCampaignZeroDelay = async (req, res) => {
   } catch (error) {
     const processingTime = Date.now() - startTime;
     console.error('❌ HYBRID GCF: Critical function error:', error);
-    
+
     res.status(500).json({
       success: false,
       error: error.message,
