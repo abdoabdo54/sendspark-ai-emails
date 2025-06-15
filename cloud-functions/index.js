@@ -1,3 +1,4 @@
+
 const functions = require('@google-cloud/functions-framework');
 const { createClient } = require('@supabase/supabase-js');
 const nodemailer = require('nodemailer');
@@ -7,44 +8,80 @@ const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const supabase = createClient(supabaseUrl, supabaseKey);
 
-// Simple SMTP transporter creation - back to basics
+// Enhanced SMTP transporter configuration with proper error handling
 function createUltraFastTransporter(account) {
   if (account.type === 'smtp') {
     const config = account.config || {};
-    
-    console.log(`🔧 Creating SMTP transporter for ${account.name} with config:`, {
-      host: config.host,
-      port: config.port,
-      user: config.user || config.username,
-      secure: config.secure,
-      hasPassword: !!(config.pass || config.password)
-    });
-
-    // Handle both old and new config formats
-    const smtpConfig = {
-      host: config.host,
-      port: parseInt(config.port) || 587,
-      secure: config.secure || config.port === 465,
-      auth: {
-        user: config.user || config.username,
-        pass: config.pass || config.password
-      }
-    };
-
-    // Basic validation
-    if (!smtpConfig.host) {
-      console.error(`❌ Missing SMTP host for ${account.name}`);
-      return null;
-    }
-    
-    if (!smtpConfig.auth.user || !smtpConfig.auth.pass) {
-      console.error(`❌ Missing SMTP credentials for ${account.name}`);
-      return null;
-    }
-
     try {
-      const transporter = nodemailer.createTransporter(smtpConfig);
-      console.log(`✅ SMTP transporter created for ${account.name}`);
+      console.log(`🔧 Creating SMTP transporter for ${account.name}:`, {
+        host: config.host,
+        port: config.port,
+        secure: config.port === 465,
+        encryption: config.security || config.encryption,
+        username: config.username,
+        hasPassword: !!config.password
+      });
+
+      // Normalize configuration fields - this is crucial for compatibility
+      const normalizedConfig = {
+        host: config.host,
+        port: parseInt(config.port) || 587,
+        username: config.username || config.user,
+        password: config.password || config.pass,
+        encryption: config.security || config.encryption || 'tls',
+        auth_required: config.use_auth !== false && config.auth_required !== false
+      };
+
+      // Validate required fields
+      if (!normalizedConfig.host) {
+        throw new Error('SMTP host is required');
+      }
+      if (normalizedConfig.auth_required && (!normalizedConfig.username || !normalizedConfig.password)) {
+        throw new Error('SMTP username and password are required when authentication is enabled');
+      }
+
+      // Determine security settings properly
+      let secure = false;
+      let requireTLS = false;
+      
+      if (normalizedConfig.port === 465 || normalizedConfig.encryption === 'ssl') {
+        secure = true;
+      } else if (normalizedConfig.port === 587 || normalizedConfig.encryption === 'tls') {
+        requireTLS = true;
+      }
+
+      const transporterConfig = {
+        host: normalizedConfig.host,
+        port: normalizedConfig.port,
+        secure: secure,
+        requireTLS: requireTLS,
+        auth: normalizedConfig.auth_required ? {
+          user: normalizedConfig.username,
+          pass: normalizedConfig.password
+        } : false,
+        // Enhanced connection settings for better reliability
+        pool: false, // Disable pooling for better error tracking
+        maxConnections: 1,
+        connectionTimeout: 60000,
+        greetingTimeout: 30000,
+        socketTimeout: 60000,
+        logger: false, // Disable nodemailer logger to reduce noise
+        debug: false,
+        // Handle TLS issues gracefully
+        tls: {
+          rejectUnauthorized: false,
+          ciphers: 'SSLv3'
+        }
+      };
+
+      console.log(`🔧 Final SMTP Config for ${account.name}:`, {
+        ...transporterConfig,
+        auth: transporterConfig.auth ? { user: transporterConfig.auth.user, pass: '***' } : 'disabled'
+      });
+
+      const transporter = nodemailer.createTransporter(transporterConfig);
+      
+      console.log(`✅ SMTP transporter created successfully for ${account.name}`);
       return transporter;
     } catch (error) {
       console.error(`❌ Failed to create SMTP transporter for ${account.name}:`, error.message);
@@ -54,11 +91,24 @@ function createUltraFastTransporter(account) {
   return null;
 }
 
-// Simple SMTP sending function
+// Enhanced SMTP sending with comprehensive error handling
 async function sendViaUltraFastSMTP(transporter, emailData, accountName) {
   try {
-    console.log(`📧 SMTP: Sending email to ${emailData.to} via ${accountName}`);
+    console.log(`📧 SMTP: Attempting to send email to ${emailData.to} via ${accountName}`);
     
+    if (!transporter) {
+      throw new Error('SMTP transporter is not available');
+    }
+
+    // Verify the transporter before sending
+    try {
+      await transporter.verify();
+      console.log(`✅ SMTP transporter verification successful for ${accountName}`);
+    } catch (verifyError) {
+      console.error(`❌ SMTP transporter verification failed for ${accountName}:`, verifyError.message);
+      throw new Error(`SMTP verification failed: ${verifyError.message}`);
+    }
+
     const mailOptions = {
       from: `"${emailData.fromName}" <${emailData.fromEmail}>`,
       to: emailData.to,
@@ -67,19 +117,46 @@ async function sendViaUltraFastSMTP(transporter, emailData, accountName) {
       text: emailData.text || emailData.html?.replace(/<[^>]*>/g, '') || ''
     };
 
+    console.log(`📧 SMTP Mail Options for ${accountName}:`, {
+      from: mailOptions.from,
+      to: mailOptions.to,
+      subject: mailOptions.subject,
+      hasHtml: !!mailOptions.html,
+      hasText: !!mailOptions.text
+    });
+
     const info = await transporter.sendMail(mailOptions);
-    console.log(`✅ SMTP Success for ${emailData.to} via ${accountName}:`, info.messageId);
+    console.log(`✅ SMTP Success for ${emailData.to} via ${accountName}:`, {
+      messageId: info.messageId,
+      response: info.response,
+      accepted: info.accepted,
+      rejected: info.rejected
+    });
 
     return { 
       success: true, 
       messageId: info.messageId,
-      response: info.response
+      response: info.response,
+      accepted: info.accepted,
+      rejected: info.rejected
     };
   } catch (error) {
-    console.error(`❌ SMTP Error for ${emailData.to} via ${accountName}:`, error.message);
+    console.error(`❌ SMTP Error for ${emailData.to} via ${accountName}:`, {
+      message: error.message,
+      code: error.code,
+      command: error.command,
+      response: error.response,
+      responseCode: error.responseCode
+    });
+    
     return { 
       success: false, 
-      error: error.message
+      error: `${error.code || 'SMTP_ERROR'}: ${error.message}`,
+      details: {
+        code: error.code,
+        command: error.command,
+        response: error.response
+      }
     };
   }
 }
@@ -173,6 +250,17 @@ async function processEmailHybrid(preparedEmail, account, campaignData, globalIn
     let result;
 
     if (account.type === 'smtp') {
+      console.log(`🔧 SMTP: Creating and testing transporter for ${account.name}`);
+      
+      // Add detailed configuration logging
+      console.log(`🔧 SMTP Account Config for ${account.name}:`, {
+        host: account.config?.host,
+        port: account.config?.port,
+        username: account.config?.username,
+        encryption: account.config?.security || account.config?.encryption,
+        auth_required: account.config?.use_auth !== false && account.config?.auth_required !== false
+      });
+      
       const transporter = createUltraFastTransporter(account);
       
       if (!transporter) {
@@ -180,18 +268,34 @@ async function processEmailHybrid(preparedEmail, account, campaignData, globalIn
         return {
           recipient: preparedEmail.to,
           status: 'failed',
-          error: 'Failed to create SMTP transporter',
+          error: 'Failed to create SMTP transporter - check SMTP configuration',
           accountName: account.name,
           accountType: account.type,
           timestamp: new Date().toISOString()
         };
       }
 
-      result = await sendViaUltraFastSMTP(transporter, emailData, account.name);
-      
-      // Close transporter
-      if (transporter && typeof transporter.close === 'function') {
-        transporter.close();
+      try {
+        console.log(`🔍 SMTP: Testing connection for ${account.name} before sending`);
+        result = await sendViaUltraFastSMTP(transporter, emailData, account.name);
+        console.log(`📧 SMTP Result for ${preparedEmail.to}:`, result);
+      } catch (smtpError) {
+        console.error(`❌ SMTP: Fatal error for ${account.name}:`, smtpError.message);
+        result = { 
+          success: false, 
+          error: `SMTP fatal error: ${smtpError.message}`,
+          details: { stack: smtpError.stack }
+        };
+      } finally {
+        // Always close transporter
+        try {
+          if (transporter && typeof transporter.close === 'function') {
+            transporter.close();
+            console.log(`🔧 SMTP: Transporter closed for ${account.name}`);
+          }
+        } catch (closeError) {
+          console.warn(`⚠️ SMTP: Error closing transporter for ${account.name}:`, closeError.message);
+        }
       }
     } else if (account.type === 'apps-script') {
       result = await sendViaAppsScript(account, emailData);
@@ -316,7 +420,7 @@ const sendEmailCampaignZeroDelay = async (req, res) => {
         message: "Enhanced Hybrid function is healthy and ready",
         functionIndex: parseInt(functionIndex) || 0,
         timestamp: new Date().toISOString(),
-        version: "6.2.0-fixed",
+        version: "6.1.0-enhanced",
         capabilities: ["smtp", "apps-script", "parallel-processing", "enhanced-error-handling"],
         memoryUsage: process.memoryUsage(),
         uptime: process.uptime()
@@ -504,7 +608,7 @@ const sendEmailCampaignZeroDelay = async (req, res) => {
       emailsPerSecond,
       parallelMode: true,
       ultraFastMode: true,
-      version: "6.2.0-fixed",
+      version: "6.1.0-enhanced",
       breakdown: {
         smtp: { sent: smtpSent, failed: smtpFailed },
         appsScript: { sent: appsScriptSent, failed: appsScriptFailed }
@@ -548,7 +652,7 @@ const sendEmailCampaignZeroDelay = async (req, res) => {
       processingTimeMs: processingTime,
       functionIndex: parseInt(functionIndex) || 0,
       parallelMode: true,
-      version: "6.2.0-fixed",
+      version: "6.1.0-enhanced",
       errorDetails: {
         name: error.name,
         message: error.message,
