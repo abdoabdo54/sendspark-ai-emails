@@ -22,27 +22,42 @@ function createUltraFastTransporter(account) {
         hasPassword: !!config.password
       });
 
+      // Normalize configuration fields - this is crucial for compatibility
+      const normalizedConfig = {
+        host: config.host,
+        port: parseInt(config.port) || 587,
+        username: config.username || config.user,
+        password: config.password || config.pass,
+        encryption: config.security || config.encryption || 'tls',
+        auth_required: config.use_auth !== false && config.auth_required !== false
+      };
+
+      // Validate required fields
+      if (!normalizedConfig.host) {
+        throw new Error('SMTP host is required');
+      }
+      if (normalizedConfig.auth_required && (!normalizedConfig.username || !normalizedConfig.password)) {
+        throw new Error('SMTP username and password are required when authentication is enabled');
+      }
+
       // Determine security settings properly
       let secure = false;
       let requireTLS = false;
       
-      if (config.port === 465 || config.security === 'ssl' || config.encryption === 'ssl') {
+      if (normalizedConfig.port === 465 || normalizedConfig.encryption === 'ssl') {
         secure = true;
-      } else if (config.port === 587 || config.security === 'tls' || config.encryption === 'tls') {
+      } else if (normalizedConfig.port === 587 || normalizedConfig.encryption === 'tls') {
         requireTLS = true;
       }
 
-      // Check if authentication is required - fix the logic here
-      const useAuth = config.use_auth !== false && config.auth_required !== false && config.username && config.password;
-
       const transporterConfig = {
-        host: config.host,
-        port: parseInt(config.port) || 587,
+        host: normalizedConfig.host,
+        port: normalizedConfig.port,
         secure: secure,
         requireTLS: requireTLS,
-        auth: useAuth ? {
-          user: config.username || config.user,
-          pass: config.password || config.pass
+        auth: normalizedConfig.auth_required ? {
+          user: normalizedConfig.username,
+          pass: normalizedConfig.password
         } : false,
         // Enhanced connection settings for better reliability
         pool: false, // Disable pooling for better error tracking
@@ -236,6 +251,16 @@ async function processEmailHybrid(preparedEmail, account, campaignData, globalIn
 
     if (account.type === 'smtp') {
       console.log(`🔧 SMTP: Creating and testing transporter for ${account.name}`);
+      
+      // Add detailed configuration logging
+      console.log(`🔧 SMTP Account Config for ${account.name}:`, {
+        host: account.config?.host,
+        port: account.config?.port,
+        username: account.config?.username,
+        encryption: account.config?.security || account.config?.encryption,
+        auth_required: account.config?.use_auth !== false && account.config?.auth_required !== false
+      });
+      
       const transporter = createUltraFastTransporter(account);
       
       if (!transporter) {
