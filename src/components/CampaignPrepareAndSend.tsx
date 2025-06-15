@@ -9,6 +9,7 @@ import { Eye, Send, Rocket, Loader2, Zap } from "lucide-react";
 import { useClientCampaignPreparation } from "@/hooks/useClientCampaignPreparation";
 import { useCampaignSender } from "@/hooks/useCampaignSender";
 import { supabase } from "@/integrations/supabase/client";
+import CampaignSendMethodSelector from "./CampaignSendMethodSelector";
 
 interface CampaignPrepareAndSendProps {
   campaignId: string;
@@ -22,6 +23,7 @@ const CampaignPrepareAndSend: React.FC<CampaignPrepareAndSendProps> = ({ campaig
   const [sending, setSending] = useState(false);
   const [sendResults, setSendResults] = useState<any>(null);
   const [sendMethod, setSendMethod] = useState<'cloud_functions' | 'powermta'>('cloud_functions');
+  const [selectedPowerMTAServer, setSelectedPowerMTAServer] = useState<string>('');
 
   const { prepareCampaignClientSide, isProcessing, progress } = useClientCampaignPreparation();
   const { sendCampaign, isSending, progress: sendProgress } = useCampaignSender(campaign?.organization_id);
@@ -32,7 +34,7 @@ const CampaignPrepareAndSend: React.FC<CampaignPrepareAndSendProps> = ({ campaig
       setLoading(true);
       const { data, error } = await supabase
         .from("email_campaigns")
-        .select("id, subject, status, organization_id, prepared_emails, total_recipients, html_content, text_content, from_name")
+        .select("id, subject, status, organization_id, prepared_emails, total_recipients, html_content, text_content, from_name, config")
         .eq("id", campaignId)
         .single();
       if (error) {
@@ -40,6 +42,14 @@ const CampaignPrepareAndSend: React.FC<CampaignPrepareAndSendProps> = ({ campaig
       } else {
         setCampaign(data);
         setPreparationDone(data.status === "prepared" || data.status === "sent");
+        
+        // Load previous send method from campaign config if available
+        if (data.config?.sendMethod) {
+          setSendMethod(data.config.sendMethod);
+        }
+        if (data.config?.selectedPowerMTAServer) {
+          setSelectedPowerMTAServer(data.config.selectedPowerMTAServer);
+        }
       }
       setLoading(false);
     }
@@ -96,8 +106,44 @@ const CampaignPrepareAndSend: React.FC<CampaignPrepareAndSendProps> = ({ campaig
   };
 
   const handleSendViaPowerMTA = async () => {
-    toast.info('PowerMTA integration coming soon! Please use Cloud Functions for now.');
-    // PowerMTA functionality will be implemented after database migration
+    if (!selectedPowerMTAServer) {
+      toast.error('Please select a PowerMTA server');
+      return;
+    }
+
+    setSending(true);
+    setSendResults(null);
+    
+    try {
+      // Call the PowerMTA push function
+      const { data, error } = await supabase.functions.invoke('push-to-powermta', {
+        body: {
+          campaign_id: campaignId,
+          powermta_server_id: selectedPowerMTAServer,
+          campaign_data: campaign
+        }
+      });
+
+      if (error) throw error;
+
+      setSendResults({
+        success: true,
+        totalEmails: campaign.total_recipients,
+        queueId: data.queueId,
+        message: data.message
+      });
+      
+      toast.success(`🚀 Campaign pushed to PowerMTA! Queue ID: ${data.queueId}`);
+      await refresh();
+    } catch (e: any) {
+      toast.error(e?.message || "Failed to push campaign to PowerMTA.");
+      setSendResults({
+        success: false,
+        error: e?.message || "Failed to push to PowerMTA"
+      });
+    } finally {
+      setSending(false);
+    }
   };
 
   if (loading) {
@@ -176,33 +222,20 @@ const CampaignPrepareAndSend: React.FC<CampaignPrepareAndSendProps> = ({ campaig
                 </AlertDescription>
               </Alert>
               
-              {/* Send Method Selection */}
-              <div className="space-y-3">
-                <label className="text-sm font-medium">Choose Sending Method:</label>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <Button
-                    variant={sendMethod === 'cloud_functions' ? 'default' : 'outline'}
-                    onClick={() => setSendMethod('cloud_functions')}
-                    className="w-full"
-                  >
-                    Cloud Functions (Direct)
-                  </Button>
-                  <Button
-                    variant={sendMethod === 'powermta' ? 'default' : 'outline'}
-                    onClick={() => setSendMethod('powermta')}
-                    className="w-full"
-                  >
-                    PowerMTA Server (Coming Soon)
-                  </Button>
-                </div>
-              </div>
+              {/* Send Method Selection with PowerMTA server selection */}
+              <CampaignSendMethodSelector
+                selectedMethod={sendMethod}
+                onMethodChange={setSendMethod}
+                selectedPowerMTAServer={selectedPowerMTAServer}
+                onPowerMTAServerChange={setSelectedPowerMTAServer}
+              />
               
               {/* Send Button */}
               <Button
                 size="lg"
                 variant="default"
                 onClick={sendMethod === 'cloud_functions' ? handleSend : handleSendViaPowerMTA}
-                disabled={sending || isSending || campaign.status === "sent"}
+                disabled={sending || isSending || campaign.status === "sent" || (sendMethod === 'powermta' && !selectedPowerMTAServer)}
                 className="w-full bg-red-600 hover:bg-red-700 text-white"
               >
                 {(sending || isSending) ? (
@@ -227,18 +260,28 @@ const CampaignPrepareAndSend: React.FC<CampaignPrepareAndSendProps> = ({ campaig
               )}
 
               {sendResults && (
-                <Alert className="border-green-200 bg-green-50">
+                <Alert className={sendResults.success ? "border-green-200 bg-green-50" : "border-red-200 bg-red-50"}>
                   <AlertDescription>
                     {sendResults.success ? (
                       <>
-                        <strong>🚀 Send Results:</strong><br/>
-                        • Emails sent: {sendResults.totalEmails}<br/>
-                        • Duration: {sendResults.actualDuration}ms<br/>
-                        • Speed: {Math.round(sendResults.totalEmails / (sendResults.actualDuration / 1000))} emails/second
+                        <strong>🚀 {sendMethod === 'cloud_functions' ? 'Send' : 'PowerMTA Push'} Results:</strong><br/>
+                        • Emails {sendMethod === 'cloud_functions' ? 'sent' : 'queued'}: {sendResults.totalEmails}<br/>
+                        {sendResults.actualDuration && (
+                          <>
+                            • Duration: {sendResults.actualDuration}ms<br/>
+                            • Speed: {Math.round(sendResults.totalEmails / (sendResults.actualDuration / 1000))} emails/second<br/>
+                          </>
+                        )}
+                        {sendResults.queueId && (
+                          <>• PowerMTA Queue ID: {sendResults.queueId}<br/></>
+                        )}
+                        {sendResults.message && (
+                          <>• Message: {sendResults.message}</>
+                        )}
                       </>
                     ) : (
                       <>
-                        <strong>❌ Send Failed:</strong><br/>
+                        <strong>❌ {sendMethod === 'cloud_functions' ? 'Send' : 'PowerMTA Push'} Failed:</strong><br/>
                         Error: {sendResults.error}
                       </>
                     )}

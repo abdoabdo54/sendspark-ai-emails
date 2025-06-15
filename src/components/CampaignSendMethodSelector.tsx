@@ -4,18 +4,28 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Cloud, Server } from 'lucide-react';
+import { useSimpleOrganizations } from '@/contexts/SimpleOrganizationContext';
+import { usePowerMTAServers } from '@/hooks/usePowerMTAServers';
 
 interface CampaignSendMethodSelectorProps {
   selectedMethod: 'cloud_functions' | 'powermta';
   onMethodChange: (method: 'cloud_functions' | 'powermta') => void;
-  powerMTAAvailable?: boolean;
+  selectedPowerMTAServer?: string;
+  onPowerMTAServerChange?: (serverId: string) => void;
 }
 
 const CampaignSendMethodSelector: React.FC<CampaignSendMethodSelectorProps> = ({
   selectedMethod,
   onMethodChange,
-  powerMTAAvailable = false
+  selectedPowerMTAServer,
+  onPowerMTAServerChange
 }) => {
+  const { currentOrganization } = useSimpleOrganizations();
+  const { servers } = usePowerMTAServers(currentOrganization?.id);
+  
+  const activeServers = servers.filter(server => server.is_active);
+  const powerMTAAvailable = activeServers.length > 0;
+
   return (
     <Card>
       <CardHeader>
@@ -45,12 +55,32 @@ const CampaignSendMethodSelector: React.FC<CampaignSendMethodSelectorProps> = ({
             <div className="text-center">
               <div className="font-medium flex items-center gap-1">
                 PowerMTA Server
-                {!powerMTAAvailable && <Badge variant="secondary" className="text-xs">Soon</Badge>}
+                {!powerMTAAvailable && <Badge variant="secondary" className="text-xs">Setup Required</Badge>}
               </div>
               <div className="text-xs opacity-70">Bridge server for distributed sending</div>
             </div>
           </Button>
         </div>
+
+        {selectedMethod === 'powermta' && powerMTAAvailable && onPowerMTAServerChange && (
+          <div className="mt-4">
+            <label className="text-sm font-medium mb-2 block">Select PowerMTA Server:</label>
+            <div className="space-y-2">
+              {activeServers.map((server) => (
+                <Button
+                  key={server.id}
+                  variant={selectedPowerMTAServer === server.id ? 'default' : 'outline'}
+                  onClick={() => onPowerMTAServerChange(server.id)}
+                  className="w-full justify-start"
+                  size="sm"
+                >
+                  <Server className="w-4 h-4 mr-2" />
+                  {server.name} ({server.server_host})
+                </Button>
+              ))}
+            </div>
+          </div>
+        )}
         
         <div className="text-xs text-gray-600">
           {selectedMethod === 'cloud_functions' && (
@@ -59,7 +89,7 @@ const CampaignSendMethodSelector: React.FC<CampaignSendMethodSelectorProps> = ({
           {selectedMethod === 'powermta' && (
             powerMTAAvailable 
               ? "Campaigns will be pushed to PowerMTA server for distributed sending"
-              : "PowerMTA integration will be available after database setup"
+              : "Please add and configure PowerMTA servers in Settings → PowerMTA Servers"
           )}
         </div>
       </CardContent>

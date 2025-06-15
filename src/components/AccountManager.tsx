@@ -18,7 +18,7 @@ const AccountManager = () => {
   const [formData, setFormData] = useState({
     name: '',
     email: '',
-    type: 'smtp' as 'smtp' | 'apps-script' | 'powermta',
+    type: 'smtp' as 'smtp' | 'apps-script',
     config: {
       host: '',
       port: 587,
@@ -198,14 +198,13 @@ const AccountManager = () => {
 
               <div>
                 <Label htmlFor="type">Account Type</Label>
-                <Select value={formData.type} onValueChange={(value: 'smtp' | 'apps-script' | 'powermta') => setFormData(prev => ({ ...prev, type: value }))}>
+                <Select value={formData.type} onValueChange={(value: 'smtp' | 'apps-script') => setFormData(prev => ({ ...prev, type: value }))}>
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="smtp">SMTP</SelectItem>
                     <SelectItem value="apps-script">Google Apps Script</SelectItem>
-                    <SelectItem value="powermta">PowerMTA</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

@@ -16,6 +16,7 @@ import CampaignSendMethodSelector from './CampaignSendMethodSelector';
 import { useSimpleOrganizations } from '@/contexts/SimpleOrganizationContext';
 import { useEmailAccounts } from '@/hooks/useEmailAccounts';
 import { useGcfFunctions } from '@/hooks/useGcfFunctions';
+import { usePowerMTAServers } from '@/hooks/usePowerMTAServers';
 
 interface BulkEmailComposerProps {
   onSend: (campaignData: any) => void;
@@ -25,6 +26,7 @@ const BulkEmailComposer: React.FC<BulkEmailComposerProps> = ({ onSend }) => {
   const { currentOrganization } = useSimpleOrganizations();
   const { accounts } = useEmailAccounts(currentOrganization?.id);
   const { functions } = useGcfFunctions(currentOrganization?.id);
+  const { servers } = usePowerMTAServers(currentOrganization?.id);
   
   const [fromName, setFromName] = useState('');
   const [subject, setSubject] = useState('');
@@ -33,10 +35,11 @@ const BulkEmailComposer: React.FC<BulkEmailComposerProps> = ({ onSend }) => {
   const [textContent, setTextContent] = useState('');
   const [selectedAccounts, setSelectedAccounts] = useState<string[]>([]);
   const [sendMethod, setSendMethod] = useState<'cloud_functions' | 'powermta'>('cloud_functions');
+  const [selectedPowerMTAServer, setSelectedPowerMTAServer] = useState<string>('');
   const [sending, setSending] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
 
-  // Advanced configuration state
+  // Advanced configuration state - preserving all existing features
   const [sendingMode, setSendingMode] = useState<'controlled' | 'fast' | 'zero-delay'>('controlled');
   const [useTestAfter, setUseTestAfter] = useState(false);
   const [testAfterEmail, setTestAfterEmail] = useState('');
@@ -48,8 +51,17 @@ const BulkEmailComposer: React.FC<BulkEmailComposerProps> = ({ onSend }) => {
   const recipientCount = recipients.split('\n').filter(email => email.trim()).length;
   const activeAccounts = accounts.filter(account => account.is_active);
   const enabledFunctions = functions.filter(func => func.enabled);
+  const activeServers = servers.filter(server => server.is_active);
   const hasAccounts = activeAccounts.length > 0;
   const hasFunctions = enabledFunctions.length > 0;
+  const hasPowerMTAServers = activeServers.length > 0;
+
+  // Auto-select first PowerMTA server when switching to PowerMTA method
+  useEffect(() => {
+    if (sendMethod === 'powermta' && activeServers.length > 0 && !selectedPowerMTAServer) {
+      setSelectedPowerMTAServer(activeServers[0].id);
+    }
+  }, [sendMethod, activeServers, selectedPowerMTAServer]);
 
   // Calculate estimated time based on mode and recipient count
   const getEstimatedTime = () => {
@@ -89,6 +101,11 @@ const BulkEmailComposer: React.FC<BulkEmailComposerProps> = ({ onSend }) => {
       return;
     }
 
+    if (sendMethod === 'powermta' && !selectedPowerMTAServer) {
+      toast.error('Please select a PowerMTA server');
+      return;
+    }
+
     setSending(true);
     
     try {
@@ -102,6 +119,7 @@ const BulkEmailComposer: React.FC<BulkEmailComposerProps> = ({ onSend }) => {
         config: {
           selectedAccounts,
           sendMethod,
+          selectedPowerMTAServer: sendMethod === 'powermta' ? selectedPowerMTAServer : null,
           sendingMode,
           useTestAfter,
           testAfterEmail,
@@ -121,6 +139,7 @@ const BulkEmailComposer: React.FC<BulkEmailComposerProps> = ({ onSend }) => {
       setHtmlContent('');
       setTextContent('');
       setSelectedAccounts([]);
+      setSelectedPowerMTAServer('');
     } catch (error) {
       console.error('Campaign creation failed:', error);
     } finally {
@@ -180,11 +199,12 @@ const BulkEmailComposer: React.FC<BulkEmailComposerProps> = ({ onSend }) => {
 
           <Separator />
 
-          {/* Send Method Selection */}
+          {/* Send Method Selection - Enhanced with PowerMTA server selection */}
           <CampaignSendMethodSelector
             selectedMethod={sendMethod}
             onMethodChange={setSendMethod}
-            powerMTAAvailable={false}
+            selectedPowerMTAServer={selectedPowerMTAServer}
+            onPowerMTAServerChange={setSelectedPowerMTAServer}
           />
 
           <Separator />
@@ -236,7 +256,7 @@ const BulkEmailComposer: React.FC<BulkEmailComposerProps> = ({ onSend }) => {
             </div>
           </div>
 
-          {/* Advanced Configuration */}
+          {/* Advanced Configuration - Preserving all existing features */}
           {showAdvanced && (
             <>
               <Separator />
@@ -268,7 +288,7 @@ const BulkEmailComposer: React.FC<BulkEmailComposerProps> = ({ onSend }) => {
           <div className="flex justify-end">
             <Button
               onClick={handleSend}
-              disabled={sending || !fromName || !subject || !recipients || selectedAccounts.length === 0}
+              disabled={sending || !fromName || !subject || !recipients || selectedAccounts.length === 0 || (sendMethod === 'powermta' && !selectedPowerMTAServer)}
               size="lg"
               className="min-w-[200px]"
             >
@@ -289,6 +309,9 @@ const BulkEmailComposer: React.FC<BulkEmailComposerProps> = ({ onSend }) => {
           <Alert>
             <AlertDescription>
               <strong>Note:</strong> This will create a campaign draft. Go to Campaign History to prepare and send your campaign.
+              {sendMethod === 'powermta' && selectedPowerMTAServer && (
+                <><br/><strong>PowerMTA:</strong> Campaign will be queued to the selected PowerMTA server for distribution.</>
+              )}
             </AlertDescription>
           </Alert>
         </CardContent>
