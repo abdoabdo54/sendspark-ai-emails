@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -13,6 +14,8 @@ import AdvancedConfigurationPanel from './AdvancedConfigurationPanel';
 import CompactAccountSelector from './CompactAccountSelector';
 import CampaignSendMethodSelector from './CampaignSendMethodSelector';
 import { useSimpleOrganizations } from '@/contexts/SimpleOrganizationContext';
+import { useEmailAccounts } from '@/hooks/useEmailAccounts';
+import { useGcfFunctions } from '@/hooks/useGcfFunctions';
 
 interface BulkEmailComposerProps {
   onSend: (campaignData: any) => void;
@@ -20,6 +23,9 @@ interface BulkEmailComposerProps {
 
 const BulkEmailComposer: React.FC<BulkEmailComposerProps> = ({ onSend }) => {
   const { currentOrganization } = useSimpleOrganizations();
+  const { accounts } = useEmailAccounts(currentOrganization?.id);
+  const { functions } = useGcfFunctions(currentOrganization?.id);
+  
   const [fromName, setFromName] = useState('');
   const [subject, setSubject] = useState('');
   const [recipients, setRecipients] = useState('');
@@ -27,11 +33,50 @@ const BulkEmailComposer: React.FC<BulkEmailComposerProps> = ({ onSend }) => {
   const [textContent, setTextContent] = useState('');
   const [selectedAccounts, setSelectedAccounts] = useState<string[]>([]);
   const [sendMethod, setSendMethod] = useState<'cloud_functions' | 'powermta'>('cloud_functions');
-  const [advancedConfig, setAdvancedConfig] = useState<any>({});
   const [sending, setSending] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
 
+  // Advanced configuration state
+  const [sendingMode, setSendingMode] = useState<'controlled' | 'fast' | 'zero-delay'>('controlled');
+  const [useTestAfter, setUseTestAfter] = useState(false);
+  const [testAfterEmail, setTestAfterEmail] = useState('');
+  const [testAfterCount, setTestAfterCount] = useState(10);
+  const [trackingEnabled, setTrackingEnabled] = useState(true);
+  const [useFromRotation, setUseFromRotation] = useState(false);
+  const [useSubjectRotation, setUseSubjectRotation] = useState(false);
+
   const recipientCount = recipients.split('\n').filter(email => email.trim()).length;
+  const activeAccounts = accounts.filter(account => account.is_active);
+  const enabledFunctions = functions.filter(func => func.enabled);
+  const hasAccounts = activeAccounts.length > 0;
+  const hasFunctions = enabledFunctions.length > 0;
+
+  // Calculate estimated time based on mode and recipient count
+  const getEstimatedTime = () => {
+    if (recipientCount === 0) return '';
+    
+    const delays = {
+      'controlled': 2000,
+      'fast': 500,
+      'zero-delay': 0
+    };
+    
+    const totalTime = recipientCount * delays[sendingMode];
+    if (totalTime < 60000) {
+      return `${Math.round(totalTime / 1000)}s`;
+    } else {
+      return `${Math.round(totalTime / 60000)}m`;
+    }
+  };
+
+  const handleSelectAll = () => {
+    const allAccountIds = activeAccounts.map(account => account.id);
+    setSelectedAccounts(allAccountIds);
+  };
+
+  const handleDeselectAll = () => {
+    setSelectedAccounts([]);
+  };
 
   const handleSend = async () => {
     if (!fromName || !subject || !recipients) {
@@ -55,9 +100,15 @@ const BulkEmailComposer: React.FC<BulkEmailComposerProps> = ({ onSend }) => {
         text_content: textContent,
         send_method: sendMethod,
         config: {
-          ...advancedConfig,
           selectedAccounts,
-          sendMethod
+          sendMethod,
+          sendingMode,
+          useTestAfter,
+          testAfterEmail,
+          testAfterCount,
+          trackingEnabled,
+          useFromRotation,
+          useSubjectRotation
         }
       };
 
@@ -69,6 +120,7 @@ const BulkEmailComposer: React.FC<BulkEmailComposerProps> = ({ onSend }) => {
       setRecipients('');
       setHtmlContent('');
       setTextContent('');
+      setSelectedAccounts([]);
     } catch (error) {
       console.error('Campaign creation failed:', error);
     } finally {
@@ -141,6 +193,8 @@ const BulkEmailComposer: React.FC<BulkEmailComposerProps> = ({ onSend }) => {
           <CompactAccountSelector
             selectedAccounts={selectedAccounts}
             onAccountsChange={setSelectedAccounts}
+            onSelectAll={handleSelectAll}
+            onDeselectAll={handleDeselectAll}
           />
 
           <Separator />
@@ -187,8 +241,23 @@ const BulkEmailComposer: React.FC<BulkEmailComposerProps> = ({ onSend }) => {
             <>
               <Separator />
               <AdvancedConfigurationPanel
-                config={advancedConfig}
-                onConfigChange={setAdvancedConfig}
+                sendingMode={sendingMode}
+                onSendingModeChange={setSendingMode}
+                useTestAfter={useTestAfter}
+                onUseTestAfterChange={setUseTestAfter}
+                testAfterEmail={testAfterEmail}
+                onTestAfterEmailChange={setTestAfterEmail}
+                testAfterCount={testAfterCount}
+                onTestAfterCountChange={setTestAfterCount}
+                trackingEnabled={trackingEnabled}
+                onTrackingEnabledChange={setTrackingEnabled}
+                useFromRotation={useFromRotation}
+                onUseFromRotationChange={setUseFromRotation}
+                useSubjectRotation={useSubjectRotation}
+                onUseSubjectRotationChange={setUseSubjectRotation}
+                hasAccounts={hasAccounts}
+                hasFunctions={hasFunctions}
+                estimatedTime={getEstimatedTime()}
               />
             </>
           )}
