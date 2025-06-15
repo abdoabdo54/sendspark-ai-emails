@@ -39,7 +39,7 @@ const BulkEmailComposer: React.FC<BulkEmailComposerProps> = ({ onSend }) => {
   const [sending, setSending] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
 
-  // Advanced configuration state - preserving all existing features
+  // Advanced configuration state - ALL original features restored
   const [sendingMode, setSendingMode] = useState<'controlled' | 'fast' | 'zero-delay'>('controlled');
   const [useTestAfter, setUseTestAfter] = useState(false);
   const [testAfterEmail, setTestAfterEmail] = useState('');
@@ -47,6 +47,17 @@ const BulkEmailComposer: React.FC<BulkEmailComposerProps> = ({ onSend }) => {
   const [trackingEnabled, setTrackingEnabled] = useState(true);
   const [useFromRotation, setUseFromRotation] = useState(false);
   const [useSubjectRotation, setUseSubjectRotation] = useState(false);
+
+  // Smart Config features - RESTORED
+  const [smartConfigEnabled, setSmartConfigEnabled] = useState(false);
+  const [delayBetweenEmails, setDelayBetweenEmails] = useState(2000);
+  const [batchSize, setBatchSize] = useState(50);
+  const [autoRetryFailed, setAutoRetryFailed] = useState(true);
+  const [maxRetries, setMaxRetries] = useState(3);
+
+  // Subject and From rotation - RESTORED
+  const [subjectVariations, setSubjectVariations] = useState<string[]>([]);
+  const [fromNameVariations, setFromNameVariations] = useState<string[]>([]);
 
   const recipientCount = recipients.split('\n').filter(email => email.trim()).length;
   const activeAccounts = accounts.filter(account => account.is_active);
@@ -63,12 +74,24 @@ const BulkEmailComposer: React.FC<BulkEmailComposerProps> = ({ onSend }) => {
     }
   }, [sendMethod, activeServers, selectedPowerMTAServer]);
 
+  // Handle subject variations
+  const handleSubjectVariationsChange = (value: string) => {
+    const variations = value.split('\n').filter(line => line.trim());
+    setSubjectVariations(variations);
+  };
+
+  // Handle from name variations
+  const handleFromNameVariationsChange = (value: string) => {
+    const variations = value.split('\n').filter(line => line.trim());
+    setFromNameVariations(variations);
+  };
+
   // Calculate estimated time based on mode and recipient count
   const getEstimatedTime = () => {
     if (recipientCount === 0) return '';
     
     const delays = {
-      'controlled': 2000,
+      'controlled': smartConfigEnabled ? delayBetweenEmails : 2000,
       'fast': 500,
       'zero-delay': 0
     };
@@ -106,6 +129,17 @@ const BulkEmailComposer: React.FC<BulkEmailComposerProps> = ({ onSend }) => {
       return;
     }
 
+    // Validate rotation settings
+    if (useFromRotation && fromNameVariations.length === 0) {
+      toast.error('Please add from name variations or disable from rotation');
+      return;
+    }
+
+    if (useSubjectRotation && subjectVariations.length === 0) {
+      toast.error('Please add subject variations or disable subject rotation');
+      return;
+    }
+
     setSending(true);
     
     try {
@@ -117,16 +151,35 @@ const BulkEmailComposer: React.FC<BulkEmailComposerProps> = ({ onSend }) => {
         text_content: textContent,
         send_method: sendMethod,
         config: {
+          // Account selection
           selectedAccounts,
+          
+          // Send method configuration
           sendMethod,
           selectedPowerMTAServer: sendMethod === 'powermta' ? selectedPowerMTAServer : null,
+          
+          // Advanced sending configuration
           sendingMode,
           useTestAfter,
           testAfterEmail,
           testAfterCount,
           trackingEnabled,
+          
+          // Rotation settings - RESTORED
           useFromRotation,
-          useSubjectRotation
+          useSubjectRotation,
+          fromNameVariations: useFromRotation ? fromNameVariations : [],
+          subjectVariations: useSubjectRotation ? subjectVariations : [],
+          
+          // Smart config - RESTORED
+          smartConfigEnabled,
+          delayBetweenEmails: smartConfigEnabled ? delayBetweenEmails : 2000,
+          batchSize: smartConfigEnabled ? batchSize : 50,
+          autoRetryFailed,
+          maxRetries,
+          
+          // Performance settings
+          estimatedTime: getEstimatedTime()
         }
       };
 
@@ -140,6 +193,8 @@ const BulkEmailComposer: React.FC<BulkEmailComposerProps> = ({ onSend }) => {
       setTextContent('');
       setSelectedAccounts([]);
       setSelectedPowerMTAServer('');
+      setSubjectVariations([]);
+      setFromNameVariations([]);
     } catch (error) {
       console.error('Campaign creation failed:', error);
     } finally {
@@ -199,7 +254,7 @@ const BulkEmailComposer: React.FC<BulkEmailComposerProps> = ({ onSend }) => {
 
           <Separator />
 
-          {/* Send Method Selection - Enhanced with PowerMTA server selection */}
+          {/* Send Method Selection */}
           <CampaignSendMethodSelector
             selectedMethod={sendMethod}
             onMethodChange={setSendMethod}
@@ -256,10 +311,124 @@ const BulkEmailComposer: React.FC<BulkEmailComposerProps> = ({ onSend }) => {
             </div>
           </div>
 
-          {/* Advanced Configuration - Preserving all existing features */}
+          {/* Advanced Configuration - ALL FEATURES RESTORED */}
           {showAdvanced && (
             <>
               <Separator />
+              
+              {/* Rotation Configuration - RESTORED */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-sm">Content Rotation</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <Label>From Name Rotation</Label>
+                        <input
+                          type="checkbox"
+                          checked={useFromRotation}
+                          onChange={(e) => setUseFromRotation(e.target.checked)}
+                          className="rounded"
+                        />
+                      </div>
+                      {useFromRotation && (
+                        <Textarea
+                          placeholder="Enter from name variations (one per line)"
+                          value={fromNameVariations.join('\n')}
+                          onChange={(e) => handleFromNameVariationsChange(e.target.value)}
+                          rows={3}
+                        />
+                      )}
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <Label>Subject Rotation</Label>
+                        <input
+                          type="checkbox"
+                          checked={useSubjectRotation}
+                          onChange={(e) => setUseSubjectRotation(e.target.checked)}
+                          className="rounded"
+                        />
+                      </div>
+                      {useSubjectRotation && (
+                        <Textarea
+                          placeholder="Enter subject variations (one per line)"
+                          value={subjectVariations.join('\n')}
+                          onChange={(e) => handleSubjectVariationsChange(e.target.value)}
+                          rows={3}
+                        />
+                      )}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Smart Config - RESTORED */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-sm">Smart Configuration</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <Label>Enable Smart Config</Label>
+                    <input
+                      type="checkbox"
+                      checked={smartConfigEnabled}
+                      onChange={(e) => setSmartConfigEnabled(e.target.checked)}
+                      className="rounded"
+                    />
+                  </div>
+                  
+                  {smartConfigEnabled && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <Label>Delay Between Emails (ms)</Label>
+                        <Input
+                          type="number"
+                          value={delayBetweenEmails}
+                          onChange={(e) => setDelayBetweenEmails(parseInt(e.target.value) || 2000)}
+                          min="100"
+                          max="30000"
+                        />
+                      </div>
+                      <div>
+                        <Label>Batch Size</Label>
+                        <Input
+                          type="number"
+                          value={batchSize}
+                          onChange={(e) => setBatchSize(parseInt(e.target.value) || 50)}
+                          min="1"
+                          max="1000"
+                        />
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <Label>Auto Retry Failed</Label>
+                        <input
+                          type="checkbox"
+                          checked={autoRetryFailed}
+                          onChange={(e) => setAutoRetryFailed(e.target.checked)}
+                          className="rounded"
+                        />
+                      </div>
+                      <div>
+                        <Label>Max Retries</Label>
+                        <Input
+                          type="number"
+                          value={maxRetries}
+                          onChange={(e) => setMaxRetries(parseInt(e.target.value) || 3)}
+                          min="1"
+                          max="10"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Standard Advanced Configuration */}
               <AdvancedConfigurationPanel
                 sendingMode={sendingMode}
                 onSendingModeChange={setSendingMode}
@@ -311,6 +480,12 @@ const BulkEmailComposer: React.FC<BulkEmailComposerProps> = ({ onSend }) => {
               <strong>Note:</strong> This will create a campaign draft. Go to Campaign History to prepare and send your campaign.
               {sendMethod === 'powermta' && selectedPowerMTAServer && (
                 <><br/><strong>PowerMTA:</strong> Campaign will be queued to the selected PowerMTA server for distribution.</>
+              )}
+              {(useFromRotation || useSubjectRotation) && (
+                <><br/><strong>Rotation:</strong> Content will be rotated during campaign preparation.</>
+              )}
+              {smartConfigEnabled && (
+                <><br/><strong>Smart Config:</strong> Advanced timing and retry settings will be applied.</>
               )}
             </AlertDescription>
           </Alert>
