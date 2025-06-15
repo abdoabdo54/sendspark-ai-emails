@@ -1,3 +1,4 @@
+
 import { useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useEmailAccounts } from './useEmailAccounts';
@@ -37,19 +38,30 @@ export const useCampaignSender = (organizationId?: string) => {
         console.log(`🔄 Attempt ${attempt}/${maxRetries} for ${url}`);
         
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 45000); // Increased to 45 seconds
+        const timeoutId = setTimeout(() => controller.abort(), 120000); // Increased to 2 minutes
         
         const startTime = Date.now();
         const response = await fetch(url, {
           ...options,
-          signal: controller.signal
+          signal: controller.signal,
+          // Add explicit headers to help with CORS
+          headers: {
+            ...options.headers,
+            'Accept': 'application/json',
+            'Cache-Control': 'no-cache'
+          }
         });
         
         clearTimeout(timeoutId);
         const duration = Date.now() - startTime;
         
         if (!response.ok) {
-          const errorText = await response.text();
+          let errorText;
+          try {
+            errorText = await response.text();
+          } catch {
+            errorText = `HTTP ${response.status}`;
+          }
           console.error(`❌ HTTP Error ${response.status} for ${url} after ${duration}ms:`, errorText);
           throw new Error(`HTTP ${response.status}: ${errorText}`);
         }
@@ -59,11 +71,12 @@ export const useCampaignSender = (organizationId?: string) => {
         
       } catch (error: any) {
         lastError = error;
-        const errorType = error.name === 'AbortError' ? 'TIMEOUT' : 'NETWORK';
+        const errorType = error.name === 'AbortError' ? 'TIMEOUT' : 
+                         error.name === 'TypeError' && error.message.includes('fetch') ? 'NETWORK/CORS' : 'NETWORK';
         console.error(`❌ Attempt ${attempt} failed for ${url} (${errorType}):`, error.message);
         
         if (attempt < maxRetries) {
-          const delay = Math.min(1000 * Math.pow(2, attempt - 1), 5000); // Exponential backoff, max 5s
+          const delay = Math.min(2000 * Math.pow(2, attempt - 1), 10000); // Exponential backoff, max 10s
           console.log(`⏳ Waiting ${delay}ms before retry ${attempt + 1}`);
           await new Promise(resolve => setTimeout(resolve, delay));
         }
@@ -81,10 +94,11 @@ export const useCampaignSender = (organizationId?: string) => {
         method: "POST",
         headers: { 
           "Content-Type": "application/json",
-          "Accept": "application/json"
+          "Accept": "application/json",
+          "Cache-Control": "no-cache"
         },
         body: JSON.stringify({ test: true, ping: "health-check" }),
-        signal: AbortSignal.timeout ? AbortSignal.timeout(10000) : undefined // 10 second timeout
+        signal: AbortSignal.timeout ? AbortSignal.timeout(15000) : undefined // 15 second timeout
       });
       
       if (!response.ok) {
@@ -119,7 +133,7 @@ export const useCampaignSender = (organizationId?: string) => {
       // Use already loaded functions from useGcfFunctions hook
       const enabledFunctions = functions.filter(f => f.enabled);
       if (enabledFunctions.length === 0) {
-        throw new Error('No enabled Google Cloud Functions found');
+        throw new Error('No enabled Google Cloud Functions found. Please add and enable at least one function in Function Manager.');
       }
 
       console.log(`🔍 Health checking ${enabledFunctions.length} functions...`);
@@ -144,8 +158,8 @@ export const useCampaignSender = (organizationId?: string) => {
           `• Function not deployed or not public\n` +
           `• Wrong Function URL in database\n` +
           `• Function not allowing CORS or POST requests\n` +
-          `• Firewall or region issues\n` +
-          `• Function memory/timeout limits exceeded`
+          `• Function timeout or memory limit exceeded\n` +
+          `• Network connectivity issues`
         );
       }
       
@@ -192,7 +206,6 @@ export const useCampaignSender = (organizationId?: string) => {
         throw new Error('No active accounts selected for sending.');
       }
 
-      // (Do NOT redeclare enabledFunctions again here! Use the above variable)
       if (enabledFunctions.length === 0) {
         throw new Error('No enabled Google Cloud Functions found');
       }
@@ -298,12 +311,11 @@ export const useCampaignSender = (organizationId?: string) => {
             method: 'POST',
             headers: { 
               'Content-Type': 'application/json',
-              'Keep-Alive': 'timeout=300, max=1000',
-              'Cache-Control': 'no-cache',
               'X-Parallel-Mode': 'true',
               'X-Function-Index': index.toString(),
               'X-Total-Functions': enabledFunctions.length.toString(),
-              'Accept': 'application/json'
+              'Accept': 'application/json',
+              'Cache-Control': 'no-cache'
             },
             body: JSON.stringify(payload)
           });
@@ -387,8 +399,8 @@ TROUBLESHOOTING STEPS:
 1. Check Cloud Function logs in Google Cloud Console
 2. Verify function URLs in Function Manager
 3. Ensure functions allow unauthenticated requests
-4. Check function memory/timeout settings
-5. Verify CORS configuration
+4. Check function memory/timeout settings (increase to 2GB RAM, 300s timeout)
+5. Verify CORS configuration and network connectivity
         `;
         throw new Error(`No emails were sent. ${diagnostics}`);
       }

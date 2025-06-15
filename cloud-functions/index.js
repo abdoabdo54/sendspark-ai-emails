@@ -13,7 +13,7 @@ function createUltraFastTransporter(account) {
   if (account.type === 'smtp') {
     const config = account.config || {};
     try {
-      return nodemailer.createTransport({
+      return nodemailer.createTransporter({
         host: config.host,
         port: config.port || 587,
         secure: config.port === 465,
@@ -23,23 +23,17 @@ function createUltraFastTransporter(account) {
         },
         // MAXIMUM SPEED SETTINGS - NO LIMITS
         pool: true,
-        maxConnections: 200, // Increased even more
+        maxConnections: 500, // Increased connections
         maxMessages: Infinity, // No message limit
         rateDelta: 0, // No rate limiting
         rateLimit: false, // Disable rate limiting completely
-        connectionTimeout: 180000, // 3 minutes
-        greetingTimeout: 90000, // 1.5 minutes
-        socketTimeout: 180000, // 3 minutes
-        // Additional speed optimizations
-        disableFileAccess: true,
-        disableUrlAccess: true,
-        keepAlive: true,
-        // Remove any delays
+        connectionTimeout: 60000, // Reduced timeout
+        greetingTimeout: 30000,
+        socketTimeout: 60000,
         sendTimeout: 0,
         idleTimeout: 0,
-        // Disable all authentication checks that could slow down
-        ignoreTLS: false,
-        requireTLS: false
+        keepAlive: true,
+        concurrentConnections: 100 // More concurrent connections
       });
     } catch (error) {
       console.error(`❌ Failed to create SMTP transporter for ${account.name}:`, error.message);
@@ -204,11 +198,19 @@ async function processEmailHybrid(preparedEmail, account, campaignData, globalIn
 
 // Enhanced main function handler with comprehensive error handling and logging
 const sendEmailCampaignZeroDelay = async (req, res) => {
-  // Enhanced CORS headers
-  res.set('Access-Control-Allow-Origin', '*');
-  res.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS, PUT, DELETE');
-  res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Parallel-Mode, X-Function-Index, X-Total-Functions');
-  res.set('Access-Control-Max-Age', '3600');
+  // Enhanced CORS headers - this fixes the main issue
+  const corsHeaders = {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS, PUT, DELETE',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Parallel-Mode, X-Function-Index, X-Total-Functions, Accept, Cache-Control',
+    'Access-Control-Max-Age': '3600',
+    'Access-Control-Allow-Credentials': 'false'
+  };
+
+  // Set all CORS headers
+  Object.entries(corsHeaders).forEach(([key, value]) => {
+    res.set(key, value);
+  });
 
   if (req.method === 'OPTIONS') {
     res.status(204).send('');
