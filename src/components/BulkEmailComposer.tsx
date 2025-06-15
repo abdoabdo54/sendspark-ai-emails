@@ -9,7 +9,7 @@ import { Separator } from '@/components/ui/separator';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
-import { Send, Loader2, Settings, Zap, Server, Cloud, Target } from 'lucide-react';
+import { Send, Loader2, Settings, Zap, Server, Cloud, Target, Upload, TestTube } from 'lucide-react';
 import CompactAccountSelector from './CompactAccountSelector';
 import { useSimpleOrganizations } from '@/contexts/SimpleOrganizationContext';
 import { useEmailAccounts } from '@/hooks/useEmailAccounts';
@@ -35,14 +35,9 @@ const BulkEmailComposer: React.FC<BulkEmailComposerProps> = ({ onSend }) => {
   const [selectedAccounts, setSelectedAccounts] = useState<string[]>([]);
   const [sending, setSending] = useState(false);
 
-  // Dispatch Method - NEW ADDITION
+  // Dispatch Method
   const [dispatchMethod, setDispatchMethod] = useState<'cloud_functions' | 'powermta'>('cloud_functions');
   const [selectedPowerMTAServer, setSelectedPowerMTAServer] = useState<string>('');
-
-  // Smart Configuration Engine
-  const [smartConfigEnabled, setSmartConfigEnabled] = useState(false);
-  const [delayBetweenEmails, setDelayBetweenEmails] = useState(2000);
-  const [batchSize, setBatchSize] = useState(50);
 
   // Sending Configuration
   const [sendingMode, setSendingMode] = useState<'controlled' | 'fast' | 'zero-delay'>('controlled');
@@ -58,8 +53,6 @@ const BulkEmailComposer: React.FC<BulkEmailComposerProps> = ({ onSend }) => {
   const [testAfterEmail, setTestAfterEmail] = useState('');
   const [testAfterCount, setTestAfterCount] = useState(10);
   const [trackingEnabled, setTrackingEnabled] = useState(true);
-  const [autoRetryFailed, setAutoRetryFailed] = useState(true);
-  const [maxRetries, setMaxRetries] = useState(3);
 
   const recipientCount = recipients.split('\n').filter(email => email.trim()).length;
   const activeAccounts = accounts.filter(account => account.is_active);
@@ -89,7 +82,7 @@ const BulkEmailComposer: React.FC<BulkEmailComposerProps> = ({ onSend }) => {
     if (recipientCount === 0) return '';
     
     const delays = {
-      'controlled': smartConfigEnabled ? delayBetweenEmails : 2000,
+      'controlled': 2000,
       'fast': 500,
       'zero-delay': 0
     };
@@ -155,11 +148,6 @@ const BulkEmailComposer: React.FC<BulkEmailComposerProps> = ({ onSend }) => {
           useSubjectRotation,
           fromNameVariations: useFromRotation ? fromNameVariations : [],
           subjectVariations: useSubjectRotation ? subjectVariations : [],
-          smartConfigEnabled,
-          delayBetweenEmails: smartConfigEnabled ? delayBetweenEmails : 2000,
-          batchSize: smartConfigEnabled ? batchSize : 50,
-          autoRetryFailed,
-          maxRetries,
           sendingMode,
           useTestAfter,
           testAfterEmail,
@@ -204,49 +192,37 @@ const BulkEmailComposer: React.FC<BulkEmailComposerProps> = ({ onSend }) => {
           </CardTitle>
         </CardHeader>
         <CardContent className="p-6 space-y-6">
+          {/* Step Navigation */}
           <div className="grid grid-cols-3 gap-4">
             <Button variant="default" className="bg-blue-600 hover:bg-blue-700">
-              Email/List (5)
+              📧 Email/List ({recipientCount})
             </Button>
             <Button variant="outline">
-              Account (5)
+              👤 Account ({selectedAccounts.length})
             </Button>
             <Button variant="outline">
-              Send/Config
+              📤 Send/Config
             </Button>
           </div>
 
-          <div className="border rounded-lg p-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-              <div>
-                <Label>From Name *</Label>
-                <Input
-                  placeholder="Your Name"
-                  value={fromName}
-                  onChange={(e) => setFromName(e.target.value)}
-                />
-              </div>
-              <div>
-                <Label>Subject *</Label>
-                <Input
-                  placeholder="Email Subject"
-                  value={subject}
-                  onChange={(e) => setSubject(e.target.value)}
-                />
-              </div>
-            </div>
-
-            <div className="mb-4">
-              <Label>
-                Use Manual Configuration Override
-                {recipientCount > 0 && <Badge variant="secondary" className="ml-2">{recipientCount} recipients</Badge>}
-              </Label>
+          {/* Smart Configuration Engine */}
+          <div className="border rounded-lg p-4 bg-gray-50">
+            <div className="flex items-center space-x-2 mb-4">
+              <input
+                type="checkbox"
+                id="smartConfig"
+                checked={false}
+                onChange={() => {}}
+                className="w-4 h-4"
+              />
+              <Label htmlFor="smartConfig" className="font-medium">Use Manual Configuration Override</Label>
+              {recipientCount > 0 && <Badge variant="secondary">{recipientCount} recipients</Badge>}
             </div>
           </div>
         </CardContent>
       </Card>
 
-      {/* NEW: Dispatch Method */}
+      {/* Dispatch Method */}
       <Card>
         <CardHeader className="bg-orange-50 rounded-t-lg">
           <CardTitle className="flex items-center text-orange-900">
@@ -316,10 +292,11 @@ const BulkEmailComposer: React.FC<BulkEmailComposerProps> = ({ onSend }) => {
           </CardTitle>
         </CardHeader>
         <CardContent className="p-6">
-          <div className="grid grid-cols-3 gap-4 mb-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {/* Sending Mode */}
             <div>
-              <Label className="text-sm font-medium">Sending Mode</Label>
-              <div className="space-y-2 mt-2">
+              <Label className="text-sm font-medium mb-3 block">Sending Mode</Label>
+              <div className="space-y-3">
                 {[
                   { value: 'controlled', label: 'Controlled (2s delay)', icon: '🕒' },
                   { value: 'fast', label: 'Fast (0.5s delay)', icon: '⚡' },
@@ -343,9 +320,10 @@ const BulkEmailComposer: React.FC<BulkEmailComposerProps> = ({ onSend }) => {
               </div>
             </div>
 
+            {/* Dispatch Method */}
             <div>
-              <Label className="text-sm font-medium">Dispatch Method</Label>
-              <div className="space-y-2 mt-2">
+              <Label className="text-sm font-medium mb-3 block">Dispatch Method</Label>
+              <div className="space-y-3">
                 <div className="flex items-center space-x-2">
                   <input
                     type="radio"
@@ -353,7 +331,7 @@ const BulkEmailComposer: React.FC<BulkEmailComposerProps> = ({ onSend }) => {
                     onChange={() => setDispatchMethod('cloud_functions')}
                     className="w-4 h-4"
                   />
-                  <Label className="text-sm">Cloud Functions (recommended)</Label>
+                  <Label className="text-sm">☁️ Cloud Functions (recommended)</Label>
                 </div>
                 <div className="flex items-center space-x-2">
                   <input
@@ -362,27 +340,26 @@ const BulkEmailComposer: React.FC<BulkEmailComposerProps> = ({ onSend }) => {
                     onChange={() => setDispatchMethod('powermta')}
                     className="w-4 h-4"
                   />
-                  <Label className="text-sm">PowerMTA Server Bridge</Label>
+                  <Label className="text-sm">🖥️ PowerMTA Server Bridge</Label>
                 </div>
               </div>
             </div>
 
+            {/* Subject Rotation */}
             <div>
-              <Label className="text-sm font-medium">Subject Rotation</Label>
-              <div className="space-y-2 mt-2">
-                <Textarea
-                  placeholder="Subject line variations (one per line) - Rotates automaticlaly"
-                  value={subjectVariations.join('\n')}
-                  onChange={(e) => handleSubjectVariationsChange(e.target.value)}
-                  rows={3}
-                  className="text-sm"
-                />
-              </div>
+              <Label className="text-sm font-medium mb-3 block">Subject Rotation</Label>
+              <Textarea
+                placeholder="Subject line variations (one per line)&#10;Rotates automatically"
+                value={subjectVariations.join('\n')}
+                onChange={(e) => handleSubjectVariationsChange(e.target.value)}
+                rows={4}
+                className="text-sm"
+              />
             </div>
           </div>
 
           {recipientCount > 0 && (
-            <div className="bg-blue-50 p-3 rounded-lg">
+            <div className="bg-blue-50 p-3 rounded-lg mt-4">
               <p className="text-sm text-blue-800">
                 ⏱️ Estimated sending time: <strong>{getEstimatedTime()}</strong> for {recipientCount} recipients
               </p>
@@ -401,7 +378,7 @@ const BulkEmailComposer: React.FC<BulkEmailComposerProps> = ({ onSend }) => {
         </CardHeader>
         <CardContent className="p-6">
           <div className="mb-4">
-            <Label className="text-sm font-medium mb-2 block">Select accounts:</Label>
+            <Label className="text-sm font-medium mb-2 block">📧 Select accounts:</Label>
             <div className="flex gap-2">
               <Button variant="outline" size="sm" onClick={handleSelectAll}>
                 Select All
@@ -425,19 +402,22 @@ const BulkEmailComposer: React.FC<BulkEmailComposerProps> = ({ onSend }) => {
         <CardHeader className="bg-gray-50 rounded-t-lg">
           <CardTitle className="text-gray-900">Campaign Details</CardTitle>
         </CardHeader>
-        <CardContent className="p-6 space-y-4">
+        <CardContent className="p-6 space-y-6">
+          {/* Basic Fields */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <Label>From Name *</Label>
+              <Label htmlFor="fromName">From Name *</Label>
               <Input
+                id="fromName"
                 placeholder="Your Name"
                 value={fromName}
                 onChange={(e) => setFromName(e.target.value)}
               />
             </div>
             <div>
-              <Label>Subject *</Label>
+              <Label htmlFor="subject">Subject *</Label>
               <Input
+                id="subject"
                 placeholder="Your Subject"
                 value={subject}
                 onChange={(e) => setSubject(e.target.value)}
@@ -445,67 +425,86 @@ const BulkEmailComposer: React.FC<BulkEmailComposerProps> = ({ onSend }) => {
             </div>
           </div>
 
-          <div>
-            <Label>Recipient Rotation</Label>
-            <div className="flex items-center space-x-2 mt-2">
-              <input
-                type="checkbox"
-                checked={useFromRotation}
-                onChange={(e) => setUseFromRotation(e.target.checked)}
-                className="w-4 h-4"
-              />
-              <Label className="text-sm">Use automatic sender name rotation</Label>
+          {/* Rotation Options */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div>
+              <Label className="text-sm font-medium mb-3 block">Recipient Rotation</Label>
+              <div className="space-y-3">
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    id="useFromRotation"
+                    checked={useFromRotation}
+                    onChange={(e) => setUseFromRotation(e.target.checked)}
+                    className="w-4 h-4"
+                  />
+                  <Label htmlFor="useFromRotation" className="text-sm">🔄 Use automatic sender name rotation</Label>
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <Label className="text-sm font-medium mb-3 block">Subject Rotation</Label>
+              <div className="space-y-3">
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    id="useSubjectRotation"
+                    checked={useSubjectRotation}
+                    onChange={(e) => setUseSubjectRotation(e.target.checked)}
+                    className="w-4 h-4"
+                  />
+                  <Label htmlFor="useSubjectRotation" className="text-sm">📝 Rotate email subjects automatically</Label>
+                </div>
+              </div>
             </div>
           </div>
 
-          <div>
-            <Label>Subject Rotation</Label>
-            <div className="flex items-center space-x-2 mt-2">
-              <input
-                type="checkbox"
-                checked={useSubjectRotation}
-                onChange={(e) => setUseSubjectRotation(e.target.checked)}
-                className="w-4 h-4"
+          {/* From Name Rotation */}
+          {useFromRotation && (
+            <div>
+              <Label>From Name Rotation</Label>
+              <Textarea
+                placeholder="Enter from name variations (one per line)&#10;Example:&#10;John Smith&#10;John S.&#10;J. Smith"
+                value={fromNameVariations.join('\n')}
+                onChange={(e) => handleFromNameVariationsChange(e.target.value)}
+                rows={4}
               />
-              <Label className="text-sm">Rotate email subjects automatically</Label>
             </div>
-          </div>
+          )}
 
-          <div>
-            <Label>From Name Rotation</Label>
-            <Textarea
-              placeholder="Enter from name variations (one per line)"
-              value={fromNameVariations.join('\n')}
-              onChange={(e) => handleFromNameVariationsChange(e.target.value)}
-              rows={3}
-            />
-          </div>
-
+          {/* CSV Import */}
           <div>
             <Label>Import Recipients from CSV File</Label>
             <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
               <div className="mb-4">
                 <div className="w-12 h-12 mx-auto mb-4 bg-gray-100 rounded-lg flex items-center justify-center">
-                  📄
+                  <Upload className="w-6 h-6 text-gray-600" />
                 </div>
                 <p className="text-sm text-gray-600 mb-2">
-                  Upload a CSV file with recipient information, First row should contain headers, additional columns are supported
+                  Upload a CSV file with recipient information. First row should contain headers, additional columns are supported
                 </p>
                 <Button size="sm" className="bg-blue-600 hover:bg-blue-700">
-                  Choose CSV File
+                  📄 Choose CSV File
                 </Button>
               </div>
             </div>
           </div>
 
+          {/* Recipients */}
           <div>
-            <Label>Recipients</Label>
+            <Label>Recipients *</Label>
             <Textarea
-              placeholder="Enter email addresses (one per line or comma-separated)"
+              placeholder="Enter email addresses (one per line or comma-separated)&#10;example@domain.com&#10;test@company.com"
               value={recipients}
               onChange={(e) => setRecipients(e.target.value)}
-              rows={4}
+              rows={5}
             />
+            {recipientCount > 0 && (
+              <div className="mt-2">
+                <Badge variant="secondary">{recipientCount} recipients</Badge>
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -513,22 +512,23 @@ const BulkEmailComposer: React.FC<BulkEmailComposerProps> = ({ onSend }) => {
       {/* HTML Content */}
       <Card>
         <CardHeader className="bg-gray-50 rounded-t-lg">
-          <CardTitle className="text-gray-900">HTML Content</CardTitle>
+          <CardTitle className="text-gray-900">HTML Content *</CardTitle>
         </CardHeader>
         <CardContent className="p-6">
           <div className="mb-4">
             <div className="flex items-center space-x-2">
               <input
                 type="checkbox"
+                id="trackingEnabled"
                 checked={trackingEnabled}
                 onChange={(e) => setTrackingEnabled(e.target.checked)}
                 className="w-4 h-4"
               />
-              <Label className="text-sm">Enable click tracking, open tracking, and unsubscribe functionality for emails</Label>
+              <Label htmlFor="trackingEnabled" className="text-sm">📊 Enable click tracking, open tracking, and unsubscribe functionality for emails</Label>
             </div>
           </div>
           <Textarea
-            placeholder="<h1>HTML content here...</h1>"
+            placeholder="<h1>HTML content here...</h1>&#10;<p>Your email content goes here...</p>"
             value={htmlContent}
             onChange={(e) => setHtmlContent(e.target.value)}
             rows={12}
@@ -543,7 +543,7 @@ const BulkEmailComposer: React.FC<BulkEmailComposerProps> = ({ onSend }) => {
         </CardHeader>
         <CardContent className="p-6">
           <Textarea
-            placeholder="Your plain text email content here..."
+            placeholder="Your plain text email content here...&#10;This is optional but recommended for better deliverability."
             value={textContent}
             onChange={(e) => setTextContent(e.target.value)}
             rows={8}
@@ -551,22 +551,26 @@ const BulkEmailComposer: React.FC<BulkEmailComposerProps> = ({ onSend }) => {
         </CardContent>
       </Card>
 
-      {/* Send Test Email */}
+      {/* Send Test Email After X Emails Method */}
       <Card>
         <CardHeader className="bg-yellow-50 rounded-t-lg">
-          <CardTitle className="text-yellow-900">Send Test Email</CardTitle>
+          <CardTitle className="flex items-center text-yellow-900">
+            <TestTube className="w-5 h-5 mr-2" />
+            Send Test Email After X Emails Method
+          </CardTitle>
         </CardHeader>
         <CardContent className="p-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <div className="flex items-center space-x-2 mb-2">
+              <div className="flex items-center space-x-2 mb-3">
                 <input
                   type="checkbox"
+                  id="useTestAfter"
                   checked={useTestAfter}
                   onChange={(e) => setUseTestAfter(e.target.checked)}
                   className="w-4 h-4"
                 />
-                <Label className="text-sm font-medium">Test After X Emails</Label>
+                <Label htmlFor="useTestAfter" className="text-sm font-medium">Test After X Emails</Label>
               </div>
               <Input
                 placeholder="test@email.com"
@@ -576,7 +580,7 @@ const BulkEmailComposer: React.FC<BulkEmailComposerProps> = ({ onSend }) => {
               />
             </div>
             <div>
-              <Label className="text-sm font-medium">Send Every X Emails</Label>
+              <Label className="text-sm font-medium block mb-3">Send Every X Emails</Label>
               <Input
                 type="number"
                 placeholder="10"
@@ -589,12 +593,13 @@ const BulkEmailComposer: React.FC<BulkEmailComposerProps> = ({ onSend }) => {
         </CardContent>
       </Card>
 
-      {/* Test Campaign */}
+      {/* Draft Testing */}
       <Card className="border-yellow-300 bg-yellow-50">
         <CardContent className="p-6">
           <div className="flex items-center justify-between">
             <div>
-              <h3 className="font-medium text-yellow-900">⚠️ Test Campaign - Use Central Accounts</h3>
+              <h3 className="font-medium text-yellow-900">⚠️ Draft Testing - Use Central Accounts</h3>
+              <p className="text-sm text-yellow-700 mt-1">Test your campaign before sending to all recipients</p>
             </div>
             <Button variant="outline" className="border-yellow-400 text-yellow-800 hover:bg-yellow-100">
               🧪 Test Campaign
@@ -606,7 +611,7 @@ const BulkEmailComposer: React.FC<BulkEmailComposerProps> = ({ onSend }) => {
       {/* Create Campaign Button */}
       <div className="bg-gray-800 p-6 rounded-lg">
         <div className="text-center">
-          <p className="text-white mb-4">
+          <p className="text-white mb-4 text-lg">
             After creating, see <strong>Campaign History</strong> to prepare and send your email.
           </p>
           <Button
