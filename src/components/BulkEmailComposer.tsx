@@ -1,853 +1,227 @@
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Label } from '@/components/ui/label';
+import { Card, CardHeader, CardContent, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
-import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Switch } from '@/components/ui/switch';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Rocket, ExternalLink, Calculator, Mail, Eye, Zap, Clock, RotateCcw, Target, Plus } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
-import { useSimpleOrganizations } from '@/contexts/SimpleOrganizationContext';
-import { useCampaignSender } from '@/hooks/useCampaignSender';
-import { useEmailAccounts } from '@/hooks/useEmailAccounts';
-import { useGcfFunctions } from '@/hooks/useGcfFunctions';
-import { useNavigate } from 'react-router-dom';
-import CSVDataImporter from './CSVDataImporter';
-import GoogleSheetsImport from './GoogleSheetsImport';
-import AISubjectGenerator from './AISubjectGenerator';
+import { Send, Loader2, FileText, Users, Settings, Zap } from 'lucide-react';
+import AdvancedConfigurationPanel from './AdvancedConfigurationPanel';
 import CompactAccountSelector from './CompactAccountSelector';
+import CampaignSendMethodSelector from './CampaignSendMethodSelector';
+import { useSimpleOrganizations } from '@/contexts/SimpleOrganizationContext';
 
 interface BulkEmailComposerProps {
-  onSend: (data: any) => void;
+  onSend: (campaignData: any) => void;
 }
 
-const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
-  const navigate = useNavigate();
+const BulkEmailComposer: React.FC<BulkEmailComposerProps> = ({ onSend }) => {
   const { currentOrganization } = useSimpleOrganizations();
-  const { sendCampaign, isSending, progress } = useCampaignSender(currentOrganization?.id);
-  const { functions } = useGcfFunctions(currentOrganization?.id);
-  const { accounts } = useEmailAccounts(currentOrganization?.id);
-  
-  // Form state
   const [fromName, setFromName] = useState('');
   const [subject, setSubject] = useState('');
   const [recipients, setRecipients] = useState('');
   const [htmlContent, setHtmlContent] = useState('');
   const [textContent, setTextContent] = useState('');
-  
-  // Account selection state
   const [selectedAccounts, setSelectedAccounts] = useState<string[]>([]);
-  
-  // Sending configuration
-  const [sendingMode, setSendingMode] = useState<'controlled' | 'fast' | 'zero-delay'>('zero-delay');
-  const [dispatchMethod, setDispatchMethod] = useState<'parallel' | 'round-robin' | 'sequential'>('parallel');
-  
-  // Rotation configuration
-  const [useFromRotation, setUseFromRotation] = useState(false);
-  const [useSubjectRotation, setUseSubjectRotation] = useState(false);
-  const [fromNameVariations, setFromNameVariations] = useState('');
-  const [subjectVariations, setSubjectVariations] = useState('');
-  
-  // Test-After configuration
-  const [useTestAfter, setUseTestAfter] = useState(true);
-  const [testAfterEmail, setTestAfterEmail] = useState('');
-  const [testAfterCount, setTestAfterCount] = useState(500);
-  
-  // Other configuration
-  const [trackingEnabled, setTrackingEnabled] = useState(false);
-  const [htmlPreviewOpen, setHtmlPreviewOpen] = useState(false);
+  const [sendMethod, setSendMethod] = useState<'cloud_functions' | 'powermta'>('cloud_functions');
+  const [advancedConfig, setAdvancedConfig] = useState<any>({});
+  const [sending, setSending] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
-  // SmartConfig state - FIXED: Now properly working
-  const [smartConfig, setSmartConfig] = useState<any>(null);
-  const [useCustomConfig, setUseCustomConfig] = useState(false);
-  const [customFunctionCount, setCustomFunctionCount] = useState<number>(1);
-  const [customAccountCount, setCustomAccountCount] = useState<number>(1);
-  const [estimatedTime, setEstimatedTime] = useState('');
+  const recipientCount = recipients.split('\n').filter(email => email.trim()).length;
 
-  // Prevent double submission
-  const [isSubmitting, setIsSubmitting] = useState(false);
-
-  const recipientCount = recipients.split(',').filter(email => email.trim()).length;
-  const activeAccounts = accounts.filter(account => account.is_active);
-  const hasAccounts = selectedAccounts.length > 0;
-  const hasFunctions = functions.length > 0;
-
-  // Initialize custom config with available resources
-  useEffect(() => {
-    if (functions.length > 0 && customFunctionCount === 1) {
-      setCustomFunctionCount(Math.min(functions.length, 3));
-    }
-    if (selectedAccounts.length > 0 && customAccountCount === 1) {
-      setCustomAccountCount(Math.min(selectedAccounts.length, 2));
-    }
-  }, [functions.length, selectedAccounts.length]);
-
-  // Load SmartConfig on mount
-  useEffect(() => {
-    try {
-      const savedConfig = localStorage.getItem('smartConfig');
-      if (savedConfig) {
-        const config = JSON.parse(savedConfig);
-        setSmartConfig(config);
-        console.log('📊 SmartConfig loaded:', config);
-      }
-    } catch (error) {
-      console.error('Error loading smart config:', error);
-    }
-  }, []);
-
-  // Dynamic estimation calculation - FIXED: Now shows correct estimation
-  useEffect(() => {
-    if (recipientCount > 0) {
-      const functionsToUse = useCustomConfig ? customFunctionCount : functions.length;
-      const accountsToUse = useCustomConfig ? customAccountCount : selectedAccounts.length;
-      
-      if (functionsToUse > 0) {
-        const emailsPerFunction = Math.ceil(recipientCount / functionsToUse);
-        let estimatedSeconds;
-        let throughputPerSecond;
-        
-        switch (sendingMode) {
-          case 'zero-delay':
-            throughputPerSecond = 1000;
-            estimatedSeconds = Math.ceil(emailsPerFunction / throughputPerSecond);
-            break;
-          case 'fast':
-            throughputPerSecond = 200;
-            estimatedSeconds = Math.ceil(emailsPerFunction / throughputPerSecond);
-            break;
-          default:
-            throughputPerSecond = 50;
-            estimatedSeconds = Math.ceil(emailsPerFunction / throughputPerSecond);
-        }
-        
-        let timeDisplay;
-        if (estimatedSeconds < 60) {
-          timeDisplay = `${estimatedSeconds}s`;
-        } else if (estimatedSeconds < 3600) {
-          timeDisplay = `${Math.ceil(estimatedSeconds / 60)}m`;
-        } else {
-          timeDisplay = `${Math.ceil(estimatedSeconds / 3600)}h`;
-        }
-        
-        setEstimatedTime(`~${timeDisplay} (${functionsToUse} functions, ${accountsToUse} accounts, ${emailsPerFunction} emails/function)`);
-      } else {
-        setEstimatedTime('');
-      }
-    } else {
-      setEstimatedTime('');
-    }
-  }, [recipientCount, functions.length, selectedAccounts.length, sendingMode, useCustomConfig, customFunctionCount, customAccountCount]);
-
-  const handleCSVImport = (data: Array<{ [key: string]: any }>) => {
-    const emails = data.map(row => {
-      const emailField = Object.keys(row).find(key => 
-        key.toLowerCase().includes('email') || key.toLowerCase() === 'e-mail'
-      );
-      return emailField ? row[emailField] : null;
-    }).filter(email => email && email.trim());
-
-    const emailList = emails.join(', ');
-    setRecipients(emailList);
-    toast.success(`Imported ${emails.length} email addresses`);
-  };
-
-  const handleGoogleSheetsImport = (data: string[]) => {
-    const emailList = data.join(', ');
-    setRecipients(emailList);
-    toast.success(`Imported ${data.length} email addresses from Google Sheets`);
-  };
-
-  const handleSelectAllAccounts = () => {
-    console.log('🟢 Select All Accounts called - selecting all active accounts');
-    const allActiveIds = activeAccounts.map(account => account.id);
-    setSelectedAccounts(allActiveIds);
-  };
-
-  const handleDeselectAllAccounts = () => {
-    console.log('🔴 Deselect All Accounts called - clearing selection completely');
-    setSelectedAccounts([]);
-  };
-
-  const validateForm = () => {
-    if (!fromName.trim() && !useFromRotation) {
-      toast.error("From name is required or enable rotation with variations");
-      return false;
-    }
-
-    if (!subject.trim() && !useSubjectRotation) {
-      toast.error("Subject is required or enable rotation with variations");
-      return false;
-    }
-
-    if (useFromRotation && !fromNameVariations.trim()) {
-      toast.error("From name variations are required when rotation is enabled");
-      return false;
-    }
-
-    if (useSubjectRotation && !subjectVariations.trim()) {
-      toast.error("Subject variations are required when rotation is enabled");
-      return false;
-    }
-
-    if (!recipients.trim()) {
-      toast.error("Recipients are required");
-      return false;
-    }
-
-    if (!htmlContent.trim() && !textContent.trim()) {
-      toast.error("Email content is required");
-      return false;
-    }
-
-    if (!hasFunctions) {
-      toast.error("No Cloud Functions available. Please add functions in Function Manager.");
-      return false;
-    }
-
-    if (!hasAccounts) {
-      toast.error("Please select at least one email account.");
-      return false;
-    }
-
-    if (useTestAfter && !testAfterEmail.trim()) {
-      toast.error("Test-After email address is required when Test-After is enabled");
-      return false;
-    }
-
-    if (useCustomConfig && (customFunctionCount <= 0 || customAccountCount <= 0)) {
-      toast.error("Custom function and account counts must be greater than 0");
-      return false;
-    }
-
-    return true;
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    if (isSubmitting) {
-      console.log('🚫 Already submitting, preventing duplicate');
+  const handleSend = async () => {
+    if (!fromName || !subject || !recipients) {
+      toast.error('Please fill in all required fields');
       return;
     }
+
+    if (selectedAccounts.length === 0) {
+      toast.error('Please select at least one email account');
+      return;
+    }
+
+    setSending(true);
     
-    if (!validateForm()) return;
-
-    setIsSubmitting(true);
-
     try {
-      // Prepare recipients list with test-after emails included if enabled
-      let finalRecipients = recipients.split(',').map(email => email.trim()).filter(email => email);
-      
-      // Add test-after emails if enabled
-      if (useTestAfter && testAfterEmail.trim()) {
-        const testEmail = testAfterEmail.trim();
-        const newRecipientsList = [];
-        
-        for (let i = 0; i < finalRecipients.length; i++) {
-          newRecipientsList.push(finalRecipients[i]);
-          
-          // Add test email every testAfterCount emails
-          if ((i + 1) % testAfterCount === 0) {
-            newRecipientsList.push(testEmail);
-          }
-        }
-        
-        // If we didn't add a test email at the end and there are recipients
-        if (finalRecipients.length % testAfterCount !== 0 && finalRecipients.length > 0) {
-          newRecipientsList.push(testEmail);
-        }
-        
-        finalRecipients = newRecipientsList;
-        console.log(`📧 Test-After: Injected ${Math.ceil(finalRecipients.length / (testAfterCount + 1))} test emails`);
-      }
-
-      // FIXED: Use line-by-line format for rotation
-      const config = {
-        sendingMode,
-        dispatchMethod,
-        selectedAccounts: [...selectedAccounts],
-        useCustomConfig,
-        customFunctionCount: useCustomConfig ? customFunctionCount : functions.length,
-        customAccountCount: useCustomConfig ? customAccountCount : selectedAccounts.length,
-        rotation: {
-          useFromNameRotation: useFromRotation,
-          useSubjectRotation: useSubjectRotation,
-          // FIXED: Store as line-by-line format (string with \n separators)
-          fromNames: useFromRotation ? fromNameVariations : '',
-          subjects: useSubjectRotation ? subjectVariations : ''
-        },
-        testAfter: {
-          enabled: useTestAfter,
-          email: testAfterEmail,
-          count: testAfterCount
-        },
-        tracking: {
-          enabled: trackingEnabled,
-          trackOpens: trackingEnabled,
-          trackClicks: trackingEnabled
-        },
-        smartConfig
-      };
-
-      console.log('📝 CRITICAL: Creating campaign with config:', config);
-      console.log('📊 Functions to use:', config.customFunctionCount);
-      console.log('📧 Accounts to use:', config.customAccountCount);
-
       const campaignData = {
-        from_name: useFromRotation ? fromNameVariations.split('\n')[0].trim() : fromName,
-        subject: useSubjectRotation ? subjectVariations.split('\n')[0].trim() : subject,
-        recipients: finalRecipients.join(', '),
+        from_name: fromName,
+        subject,
+        recipients,
         html_content: htmlContent,
         text_content: textContent,
-        send_method: 'parallel_gcf',
-        config
+        send_method: sendMethod,
+        config: {
+          ...advancedConfig,
+          selectedAccounts,
+          sendMethod
+        }
       };
 
-      console.log('📝 Creating campaign (draft status) with data:', campaignData);
-      
-      // Call onSend which creates the campaign as draft - NO TOAST HERE TO AVOID DUPLICATES
       await onSend(campaignData);
-
-      // Clear form after successful creation
+      
+      // Reset form after successful creation
       setFromName('');
       setSubject('');
       setRecipients('');
       setHtmlContent('');
       setTextContent('');
-      setFromNameVariations('');
-      setSubjectVariations('');
-      setTestAfterEmail('');
-      setSelectedAccounts([]);
-
-    } catch (error: any) {
+    } catch (error) {
       console.error('Campaign creation failed:', error);
-      toast.error(`❌ Campaign Creation Failed: ${error.message || 'Unknown error occurred'}`);
     } finally {
-      setIsSubmitting(false);
+      setSending(false);
     }
   };
 
   return (
-    <div className="max-w-5xl mx-auto p-4 space-y-6">
+    <div className="max-w-4xl mx-auto p-6 space-y-6">
       <Card>
-        <CardHeader className="pb-4">
-          <CardTitle className="flex items-center gap-2 text-lg">
-            <Mail className="w-5 h-5" />
+        <CardHeader>
+          <CardTitle className="flex items-center">
+            <Send className="w-5 h-5 mr-2" />
             Create Email Campaign
           </CardTitle>
         </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-6">
-            {/* Quick Navigation */}
-            <div className="flex gap-2 flex-wrap">
-              <Button 
-                variant="outline" 
+        <CardContent className="space-y-6">
+          {/* Basic Campaign Info */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="from_name">From Name</Label>
+              <Input
+                id="from_name"
+                placeholder="Your Name"
+                value={fromName}
+                onChange={(e) => setFromName(e.target.value)}
+                required
+              />
+            </div>
+            <div>
+              <Label htmlFor="subject">Subject</Label>
+              <Input
+                id="subject"
+                placeholder="Your email subject"
+                value={subject}
+                onChange={(e) => setSubject(e.target.value)}
+                required
+              />
+            </div>
+          </div>
+
+          {/* Recipients */}
+          <div>
+            <Label htmlFor="recipients">
+              Recipients 
+              {recipientCount > 0 && <Badge variant="secondary" className="ml-2">{recipientCount} emails</Badge>}
+            </Label>
+            <Textarea
+              id="recipients"
+              placeholder="Enter email addresses (one per line or comma-separated)"
+              value={recipients}
+              onChange={(e) => setRecipients(e.target.value)}
+              rows={4}
+              required
+            />
+          </div>
+
+          <Separator />
+
+          {/* Send Method Selection */}
+          <CampaignSendMethodSelector
+            selectedMethod={sendMethod}
+            onMethodChange={setSendMethod}
+            powerMTAAvailable={false}
+          />
+
+          <Separator />
+
+          {/* Account Selection */}
+          <CompactAccountSelector
+            selectedAccounts={selectedAccounts}
+            onAccountsChange={setSelectedAccounts}
+          />
+
+          <Separator />
+
+          {/* Email Content */}
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <Label className="text-base font-medium">Email Content</Label>
+              <Button
+                variant="outline"
                 size="sm"
-                onClick={() => navigate('/function-manager')}
-                type="button"
+                onClick={() => setShowAdvanced(!showAdvanced)}
               >
-                <ExternalLink className="w-3 h-3 mr-1" />
-                Functions ({functions.length})
-              </Button>
-              <Button 
-                variant="outline" 
-                size="sm"
-                onClick={() => navigate('/settings')}
-                type="button"
-              >
-                <ExternalLink className="w-3 h-3 mr-1" />
-                Accounts ({activeAccounts.length})
-              </Button>
-              <Button 
-                variant="outline" 
-                size="sm"
-                onClick={() => navigate('/smart-config')}
-                type="button"
-              >
-                <Calculator className="w-3 h-3 mr-1" />
-                SmartConfig
+                <Settings className="w-4 h-4 mr-1" />
+                {showAdvanced ? 'Hide' : 'Show'} Advanced
               </Button>
             </div>
 
-            {/* UPGRADED SmartConfig Engine - FIXED */}
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-sm flex items-center gap-2">
-                  <Calculator className="w-4 h-4" />
-                  Smart Configuration Engine - FULLY UPGRADED ⚡
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <Label htmlFor="useCustomConfig">Use Manual Configuration Override</Label>
-                  <Switch
-                    id="useCustomConfig"
-                    checked={useCustomConfig}
-                    onCheckedChange={setUseCustomConfig}
-                  />
-                </div>
-                
-                {useCustomConfig && (
-                  <div className="space-y-4 p-4 border rounded-lg bg-blue-50">
-                    <div className="text-sm font-semibold text-blue-800 mb-3">⚙️ Manual Override Configuration</div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <Label htmlFor="customFunctionCount">Functions to Use</Label>
-                        <Input
-                          id="customFunctionCount"
-                          type="number"
-                          min="1"
-                          max={functions.length}
-                          value={customFunctionCount}
-                          onChange={(e) => {
-                            const value = parseInt(e.target.value) || 1;
-                            console.log('🔧 Setting custom function count to:', value);
-                            setCustomFunctionCount(value);
-                          }}
-                          placeholder={`Max: ${functions.length}`}
-                        />
-                        <p className="text-xs text-gray-600 mt-1">
-                          Available: {functions.length} functions
-                        </p>
-                      </div>
-                      
-                      <div>
-                        <Label htmlFor="customAccountCount">Accounts to Use</Label>
-                        <Input
-                          id="customAccountCount"
-                          type="number"
-                          min="1"
-                          max={selectedAccounts.length || 1}
-                          value={customAccountCount}
-                          onChange={(e) => {
-                            const value = parseInt(e.target.value) || 1;
-                            console.log('🔧 Setting custom account count to:', value);
-                            setCustomAccountCount(value);
-                          }}
-                          placeholder={`Max: ${selectedAccounts.length}`}
-                        />
-                        <p className="text-xs text-gray-600 mt-1">
-                          Selected: {selectedAccounts.length} accounts
-                        </p>
-                      </div>
-                    </div>
-                    
-                    {estimatedTime && (
-                      <Alert className="border-green-200 bg-green-50">
-                        <Zap className="h-4 w-4" />
-                        <AlertDescription className="text-green-800 text-sm">
-                          <strong>Real-time Performance Estimation:</strong> {estimatedTime}
-                        </AlertDescription>
-                      </Alert>
-                    )}
-                  </div>
-                )}
+            <div>
+              <Label htmlFor="html_content">HTML Content</Label>
+              <Textarea
+                id="html_content"
+                placeholder="<h1>Hello!</h1><p>Your HTML email content here...</p>"
+                value={htmlContent}
+                onChange={(e) => setHtmlContent(e.target.value)}
+                rows={8}
+              />
+            </div>
 
-                {smartConfig && !useCustomConfig && (
-                  <Alert className="border-blue-200 bg-blue-50">
-                    <Calculator className="h-4 w-4" />
-                    <AlertDescription>
-                      <div className="text-blue-800 text-sm">
-                        <strong>🚀 SmartConfig Auto-Optimization Active:</strong> Optimized for {smartConfig.emailVolume?.toLocaleString()} emails
-                        <br />
-                        <span className="text-xs">
-                          AI Recommended: {smartConfig.recommendedFunctions} functions, {smartConfig.recommendedAccounts} accounts
-                          • Estimated delivery time: {smartConfig.estimatedTime}
-                        </span>
-                      </div>
-                    </AlertDescription>
-                  </Alert>
-                )}
-              </CardContent>
-            </Card>
+            <div>
+              <Label htmlFor="text_content">Plain Text Content (Optional)</Label>
+              <Textarea
+                id="text_content"
+                placeholder="Your plain text email content here..."
+                value={textContent}
+                onChange={(e) => setTextContent(e.target.value)}
+                rows={4}
+              />
+            </div>
+          </div>
 
-            {/* Sending Mode & Dispatch Method */}
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-sm flex items-center gap-2">
-                  <Target className="w-4 h-4" />
-                  Sending Configuration
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-3">
-                    <Label className="text-sm font-medium">Sending Mode</Label>
-                    <RadioGroup 
-                      value={sendingMode} 
-                      onValueChange={(value: 'controlled' | 'fast' | 'zero-delay') => {
-                        console.log('🎯 Sending Mode changed to:', value);
-                        setSendingMode(value);
-                      }}
-                    >
-                      <div className="flex items-center space-x-2">
-                        <RadioGroupItem value="controlled" id="controlled" />
-                        <Label htmlFor="controlled" className="flex items-center gap-1 text-sm">
-                          <Clock className="w-3 h-3" />
-                          Controlled (2s delay)
-                        </Label>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <RadioGroupItem value="fast" id="fast" />
-                        <Label htmlFor="fast" className="flex items-center gap-1 text-sm">
-                          <Zap className="w-3 h-3" />
-                          Fast (0.5s delay)
-                        </Label>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <RadioGroupItem value="zero-delay" id="zero-delay" />
-                        <Label htmlFor="zero-delay" className="flex items-center gap-1 text-sm">
-                          <Rocket className="w-3 h-3" />
-                          Zero Delay (Max Speed) ⚡
-                        </Label>
-                      </div>
-                    </RadioGroup>
-                  </div>
+          {/* Advanced Configuration */}
+          {showAdvanced && (
+            <>
+              <Separator />
+              <AdvancedConfigurationPanel
+                config={advancedConfig}
+                onConfigChange={setAdvancedConfig}
+              />
+            </>
+          )}
 
-                  <div className="space-y-3">
-                    <Label className="text-sm font-medium">Dispatch Method</Label>
-                    <RadioGroup 
-                      value={dispatchMethod} 
-                      onValueChange={(value: 'parallel' | 'round-robin' | 'sequential') => {
-                        console.log('🎯 Dispatch Method changed to:', value);
-                        setDispatchMethod(value);
-                      }}
-                    >
-                      <div className="flex items-center space-x-2">
-                        <RadioGroupItem value="parallel" id="parallel" />
-                        <Label htmlFor="parallel" className="text-sm">Parallel (All functions) 🚀</Label>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <RadioGroupItem value="round-robin" id="round-robin" />
-                        <Label htmlFor="round-robin" className="text-sm">Round Robin (Rotate accounts)</Label>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <RadioGroupItem value="sequential" id="sequential" />
-                        <Label htmlFor="sequential" className="text-sm">Sequential</Label>
-                      </div>
-                    </RadioGroup>
-                  </div>
-                </div>
-                
-                <Alert className="border-blue-200 bg-blue-50">
-                  <Target className="h-4 w-4" />
-                  <AlertDescription className="text-blue-800 text-xs">
-                    Current Selection: <strong>{sendingMode === 'zero-delay' ? 'Zero Delay (Max Speed)' : sendingMode === 'fast' ? 'Fast' : 'Controlled'}</strong> + <strong>{dispatchMethod === 'parallel' ? 'Parallel (All functions)' : dispatchMethod === 'round-robin' ? 'Round Robin (Rotate accounts)' : 'Sequential'}</strong>
-                  </AlertDescription>
-                </Alert>
-              </CardContent>
-            </Card>
+          <Separator />
 
-            {/* Account Selection */}
-            <CompactAccountSelector
-              selectedAccounts={selectedAccounts}
-              onAccountsChange={setSelectedAccounts}
-              onSelectAll={handleSelectAllAccounts}
-              onDeselectAll={handleDeselectAllAccounts}
-            />
-
-            {/* Campaign Details */}
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-sm">Campaign Details</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <Label htmlFor="fromName" className="text-sm">
-                      From Name {!useFromRotation && '*'}
-                    </Label>
-                    <Input
-                      id="fromName"
-                      value={fromName}
-                      onChange={(e) => setFromName(e.target.value)}
-                      placeholder="Your Name"
-                      className="mt-1"
-                      disabled={useFromRotation}
-                      required={!useFromRotation}
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="subject" className="text-sm">
-                      Subject {!useSubjectRotation && '*'}
-                    </Label>
-                    <Input
-                      id="subject"
-                      value={subject}
-                      onChange={(e) => setSubject(e.target.value)}
-                      placeholder="Email Subject"
-                      className="mt-1"
-                      disabled={useSubjectRotation}
-                      required={!useSubjectRotation}
-                    />
-                  </div>
-                </div>
-
-                {/* Rotation Options */}
-                <div className="space-y-4 border-t pt-4">
-                  <div className="flex items-center gap-2">
-                    <RotateCcw className="w-4 h-4" />
-                    <Label className="text-sm font-medium">Rotation Options</Label>
-                  </div>
-                  
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="space-y-3">
-                      <div className="flex items-center justify-between">
-                        <Label htmlFor="useFromRotation" className="text-sm">From Name Rotation</Label>
-                        <Switch
-                          id="useFromRotation"
-                          checked={useFromRotation}
-                          onCheckedChange={setUseFromRotation}
-                        />
-                      </div>
-                      {useFromRotation && (
-                        <Textarea
-                          placeholder="From Name 1&#10;From Name 2&#10;From Name 3"
-                          value={fromNameVariations}
-                          onChange={(e) => setFromNameVariations(e.target.value)}
-                          rows={3}
-                          className="text-sm"
-                        />
-                      )}
-                      {useFromRotation && (
-                        <p className="text-xs text-gray-600">
-                          ✅ Each line = one from name variation
-                        </p>
-                      )}
-                    </div>
-
-                    <div className="space-y-3">
-                      <div className="flex items-center justify-between">
-                        <Label htmlFor="useSubjectRotation" className="text-sm">Subject Rotation</Label>
-                        <Switch
-                          id="useSubjectRotation"
-                          checked={useSubjectRotation}
-                          onCheckedChange={setUseSubjectRotation}
-                        />
-                      </div>
-                      {useSubjectRotation && (
-                        <Textarea
-                          placeholder="Subject Line 1&#10;Subject Line 2&#10;Subject Line 3"
-                          value={subjectVariations}
-                          onChange={(e) => setSubjectVariations(e.target.value)}
-                          rows={3}
-                          className="text-sm"
-                        />
-                      )}
-                      {useSubjectRotation && (
-                        <p className="text-xs text-gray-600">
-                          ✅ Each line = one subject variation (commas allowed in subjects)
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                <AISubjectGenerator onSubjectSelect={setSubject} />
-
-                {/* Recipients */}
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <Label htmlFor="recipients" className="text-sm">Recipients *</Label>
-                    <Badge variant="secondary" className="text-xs">
-                      {recipientCount} recipient{recipientCount !== 1 ? 's' : ''}
-                    </Badge>
-                  </div>
-                  <Textarea
-                    id="recipients"
-                    value={recipients}
-                    onChange={(e) => setRecipients(e.target.value)}
-                    placeholder="email1@example.com, email2@example.com, ..."
-                    rows={3}
-                    className="text-sm"
-                    required
-                  />
-                  
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    <CSVDataImporter onImport={handleCSVImport} />
-                    <GoogleSheetsImport onImport={handleGoogleSheetsImport} />
-                  </div>
-                </div>
-
-                {/* Email Content */}
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <Label htmlFor="htmlContent" className="text-sm">HTML Content *</Label>
-                    <Dialog open={htmlPreviewOpen} onOpenChange={setHtmlPreviewOpen}>
-                      <DialogTrigger asChild>
-                        <Button variant="outline" size="sm" type="button">
-                          <Eye className="w-3 h-3 mr-1" />
-                          Preview
-                        </Button>
-                      </DialogTrigger>
-                      <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
-                        <DialogHeader>
-                          <DialogTitle>HTML Preview</DialogTitle>
-                        </DialogHeader>
-                        <div className="border rounded p-4">
-                          <div dangerouslySetInnerHTML={{ __html: htmlContent }} />
-                        </div>
-                      </DialogContent>
-                    </Dialog>
-                  </div>
-                  <Textarea
-                    id="htmlContent"
-                    value={htmlContent}
-                    onChange={(e) => setHtmlContent(e.target.value)}
-                    placeholder="<h1>Your HTML content here...</h1>"
-                    rows={5}
-                    className="text-sm font-mono"
-                    required
-                  />
-                </div>
-
-                <div className="space-y-3">
-                  <Label htmlFor="textContent" className="text-sm">Plain Text Content</Label>
-                  <Textarea
-                    id="textContent"
-                    value={textContent}
-                    onChange={(e) => setTextContent(e.target.value)}
-                    placeholder="Your plain text content here..."
-                    rows={3}
-                    className="text-sm"
-                  />
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Test-After Configuration */}
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-sm flex items-center gap-2">
-                  <Target className="w-4 h-4" />
-                  Test-After Configuration (Auto-Inject Method)
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <Label htmlFor="useTestAfter" className="text-sm">Enable Test-After (Auto-inject)</Label>
-                  <Switch
-                    id="useTestAfter"
-                    checked={useTestAfter}
-                    onCheckedChange={setUseTestAfter}
-                  />
-                </div>
-                
-                {useTestAfter && (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    <div>
-                      <Label htmlFor="testAfterEmail" className="text-sm">Test Email *</Label>
-                      <Input
-                        id="testAfterEmail"
-                        type="email"
-                        value={testAfterEmail}
-                        onChange={(e) => setTestAfterEmail(e.target.value)}
-                        placeholder="test@example.com"
-                        className="mt-1"
-                        required={useTestAfter}
-                      />
-                    </div>
-                    
-                    <div>
-                      <Label htmlFor="testAfterCount" className="text-sm">Inject Every X Emails</Label>
-                      <Input
-                        id="testAfterCount"
-                        type="number"
-                        min="1"
-                        max="1000"
-                        value={testAfterCount}
-                        onChange={(e) => setTestAfterCount(parseInt(e.target.value) || 1)}
-                        className="mt-1"
-                      />
-                    </div>
-                  </div>
-                )}
-                
-                {useTestAfter && (
-                  <Alert className="border-blue-200 bg-blue-50">
-                    <Target className="h-4 w-4" />
-                    <AlertDescription className="text-blue-800 text-xs">
-                      ✅ Test emails will be automatically injected into the recipient list every {testAfterCount} emails.
-                    </AlertDescription>
-                  </Alert>
-                )}
-              </CardContent>
-            </Card>
-
-            {/* Tracking Configuration */}
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-sm flex items-center gap-2">
-                  <Target className="w-4 h-4" />
-                  Email Tracking
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="flex items-center justify-between">
-                  <div className="space-y-1">
-                    <Label className="text-sm">Track Opens & Clicks</Label>
-                    <p className="text-xs text-gray-600">Monitor email engagement</p>
-                  </div>
-                  <Switch
-                    checked={trackingEnabled}
-                    onCheckedChange={setTrackingEnabled}
-                  />
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Status Summary */}
-            <Alert className={hasAccounts && hasFunctions ? "border-green-200 bg-green-50" : "border-yellow-200 bg-yellow-50"}>
-              <Target className="h-4 w-4" />
-              <AlertDescription>
-                {hasAccounts && hasFunctions ? (
-                  <span className="text-green-800 text-sm">
-                    <strong>✅ Ready to Create Campaign</strong>
-                    {estimatedTime && ` • Estimated send time: ${estimatedTime}`}
-                    <br />
-                    <span className="text-xs">
-                      Selected: {selectedAccounts.length} accounts • {sendingMode} mode • {dispatchMethod} dispatch
-                      {useCustomConfig && ` • Custom: ${customFunctionCount} functions, ${customAccountCount} accounts`}
-                    </span>
-                  </span>
-                ) : (
-                  <div className="text-yellow-800 text-sm">
-                    <strong>⚠️ Setup Required:</strong>
-                    {!hasFunctions && " Configure Cloud Functions"}
-                    {!hasFunctions && !hasAccounts && " • "}
-                    {!hasAccounts && " Select Email Accounts"}
-                  </div>
-                )}
-              </AlertDescription>
-            </Alert>
-
-            <Separator />
-
-            <Button 
-              type="submit" 
-              className="w-full" 
+          {/* Send Button */}
+          <div className="flex justify-end">
+            <Button
+              onClick={handleSend}
+              disabled={sending || !fromName || !subject || !recipients || selectedAccounts.length === 0}
               size="lg"
-              disabled={!hasFunctions || !hasAccounts || isSubmitting}
+              className="min-w-[200px]"
             >
-              <Plus className="w-4 h-4 mr-2" />
-              {isSubmitting ? 'Creating Campaign...' : `Create Campaign (Draft)`}
-              {recipientCount > 0 && !isSubmitting && (
-                <Badge variant="secondary" className="ml-2 text-xs">
-                  {recipientCount} recipients
-                </Badge>
+              {sending ? (
+                <>
+                  <Loader2 className="animate-spin w-4 h-4 mr-2" />
+                  Creating Campaign...
+                </>
+              ) : (
+                <>
+                  <Zap className="w-4 h-4 mr-2" />
+                  Create Campaign Draft
+                </>
               )}
             </Button>
-            
-            <div className="text-center text-sm text-gray-600">
-              After creating, go to <strong>Campaign History</strong> to prepare and send your campaign.
-            </div>
-          </form>
+          </div>
+
+          <Alert>
+            <AlertDescription>
+              <strong>Note:</strong> This will create a campaign draft. Go to Campaign History to prepare and send your campaign.
+            </AlertDescription>
+          </Alert>
         </CardContent>
       </Card>
     </div>

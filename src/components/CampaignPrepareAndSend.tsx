@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardContent, CardTitle } from "@/components/ui/card";
@@ -21,8 +22,6 @@ const CampaignPrepareAndSend: React.FC<CampaignPrepareAndSendProps> = ({ campaig
   const [sending, setSending] = useState(false);
   const [sendResults, setSendResults] = useState<any>(null);
   const [sendMethod, setSendMethod] = useState<'cloud_functions' | 'powermta'>('cloud_functions');
-  const [powerMTAServers, setPowerMTAServers] = useState<any[]>([]);
-  const [selectedPowerMTA, setSelectedPowerMTA] = useState<string>('');
 
   const { prepareCampaignClientSide, isProcessing, progress } = useClientCampaignPreparation();
   const { sendCampaign, isSending, progress: sendProgress } = useCampaignSender(campaign?.organization_id);
@@ -33,7 +32,7 @@ const CampaignPrepareAndSend: React.FC<CampaignPrepareAndSendProps> = ({ campaig
       setLoading(true);
       const { data, error } = await supabase
         .from("email_campaigns")
-        .select("id, subject, status, organization_id, prepared_emails, total_recipients")
+        .select("id, subject, status, organization_id, prepared_emails, total_recipients, html_content, text_content, from_name")
         .eq("id", campaignId)
         .single();
       if (error) {
@@ -46,28 +45,6 @@ const CampaignPrepareAndSend: React.FC<CampaignPrepareAndSendProps> = ({ campaig
     }
     fetchCampaign();
   }, [campaignId]);
-
-  // Load PowerMTA servers
-  useEffect(() => {
-    async function loadPowerMTAServers() {
-      if (!campaign?.organization_id) return;
-      
-      const { data } = await supabase
-        .from('powermta_servers')
-        .select('*')
-        .eq('organization_id', campaign.organization_id)
-        .eq('is_active', true);
-      
-      setPowerMTAServers(data || []);
-      if (data && data.length > 0) {
-        setSelectedPowerMTA(data[0].id);
-      }
-    }
-    
-    if (campaign) {
-      loadPowerMTAServers();
-    }
-  }, [campaign]);
 
   // Optimized refresh function
   const refresh = async () => {
@@ -119,88 +96,8 @@ const CampaignPrepareAndSend: React.FC<CampaignPrepareAndSendProps> = ({ campaig
   };
 
   const handleSendViaPowerMTA = async () => {
-    if (!selectedPowerMTA) {
-      toast.error('Please select a PowerMTA server');
-      return;
-    }
-
-    setSending(true);
-    setSendResults(null);
-    const startTime = Date.now();
-    
-    try {
-      // Get selected PowerMTA server config
-      const { data: powerMTAConfig } = await supabase
-        .from('powermta_servers')
-        .select('*')
-        .eq('id', selectedPowerMTA)
-        .single();
-
-      if (!powerMTAConfig) {
-        throw new Error('PowerMTA server configuration not found');
-      }
-
-      // Get sender accounts
-      const { data: accounts } = await supabase
-        .from('email_accounts')
-        .select('*')
-        .eq('organization_id', campaign.organization_id)
-        .eq('is_active', true)
-        .in('type', ['smtp', 'apps-script']);
-
-      if (!accounts || accounts.length === 0) {
-        throw new Error('No active sender accounts found');
-      }
-
-      console.log('📤 Pushing campaign to PowerMTA server...');
-      
-      const { pushCampaignToPowerMTA } = await import('@/utils/powerMTASender');
-      
-      const result = await pushCampaignToPowerMTA(powerMTAConfig, {
-        campaignId: campaign.id,
-        subject: campaign.subject,
-        html_content: campaign.html_content || '',
-        text_content: campaign.text_content || '',
-        from_name: campaign.from_name,
-        prepared_emails: campaign.prepared_emails || [],
-        sender_accounts: accounts
-      });
-
-      const duration = Date.now() - startTime;
-      
-      if (result.success) {
-        setSendResults({
-          success: true,
-          method: 'powermta',
-          queueId: result.queueId,
-          totalEmails: campaign.prepared_emails?.length || 0,
-          actualDuration: duration,
-          serverName: powerMTAConfig.name
-        });
-        
-        // Update campaign status
-        await supabase
-          .from('email_campaigns')
-          .update({ 
-            status: 'sent_to_powermta',
-            powermta_queue_id: result.queueId
-          })
-          .eq('id', campaignId);
-        
-        toast.success(`🚀 Campaign pushed to PowerMTA server "${powerMTAConfig.name}" successfully!`);
-        await refresh();
-      } else {
-        throw new Error(result.error);
-      }
-    } catch (e: any) {
-      toast.error(`PowerMTA push failed: ${e?.message || 'Unknown error'}`);
-      setSendResults({
-        success: false,
-        error: e?.message || 'PowerMTA push failed'
-      });
-    } finally {
-      setSending(false);
-    }
+    toast.info('PowerMTA integration coming soon! Please use Cloud Functions for now.');
+    // PowerMTA functionality will be implemented after database migration
   };
 
   if (loading) {
@@ -294,30 +191,11 @@ const CampaignPrepareAndSend: React.FC<CampaignPrepareAndSendProps> = ({ campaig
                     variant={sendMethod === 'powermta' ? 'default' : 'outline'}
                     onClick={() => setSendMethod('powermta')}
                     className="w-full"
-                    disabled={powerMTAServers.length === 0}
                   >
-                    PowerMTA Server {powerMTAServers.length === 0 ? '(No servers)' : ''}
+                    PowerMTA Server (Coming Soon)
                   </Button>
                 </div>
               </div>
-
-              {/* PowerMTA Server Selection */}
-              {sendMethod === 'powermta' && powerMTAServers.length > 0 && (
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Select PowerMTA Server:</label>
-                  <select
-                    value={selectedPowerMTA}
-                    onChange={(e) => setSelectedPowerMTA(e.target.value)}
-                    className="w-full p-2 border rounded"
-                  >
-                    {powerMTAServers.map(server => (
-                      <option key={server.id} value={server.id}>
-                        {server.name} ({server.server_host})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
               
               {/* Send Button */}
               <Button
@@ -353,26 +231,14 @@ const CampaignPrepareAndSend: React.FC<CampaignPrepareAndSendProps> = ({ campaig
                   <AlertDescription>
                     {sendResults.success ? (
                       <>
-                        <strong>🚀 {sendResults.method === 'powermta' ? 'PowerMTA Push' : 'Send'} Results:</strong><br/>
-                        {sendResults.method === 'powermta' ? (
-                          <>
-                            • Campaign pushed to: {sendResults.serverName}<br/>
-                            • Queue ID: {sendResults.queueId}<br/>
-                            • Emails queued: {sendResults.totalEmails}<br/>
-                            • Duration: {sendResults.actualDuration}ms<br/>
-                            • Status: PowerMTA will process using your sender accounts
-                          </>
-                        ) : (
-                          <>
-                            • Emails sent: {sendResults.totalEmails}<br/>
-                            • Duration: {sendResults.actualDuration}ms<br/>
-                            • Speed: {Math.round(sendResults.totalEmails / (sendResults.actualDuration / 1000))} emails/second
-                          </>
-                        )}
+                        <strong>🚀 Send Results:</strong><br/>
+                        • Emails sent: {sendResults.totalEmails}<br/>
+                        • Duration: {sendResults.actualDuration}ms<br/>
+                        • Speed: {Math.round(sendResults.totalEmails / (sendResults.actualDuration / 1000))} emails/second
                       </>
                     ) : (
                       <>
-                        <strong>❌ {sendResults.method === 'powermta' ? 'PowerMTA Push' : 'Send'} Failed:</strong><br/>
+                        <strong>❌ Send Failed:</strong><br/>
                         Error: {sendResults.error}
                       </>
                     )}
