@@ -8,6 +8,10 @@ interface SMTPConfig {
   auth_required: boolean;
   security?: 'none' | 'tls' | 'ssl';
   use_auth?: boolean;
+  // Legacy fields for backward compatibility
+  user?: string;
+  pass?: string;
+  secure?: boolean;
 }
 
 export async function sendEmailViaSMTP(
@@ -43,8 +47,9 @@ export async function sendEmailViaSMTP(
     const smtpConfig = {
       host: config.host,
       port: config.port,
-      username: config.username,
-      password: config.password,
+      // Handle both old and new field names
+      username: config.username || config.user,
+      password: config.password || config.pass,
       encryption: config.encryption || config.security || 'tls',
       auth_required: config.auth_required !== false && config.use_auth !== false,
       // Ensure backward compatibility
@@ -117,8 +122,9 @@ export async function testSMTPConnection(config: SMTPConfig): Promise<{ success:
     const testConfig = {
       host: config.host,
       port: config.port,
-      username: config.username,
-      password: config.password,
+      // Handle both old and new field names
+      username: config.username || config.user,
+      password: config.password || config.pass,
       encryption: config.encryption || config.security || 'tls',
       auth_required: config.auth_required !== false && config.use_auth !== false,
       security: config.security || config.encryption || 'tls',
@@ -176,10 +182,13 @@ export function validateSMTPConfig(config: SMTPConfig): { valid: boolean; errors
   }
   
   if (config.auth_required !== false && config.use_auth !== false) {
-    if (!config.username || config.username.trim() === '') {
+    const username = config.username || config.user;
+    const password = config.password || config.pass;
+    
+    if (!username || username.trim() === '') {
       errors.push('SMTP username is required when authentication is enabled');
     }
-    if (!config.password || config.password.trim() === '') {
+    if (!password || password.trim() === '') {
       errors.push('SMTP password is required when authentication is enabled');
     }
   }
