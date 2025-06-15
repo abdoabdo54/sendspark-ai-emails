@@ -4,7 +4,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Switch } from '@/components/ui/switch';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Eye, EyeOff, Shield, TestTube } from 'lucide-react';
@@ -14,10 +13,9 @@ import { testSMTPConnection, validateSMTPConfig } from '@/utils/emailSender';
 interface SMTPConfig {
   host: string;
   port: number;
-  username: string;
-  password: string;
-  security: 'none' | 'tls' | 'ssl';
-  use_auth: boolean;
+  user: string;
+  pass: string;
+  secure: boolean;
 }
 
 interface SMTPConfigFormProps {
@@ -38,10 +36,9 @@ const SMTPConfigForm = ({ onSubmit, onCancel, initialData }: SMTPConfigFormProps
   const [config, setConfig] = useState<SMTPConfig>(initialData?.config || {
     host: '',
     port: 587,
-    username: '',
-    password: '',
-    security: 'tls',
-    use_auth: true
+    user: '',
+    pass: '',
+    secure: false
   });
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -50,8 +47,10 @@ const SMTPConfigForm = ({ onSubmit, onCancel, initialData }: SMTPConfigFormProps
     // Validate configuration
     const validation = validateSMTPConfig({
       ...config,
-      encryption: config.security,
-      auth_required: config.use_auth
+      username: config.user,
+      password: config.pass,
+      encryption: config.secure ? 'ssl' : 'tls',
+      auth_required: true
     });
 
     if (!validation.valid) {
@@ -71,7 +70,7 @@ const SMTPConfigForm = ({ onSubmit, onCancel, initialData }: SMTPConfigFormProps
   };
 
   const handleTestConnection = async () => {
-    if (!config.host || !config.username || !config.password) {
+    if (!config.host || !config.user || !config.pass) {
       toast({
         title: "Missing Information",
         description: "Please fill in host, username, and password to test the connection",
@@ -84,8 +83,10 @@ const SMTPConfigForm = ({ onSubmit, onCancel, initialData }: SMTPConfigFormProps
     try {
       const result = await testSMTPConnection({
         ...config,
-        encryption: config.security,
-        auth_required: config.use_auth
+        username: config.user,
+        password: config.pass,
+        encryption: config.secure ? 'ssl' : 'tls',
+        auth_required: true
       });
 
       if (result.success) {
@@ -122,7 +123,7 @@ const SMTPConfigForm = ({ onSubmit, onCancel, initialData }: SMTPConfigFormProps
       <CardContent>
         <Alert className="mb-6">
           <AlertDescription>
-            Configure your SMTP server settings. Make sure to use the correct port and security settings for your email provider.
+            Configure your SMTP server settings. Use the exact credentials from your email provider.
           </AlertDescription>
         </Alert>
 
@@ -164,83 +165,68 @@ const SMTPConfigForm = ({ onSubmit, onCancel, initialData }: SMTPConfigFormProps
             </div>
             <div>
               <Label htmlFor="smtp-port">Port *</Label>
+              <Select 
+                value={config.port.toString()} 
+                onValueChange={(value) => {
+                  const port = parseInt(value);
+                  updateConfig('port', port);
+                  updateConfig('secure', port === 465);
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="587">587 (TLS/STARTTLS)</SelectItem>
+                  <SelectItem value="465">465 (SSL)</SelectItem>
+                  <SelectItem value="25">25 (Plain)</SelectItem>
+                  <SelectItem value="2525">2525 (Alternative)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="smtp-username">Username *</Label>
               <Input
-                id="smtp-port"
-                type="number"
-                value={config.port}
-                onChange={(e) => updateConfig('port', parseInt(e.target.value))}
-                placeholder="587"
+                id="smtp-username"
+                value={config.user}
+                onChange={(e) => updateConfig('user', e.target.value)}
+                placeholder="your-email@gmail.com"
                 required
               />
             </div>
-          </div>
-
-          <div>
-            <Label htmlFor="security">Security</Label>
-            <Select value={config.security} onValueChange={(value: 'none' | 'tls' | 'ssl') => updateConfig('security', value)}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">None (Plain)</SelectItem>
-                <SelectItem value="tls">TLS/STARTTLS (Port 587)</SelectItem>
-                <SelectItem value="ssl">SSL (Port 465)</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="flex items-center space-x-2">
-            <Switch
-              id="use-auth"
-              checked={config.use_auth}
-              onCheckedChange={(checked) => updateConfig('use_auth', checked)}
-            />
-            <Label htmlFor="use-auth">Use Authentication</Label>
-          </div>
-
-          {config.use_auth && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <Label htmlFor="smtp-username">Username *</Label>
+            <div>
+              <Label htmlFor="smtp-password">Password *</Label>
+              <div className="relative">
                 <Input
-                  id="smtp-username"
-                  value={config.username}
-                  onChange={(e) => updateConfig('username', e.target.value)}
-                  placeholder="your-email@gmail.com"
-                  required={config.use_auth}
+                  id="smtp-password"
+                  type={showPassword ? 'text' : 'password'}
+                  value={config.pass}
+                  onChange={(e) => updateConfig('pass', e.target.value)}
+                  placeholder="your-app-password"
+                  required
                 />
-              </div>
-              <div>
-                <Label htmlFor="smtp-password">Password *</Label>
-                <div className="relative">
-                  <Input
-                    id="smtp-password"
-                    type={showPassword ? 'text' : 'password'}
-                    value={config.password}
-                    onChange={(e) => updateConfig('password', e.target.value)}
-                    placeholder="your-app-password"
-                    required={config.use_auth}
-                  />
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
-                    onClick={() => setShowPassword(!showPassword)}
-                  >
-                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                  </Button>
-                </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
+                  onClick={() => setShowPassword(!showPassword)}
+                >
+                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </Button>
               </div>
             </div>
-          )}
+          </div>
 
           <div className="flex justify-between space-x-3">
             <Button 
               type="button" 
               variant="outline" 
               onClick={handleTestConnection}
-              disabled={isTesting || !config.host || !config.username || !config.password}
+              disabled={isTesting || !config.host || !config.user || !config.pass}
             >
               {isTesting ? (
                 <>
