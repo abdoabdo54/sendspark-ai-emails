@@ -1,3 +1,4 @@
+
 const functions = require('@google-cloud/functions-framework');
 const { createClient } = require('@supabase/supabase-js');
 const nodemailer = require('nodemailer');
@@ -31,8 +32,8 @@ function createUltraFastTransporter(account) {
         requireTLS = true;
       }
 
-      // Check if authentication is required
-      const useAuth = config.use_auth !== false && config.auth_required !== false;
+      // Check if authentication is required - fix the logic here
+      const useAuth = config.use_auth !== false && config.auth_required !== false && config.username && config.password;
 
       const transporterConfig = {
         host: config.host,
@@ -42,17 +43,14 @@ function createUltraFastTransporter(account) {
         auth: useAuth ? {
           user: config.username || config.user,
           pass: config.password || config.pass
-        } : undefined,
+        } : false,
         // Enhanced connection settings for better reliability
-        pool: true,
-        maxConnections: 5,
-        maxMessages: 100,
-        rateDelta: 1000,
-        rateLimit: 10,
+        pool: false, // Disable pooling for better error tracking
+        maxConnections: 1,
         connectionTimeout: 60000,
         greetingTimeout: 30000,
         socketTimeout: 60000,
-        logger: true,
+        logger: false, // Disable nodemailer logger to reduce noise
         debug: false,
         // Handle TLS issues gracefully
         tls: {
@@ -68,15 +66,7 @@ function createUltraFastTransporter(account) {
 
       const transporter = nodemailer.createTransporter(transporterConfig);
       
-      // Test the transporter configuration
-      transporter.verify((error, success) => {
-        if (error) {
-          console.error(`❌ SMTP verification failed for ${account.name}:`, error.message);
-        } else {
-          console.log(`✅ SMTP server ready for ${account.name}`);
-        }
-      });
-
+      console.log(`✅ SMTP transporter created successfully for ${account.name}`);
       return transporter;
     } catch (error) {
       console.error(`❌ Failed to create SMTP transporter for ${account.name}:`, error.message);
@@ -93,6 +83,15 @@ async function sendViaUltraFastSMTP(transporter, emailData, accountName) {
     
     if (!transporter) {
       throw new Error('SMTP transporter is not available');
+    }
+
+    // Verify the transporter before sending
+    try {
+      await transporter.verify();
+      console.log(`✅ SMTP transporter verification successful for ${accountName}`);
+    } catch (verifyError) {
+      console.error(`❌ SMTP transporter verification failed for ${accountName}:`, verifyError.message);
+      throw new Error(`SMTP verification failed: ${verifyError.message}`);
     }
 
     const mailOptions = {
@@ -236,7 +235,7 @@ async function processEmailHybrid(preparedEmail, account, campaignData, globalIn
     let result;
 
     if (account.type === 'smtp') {
-      console.log(`🔧 SMTP: Creating transporter for ${account.name}`);
+      console.log(`🔧 SMTP: Creating and testing transporter for ${account.name}`);
       const transporter = createUltraFastTransporter(account);
       
       if (!transporter) {
@@ -244,7 +243,7 @@ async function processEmailHybrid(preparedEmail, account, campaignData, globalIn
         return {
           recipient: preparedEmail.to,
           status: 'failed',
-          error: 'Failed to create SMTP transporter',
+          error: 'Failed to create SMTP transporter - check SMTP configuration',
           accountName: account.name,
           accountType: account.type,
           timestamp: new Date().toISOString()
@@ -252,13 +251,23 @@ async function processEmailHybrid(preparedEmail, account, campaignData, globalIn
       }
 
       try {
+        console.log(`🔍 SMTP: Testing connection for ${account.name} before sending`);
         result = await sendViaUltraFastSMTP(transporter, emailData, account.name);
         console.log(`📧 SMTP Result for ${preparedEmail.to}:`, result);
+      } catch (smtpError) {
+        console.error(`❌ SMTP: Fatal error for ${account.name}:`, smtpError.message);
+        result = { 
+          success: false, 
+          error: `SMTP fatal error: ${smtpError.message}`,
+          details: { stack: smtpError.stack }
+        };
       } finally {
         // Always close transporter
         try {
-          transporter.close();
-          console.log(`🔧 SMTP: Transporter closed for ${account.name}`);
+          if (transporter && typeof transporter.close === 'function') {
+            transporter.close();
+            console.log(`🔧 SMTP: Transporter closed for ${account.name}`);
+          }
         } catch (closeError) {
           console.warn(`⚠️ SMTP: Error closing transporter for ${account.name}:`, closeError.message);
         }
