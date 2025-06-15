@@ -1,3 +1,4 @@
+
 interface SMTPConfig {
   host: string;
   port: number;
@@ -19,16 +20,15 @@ export async function sendEmailViaSMTP(
   textContent?: string
 ): Promise<{ success: boolean; error?: string; logs?: string[] }> {
   try {
-    // Explicitly log config details (do not log credentials)
-    console.log('[SMTP-Test] sendEmailViaSMTP with:', {
+    console.log('📧 Sending email via SMTP function:', { 
+      to: toEmail, 
+      subject,
       host: config.host,
       port: config.port,
-      security: config.encryption || config.security,
-      use_auth: config.auth_required !== false && config.use_auth !== false,
-      username_set: !!config.username
+      encryption: config.encryption || config.security
     });
-
-    // Always forward both encryption and security fields, and both auth_required and use_auth
+    
+    // Use Supabase Edge Function for SMTP sending instead of demo mode
     const { supabase } = await import('@/integrations/supabase/client');
     
     const emailData = {
@@ -39,6 +39,14 @@ export async function sendEmailViaSMTP(
       text: textContent || htmlContent?.replace(/<[^>]*>/g, '') || ''
     };
 
+    console.log('📧 Calling SMTP edge function with config:', {
+      host: config.host,
+      port: config.port,
+      username: config.username,
+      encryption: config.encryption || config.security,
+      auth_required: config.auth_required !== false
+    });
+
     const { data, error } = await supabase.functions.invoke('send-smtp-email', {
       body: {
         config: {
@@ -47,41 +55,39 @@ export async function sendEmailViaSMTP(
           username: config.username,
           password: config.password,
           encryption: config.encryption || config.security || 'tls',
-          security: config.security || config.encryption || 'tls',
-          auth_required: config.auth_required !== false,
-          use_auth: config.use_auth !== false // Make sure it's not undefined
+          auth_required: config.auth_required !== false
         },
         emailData: emailData
       }
     });
 
     if (error) {
-      console.error('❌ [SMTP-Test] SMTP Edge Function Error:', error);
-      return {
-        success: false,
+      console.error('❌ SMTP Edge Function Error:', error);
+      return { 
+        success: false, 
         error: error.message || 'SMTP edge function failed',
         logs: [`❌ Edge function error: ${error.message}`]
       };
     }
 
     if (data && data.success) {
-      console.log('✅ [SMTP-Test] SMTP Email sent successfully via edge function');
-      return {
-        success: true,
+      console.log('✅ SMTP Email sent successfully via edge function');
+      return { 
+        success: true, 
         logs: data.logs || ['✅ Email sent successfully via SMTP edge function']
       };
     } else {
-      console.error('❌ [SMTP-Test] SMTP sending failed:', data);
-      return {
-        success: false,
+      console.error('❌ SMTP sending failed:', data);
+      return { 
+        success: false, 
         error: data?.error || 'SMTP sending failed',
         logs: data?.logs || [`❌ SMTP error: ${data?.error || 'Unknown error'}`]
       };
     }
   } catch (error) {
-    console.error('❌ [SMTP-Test] SMTP function error:', error);
-    return {
-      success: false,
+    console.error('❌ SMTP function error:', error);
+    return { 
+      success: false, 
       error: error instanceof Error ? error.message : 'Unknown error',
       logs: [`❌ Fatal SMTP error: ${error instanceof Error ? error.message : 'Unknown error'}`]
     };
