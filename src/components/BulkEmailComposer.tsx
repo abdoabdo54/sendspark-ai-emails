@@ -35,58 +35,56 @@ const BulkEmailComposer: React.FC<BulkEmailComposerProps> = ({ onSend }) => {
   const [selectedAccounts, setSelectedAccounts] = useState<string[]>([]);
   const [sending, setSending] = useState(false);
 
-  // Send method configuration - ONLY CHANGE: PowerMTA vs Cloud Functions
-  const [sendMethod, setSendMethod] = useState<'cloud_functions' | 'powermta'>('cloud_functions');
+  // Dispatch Method - NEW ADDITION
+  const [dispatchMethod, setDispatchMethod] = useState<'cloud_functions' | 'powermta'>('cloud_functions');
   const [selectedPowerMTAServer, setSelectedPowerMTAServer] = useState<string>('');
 
-  // Content Rotation
+  // Smart Configuration Engine
+  const [smartConfigEnabled, setSmartConfigEnabled] = useState(false);
+  const [delayBetweenEmails, setDelayBetweenEmails] = useState(2000);
+  const [batchSize, setBatchSize] = useState(50);
+
+  // Sending Configuration
+  const [sendingMode, setSendingMode] = useState<'controlled' | 'fast' | 'zero-delay'>('controlled');
+  
+  // Rotation Settings
   const [useFromRotation, setUseFromRotation] = useState(false);
   const [useSubjectRotation, setUseSubjectRotation] = useState(false);
   const [fromNameVariations, setFromNameVariations] = useState<string[]>([]);
   const [subjectVariations, setSubjectVariations] = useState<string[]>([]);
 
-  // Smart Configuration
-  const [smartConfigEnabled, setSmartConfigEnabled] = useState(false);
-  const [delayBetweenEmails, setDelayBetweenEmails] = useState(2000);
-  const [batchSize, setBatchSize] = useState(50);
-  const [autoRetryFailed, setAutoRetryFailed] = useState(true);
-  const [maxRetries, setMaxRetries] = useState(3);
-
-  // Sending Configuration
-  const [sendingMode, setSendingMode] = useState<'controlled' | 'fast' | 'zero-delay'>('controlled');
+  // Advanced Settings
   const [useTestAfter, setUseTestAfter] = useState(false);
   const [testAfterEmail, setTestAfterEmail] = useState('');
   const [testAfterCount, setTestAfterCount] = useState(10);
   const [trackingEnabled, setTrackingEnabled] = useState(true);
+  const [autoRetryFailed, setAutoRetryFailed] = useState(true);
+  const [maxRetries, setMaxRetries] = useState(3);
 
   const recipientCount = recipients.split('\n').filter(email => email.trim()).length;
   const activeAccounts = accounts.filter(account => account.is_active);
   const enabledFunctions = functions.filter(func => func.enabled);
   const activeServers = servers.filter(server => server.is_active);
-  const hasAccounts = activeAccounts.length > 0;
   const hasFunctions = enabledFunctions.length > 0;
   const hasPowerMTAServers = activeServers.length > 0;
 
   // Auto-select first PowerMTA server when switching to PowerMTA method
   useEffect(() => {
-    if (sendMethod === 'powermta' && activeServers.length > 0 && !selectedPowerMTAServer) {
+    if (dispatchMethod === 'powermta' && activeServers.length > 0 && !selectedPowerMTAServer) {
       setSelectedPowerMTAServer(activeServers[0].id);
     }
-  }, [sendMethod, activeServers, selectedPowerMTAServer]);
+  }, [dispatchMethod, activeServers, selectedPowerMTAServer]);
 
-  // Handle subject variations
   const handleSubjectVariationsChange = (value: string) => {
     const variations = value.split('\n').filter(line => line.trim());
     setSubjectVariations(variations);
   };
 
-  // Handle from name variations
   const handleFromNameVariationsChange = (value: string) => {
     const variations = value.split('\n').filter(line => line.trim());
     setFromNameVariations(variations);
   };
 
-  // Calculate estimated time based on mode and recipient count
   const getEstimatedTime = () => {
     if (recipientCount === 0) return '';
     
@@ -124,12 +122,11 @@ const BulkEmailComposer: React.FC<BulkEmailComposerProps> = ({ onSend }) => {
       return;
     }
 
-    if (sendMethod === 'powermta' && !selectedPowerMTAServer) {
+    if (dispatchMethod === 'powermta' && !selectedPowerMTAServer) {
       toast.error('Please select a PowerMTA server');
       return;
     }
 
-    // Validate rotation settings
     if (useFromRotation && fromNameVariations.length === 0) {
       toast.error('Please add from name variations or disable from rotation');
       return;
@@ -149,36 +146,25 @@ const BulkEmailComposer: React.FC<BulkEmailComposerProps> = ({ onSend }) => {
         recipients,
         html_content: htmlContent,
         text_content: textContent,
-        send_method: sendMethod,
+        send_method: dispatchMethod,
         config: {
-          // Account selection
           selectedAccounts,
-          
-          // Send method configuration
-          sendMethod,
-          selectedPowerMTAServer: sendMethod === 'powermta' ? selectedPowerMTAServer : null,
-          
-          // Content rotation settings
+          dispatchMethod,
+          selectedPowerMTAServer: dispatchMethod === 'powermta' ? selectedPowerMTAServer : null,
           useFromRotation,
           useSubjectRotation,
           fromNameVariations: useFromRotation ? fromNameVariations : [],
           subjectVariations: useSubjectRotation ? subjectVariations : [],
-          
-          // Smart config settings
           smartConfigEnabled,
           delayBetweenEmails: smartConfigEnabled ? delayBetweenEmails : 2000,
           batchSize: smartConfigEnabled ? batchSize : 50,
           autoRetryFailed,
           maxRetries,
-          
-          // Sending configuration
           sendingMode,
           useTestAfter,
           testAfterEmail,
           testAfterCount,
           trackingEnabled,
-          
-          // Performance settings
           estimatedTime: getEstimatedTime()
         }
       };
@@ -204,412 +190,445 @@ const BulkEmailComposer: React.FC<BulkEmailComposerProps> = ({ onSend }) => {
 
   return (
     <div className="max-w-4xl mx-auto p-6 space-y-6">
+      <div className="text-center mb-8">
+        <h1 className="text-3xl font-bold text-gray-900 mb-2">Campaign Management Center</h1>
+        <p className="text-gray-600">Create, configure, and manage professional email campaigns with advanced features</p>
+      </div>
+
+      {/* Create Email Campaign */}
       <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center">
+        <CardHeader className="bg-blue-50 rounded-t-lg">
+          <CardTitle className="flex items-center text-blue-900">
             <Send className="w-5 h-5 mr-2" />
             Create Email Campaign
           </CardTitle>
         </CardHeader>
-        <CardContent className="space-y-6">
-          {/* Campaign Details */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">Campaign Details</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="from_name">From Name *</Label>
-                  <Input
-                    id="from_name"
-                    placeholder="Your Name"
-                    value={fromName}
-                    onChange={(e) => setFromName(e.target.value)}
-                    required
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="subject">Subject *</Label>
-                  <Input
-                    id="subject"
-                    placeholder="Email Subject"
-                    value={subject}
-                    onChange={(e) => setSubject(e.target.value)}
-                    required
-                  />
-                </div>
-              </div>
-
-              <div>
-                <Label htmlFor="recipients">
-                  Recipients * 
-                  {recipientCount > 0 && <Badge variant="secondary" className="ml-2">{recipientCount} recipients</Badge>}
-                </Label>
-                <Textarea
-                  id="recipients"
-                  placeholder="Enter email addresses (one per line or comma-separated)"
-                  value={recipients}
-                  onChange={(e) => setRecipients(e.target.value)}
-                  rows={4}
-                  required
-                />
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Dispatch Method - ONLY MODIFICATION */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg flex items-center">
-                <Target className="w-5 h-5 mr-2" />
-                Dispatch Method
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <Button
-                  variant={sendMethod === 'cloud_functions' ? 'default' : 'outline'}
-                  onClick={() => setSendMethod('cloud_functions')}
-                  className="h-auto p-4 flex flex-col items-center justify-center space-y-2"
-                  disabled={!hasFunctions}
-                >
-                  <Cloud className="w-6 h-6" />
-                  <div className="text-center">
-                    <div className="font-medium">Cloud Functions</div>
-                    <div className="text-xs opacity-70">{enabledFunctions.length} functions available</div>
-                  </div>
-                </Button>
-                
-                <Button
-                  variant={sendMethod === 'powermta' ? 'default' : 'outline'}
-                  onClick={() => setSendMethod('powermta')}
-                  className="h-auto p-4 flex flex-col items-center justify-center space-y-2"
-                  disabled={!hasPowerMTAServers}
-                >
-                  <Server className="w-6 h-6" />
-                  <div className="text-center">
-                    <div className="font-medium">PowerMTA</div>
-                    <div className="text-xs opacity-70">
-                      {hasPowerMTAServers ? `${activeServers.length} servers` : 'Setup Required'}
-                    </div>
-                  </div>
-                </Button>
-              </div>
-
-              {sendMethod === 'powermta' && hasPowerMTAServers && (
-                <div className="mt-4">
-                  <Label className="text-sm font-medium mb-2 block">Select PowerMTA Server:</Label>
-                  <div className="space-y-2">
-                    {activeServers.map((server) => (
-                      <Button
-                        key={server.id}
-                        variant={selectedPowerMTAServer === server.id ? 'default' : 'outline'}
-                        onClick={() => setSelectedPowerMTAServer(server.id)}
-                        className="w-full justify-start"
-                        size="sm"
-                      >
-                        <Server className="w-4 h-4 mr-2" />
-                        {server.name} ({server.server_host})
-                      </Button>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Content Rotation */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">Content Rotation</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <Label className="text-sm font-medium">From Name Rotation</Label>
-                    <input
-                      type="checkbox"
-                      checked={useFromRotation}
-                      onChange={(e) => setUseFromRotation(e.target.checked)}
-                      className="w-4 h-4 rounded border-gray-300 focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-                  <p className="text-xs text-gray-500">Rotate sender names</p>
-                  {useFromRotation && (
-                    <Textarea
-                      placeholder="Enter from name variations (one per line)"
-                      value={fromNameVariations.join('\n')}
-                      onChange={(e) => handleFromNameVariationsChange(e.target.value)}
-                      rows={3}
-                      className="text-sm"
-                    />
-                  )}
-                </div>
-                
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <Label className="text-sm font-medium">Subject Rotation</Label>
-                    <input
-                      type="checkbox"
-                      checked={useSubjectRotation}
-                      onChange={(e) => setUseSubjectRotation(e.target.checked)}
-                      className="w-4 h-4 rounded border-gray-300 focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-                  <p className="text-xs text-gray-500">Rotate email subjects</p>
-                  {useSubjectRotation && (
-                    <Textarea
-                      placeholder="Enter subject variations (one per line)"
-                      value={subjectVariations.join('\n')}
-                      onChange={(e) => handleSubjectVariationsChange(e.target.value)}
-                      rows={3}
-                      className="text-sm"
-                    />
-                  )}
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Smart Configuration */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">Smart Configuration</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <Label className="text-sm font-medium">Enable Smart Config</Label>
-                  <p className="text-xs text-gray-500">Use Manual Configuration Override</p>
-                </div>
-                <input
-                  type="checkbox"
-                  checked={smartConfigEnabled}
-                  onChange={(e) => setSmartConfigEnabled(e.target.checked)}
-                  className="w-4 h-4 rounded border-gray-300 focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-              
-              {smartConfigEnabled && (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4 border-t">
-                  <div>
-                    <Label className="text-sm">Delay Between Emails (ms)</Label>
-                    <Input
-                      type="number"
-                      value={delayBetweenEmails}
-                      onChange={(e) => setDelayBetweenEmails(parseInt(e.target.value) || 2000)}
-                      min="100"
-                      max="30000"
-                      className="text-sm"
-                    />
-                  </div>
-                  <div>
-                    <Label className="text-sm">Batch Size</Label>
-                    <Input
-                      type="number"
-                      value={batchSize}
-                      onChange={(e) => setBatchSize(parseInt(e.target.value) || 50)}
-                      min="1"
-                      max="1000"
-                      className="text-sm"
-                    />
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <Label className="text-sm">Auto Retry Failed</Label>
-                    <input
-                      type="checkbox"
-                      checked={autoRetryFailed}
-                      onChange={(e) => setAutoRetryFailed(e.target.checked)}
-                      className="w-4 h-4 rounded"
-                    />
-                  </div>
-                  <div>
-                    <Label className="text-sm">Max Retries</Label>
-                    <Input
-                      type="number"
-                      value={maxRetries}
-                      onChange={(e) => setMaxRetries(parseInt(e.target.value) || 3)}
-                      min="1"
-                      max="10"
-                      className="text-sm"
-                    />
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Sending Configuration */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">Sending Configuration</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {/* Sending Mode */}
-              <div>
-                <Label className="text-sm font-medium mb-3 block">Sending Mode</Label>
-                <div className="space-y-2">
-                  {[
-                    { value: 'controlled', label: 'Controlled (2s delay)', description: 'Safe sending with delays' },
-                    { value: 'fast', label: 'Fast (0.5s delay)', description: 'Faster sending' },
-                    { value: 'zero-delay', label: 'Zero Delay (Max Speed)', description: 'Maximum speed' }
-                  ].map((mode) => (
-                    <div key={mode.value} className="flex items-center space-x-3">
-                      <input
-                        type="radio"
-                        id={mode.value}
-                        name="sendingMode"
-                        value={mode.value}
-                        checked={sendingMode === mode.value}
-                        onChange={(e) => setSendingMode(e.target.value as any)}
-                        className="w-4 h-4"
-                      />
-                      <div className="flex-1">
-                        <Label htmlFor={mode.value} className="text-sm font-medium cursor-pointer">
-                          {mode.label}
-                        </Label>
-                        <p className="text-xs text-gray-500">{mode.description}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-                {recipientCount > 0 && (
-                  <p className="text-xs text-blue-600 mt-2">
-                    Estimated time: {getEstimatedTime()}
-                  </p>
-                )}
-              </div>
-
-              {/* Additional Options */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4 border-t">
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <Label className="text-sm">Test After</Label>
-                    <input
-                      type="checkbox"
-                      checked={useTestAfter}
-                      onChange={(e) => setUseTestAfter(e.target.checked)}
-                      className="w-4 h-4 rounded"
-                    />
-                  </div>
-                  {useTestAfter && (
-                    <div className="grid grid-cols-2 gap-2">
-                      <Input
-                        placeholder="test@email.com"
-                        value={testAfterEmail}
-                        onChange={(e) => setTestAfterEmail(e.target.value)}
-                        className="text-xs"
-                      />
-                      <Input
-                        type="number"
-                        placeholder="Count"
-                        value={testAfterCount}
-                        onChange={(e) => setTestAfterCount(parseInt(e.target.value) || 10)}
-                        className="text-xs"
-                      />
-                    </div>
-                  )}
-                </div>
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <Label className="text-sm">Enable Tracking</Label>
-                    <input
-                      type="checkbox"
-                      checked={trackingEnabled}
-                      onChange={(e) => setTrackingEnabled(e.target.checked)}
-                      className="w-4 h-4 rounded"
-                    />
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Email Accounts */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">Email Accounts</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <CompactAccountSelector
-                selectedAccounts={selectedAccounts}
-                onAccountsChange={setSelectedAccounts}
-                onSelectAll={handleSelectAll}
-                onDeselectAll={handleDeselectAll}
-              />
-            </CardContent>
-          </Card>
-
-          {/* Email Content */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">Email Content</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div>
-                <Label htmlFor="html_content">HTML Content</Label>
-                <Textarea
-                  id="html_content"
-                  placeholder="<h1>Hello!</h1><p>Your HTML email content here...</p>"
-                  value={htmlContent}
-                  onChange={(e) => setHtmlContent(e.target.value)}
-                  rows={8}
-                />
-              </div>
-
-              <div>
-                <Label htmlFor="text_content">Plain Text Content (Optional)</Label>
-                <Textarea
-                  id="text_content"
-                  placeholder="Your plain text email content here..."
-                  value={textContent}
-                  onChange={(e) => setTextContent(e.target.value)}
-                  rows={4}
-                />
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Send Button */}
-          <div className="flex justify-end">
-            <Button
-              onClick={handleSend}
-              disabled={sending || !fromName || !subject || !recipients || selectedAccounts.length === 0 || (sendMethod === 'powermta' && !selectedPowerMTAServer)}
-              size="lg"
-              className="min-w-[200px]"
-            >
-              {sending ? (
-                <>
-                  <Loader2 className="animate-spin w-4 h-4 mr-2" />
-                  Creating Campaign...
-                </>
-              ) : (
-                <>
-                  <Zap className="w-4 h-4 mr-2" />
-                  Create Campaign Draft
-                </>
-              )}
+        <CardContent className="p-6 space-y-6">
+          <div className="grid grid-cols-3 gap-4">
+            <Button variant="default" className="bg-blue-600 hover:bg-blue-700">
+              Email/List (5)
+            </Button>
+            <Button variant="outline">
+              Account (5)
+            </Button>
+            <Button variant="outline">
+              Send/Config
             </Button>
           </div>
 
-          <Alert>
-            <AlertDescription>
-              <strong>Note:</strong> This will create a campaign draft. Go to Campaign History to prepare and send your campaign.
-              {sendMethod === 'powermta' && selectedPowerMTAServer && (
-                <><br/><strong>PowerMTA:</strong> Campaign will be queued to the selected PowerMTA server for distribution.</>
-              )}
-              {(useFromRotation || useSubjectRotation) && (
-                <><br/><strong>Rotation:</strong> Content will be rotated during campaign preparation.</>
-              )}
-              {smartConfigEnabled && (
-                <><br/><strong>Smart Config:</strong> Advanced timing and retry settings will be applied.</>
-              )}
-            </AlertDescription>
-          </Alert>
+          <div className="border rounded-lg p-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+              <div>
+                <Label>From Name *</Label>
+                <Input
+                  placeholder="Your Name"
+                  value={fromName}
+                  onChange={(e) => setFromName(e.target.value)}
+                />
+              </div>
+              <div>
+                <Label>Subject *</Label>
+                <Input
+                  placeholder="Email Subject"
+                  value={subject}
+                  onChange={(e) => setSubject(e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div className="mb-4">
+              <Label>
+                Use Manual Configuration Override
+                {recipientCount > 0 && <Badge variant="secondary" className="ml-2">{recipientCount} recipients</Badge>}
+              </Label>
+            </div>
+          </div>
         </CardContent>
       </Card>
+
+      {/* NEW: Dispatch Method */}
+      <Card>
+        <CardHeader className="bg-orange-50 rounded-t-lg">
+          <CardTitle className="flex items-center text-orange-900">
+            <Target className="w-5 h-5 mr-2" />
+            Dispatch Method
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="p-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+            <Button
+              variant={dispatchMethod === 'cloud_functions' ? 'default' : 'outline'}
+              onClick={() => setDispatchMethod('cloud_functions')}
+              className="h-auto p-4 flex flex-col items-center justify-center space-y-2"
+              disabled={!hasFunctions}
+            >
+              <Cloud className="w-6 h-6" />
+              <div className="text-center">
+                <div className="font-medium">Cloud Functions</div>
+                <div className="text-xs opacity-70">{enabledFunctions.length} functions available</div>
+              </div>
+            </Button>
+            
+            <Button
+              variant={dispatchMethod === 'powermta' ? 'default' : 'outline'}
+              onClick={() => setDispatchMethod('powermta')}
+              className="h-auto p-4 flex flex-col items-center justify-center space-y-2"
+              disabled={!hasPowerMTAServers}
+            >
+              <Server className="w-6 h-6" />
+              <div className="text-center">
+                <div className="font-medium">PowerMTA</div>
+                <div className="text-xs opacity-70">
+                  {hasPowerMTAServers ? `${activeServers.length} servers` : 'Setup Required'}
+                </div>
+              </div>
+            </Button>
+          </div>
+
+          {dispatchMethod === 'powermta' && hasPowerMTAServers && (
+            <div>
+              <Label className="text-sm font-medium mb-2 block">Select PowerMTA Server:</Label>
+              <div className="space-y-2">
+                {activeServers.map((server) => (
+                  <Button
+                    key={server.id}
+                    variant={selectedPowerMTAServer === server.id ? 'default' : 'outline'}
+                    onClick={() => setSelectedPowerMTAServer(server.id)}
+                    className="w-full justify-start"
+                    size="sm"
+                  >
+                    <Server className="w-4 h-4 mr-2" />
+                    {server.name} ({server.server_host})
+                  </Button>
+                ))}
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Sending Configuration */}
+      <Card>
+        <CardHeader className="bg-green-50 rounded-t-lg">
+          <CardTitle className="flex items-center text-green-900">
+            <Settings className="w-5 h-5 mr-2" />
+            Sending Configuration
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="p-6">
+          <div className="grid grid-cols-3 gap-4 mb-4">
+            <div>
+              <Label className="text-sm font-medium">Sending Mode</Label>
+              <div className="space-y-2 mt-2">
+                {[
+                  { value: 'controlled', label: 'Controlled (2s delay)', icon: '🕒' },
+                  { value: 'fast', label: 'Fast (0.5s delay)', icon: '⚡' },
+                  { value: 'zero-delay', label: 'Zero Delay (Max Speed)', icon: '🚀' }
+                ].map((mode) => (
+                  <div key={mode.value} className="flex items-center space-x-2">
+                    <input
+                      type="radio"
+                      id={mode.value}
+                      name="sendingMode"
+                      value={mode.value}
+                      checked={sendingMode === mode.value}
+                      onChange={(e) => setSendingMode(e.target.value as any)}
+                      className="w-4 h-4"
+                    />
+                    <Label htmlFor={mode.value} className="text-sm cursor-pointer">
+                      {mode.icon} {mode.label}
+                    </Label>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <Label className="text-sm font-medium">Dispatch Method</Label>
+              <div className="space-y-2 mt-2">
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="radio"
+                    checked={dispatchMethod === 'cloud_functions'}
+                    onChange={() => setDispatchMethod('cloud_functions')}
+                    className="w-4 h-4"
+                  />
+                  <Label className="text-sm">Cloud Functions (recommended)</Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="radio"
+                    checked={dispatchMethod === 'powermta'}
+                    onChange={() => setDispatchMethod('powermta')}
+                    className="w-4 h-4"
+                  />
+                  <Label className="text-sm">PowerMTA Server Bridge</Label>
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <Label className="text-sm font-medium">Subject Rotation</Label>
+              <div className="space-y-2 mt-2">
+                <Textarea
+                  placeholder="Subject line variations (one per line) - Rotates automaticlaly"
+                  value={subjectVariations.join('\n')}
+                  onChange={(e) => handleSubjectVariationsChange(e.target.value)}
+                  rows={3}
+                  className="text-sm"
+                />
+              </div>
+            </div>
+          </div>
+
+          {recipientCount > 0 && (
+            <div className="bg-blue-50 p-3 rounded-lg">
+              <p className="text-sm text-blue-800">
+                ⏱️ Estimated sending time: <strong>{getEstimatedTime()}</strong> for {recipientCount} recipients
+              </p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Email Accounts */}
+      <Card>
+        <CardHeader className="bg-purple-50 rounded-t-lg">
+          <CardTitle className="flex items-center text-purple-900">
+            <Settings className="w-5 h-5 mr-2" />
+            Email Accounts ({selectedAccounts.length} Selected)
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="p-6">
+          <div className="mb-4">
+            <Label className="text-sm font-medium mb-2 block">Select accounts:</Label>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={handleSelectAll}>
+                Select All
+              </Button>
+              <Button variant="outline" size="sm" onClick={handleDeselectAll}>
+                Deselect All
+              </Button>
+            </div>
+          </div>
+          <CompactAccountSelector
+            selectedAccounts={selectedAccounts}
+            onAccountsChange={setSelectedAccounts}
+            onSelectAll={handleSelectAll}
+            onDeselectAll={handleDeselectAll}
+          />
+        </CardContent>
+      </Card>
+
+      {/* Campaign Details */}
+      <Card>
+        <CardHeader className="bg-gray-50 rounded-t-lg">
+          <CardTitle className="text-gray-900">Campaign Details</CardTitle>
+        </CardHeader>
+        <CardContent className="p-6 space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <Label>From Name *</Label>
+              <Input
+                placeholder="Your Name"
+                value={fromName}
+                onChange={(e) => setFromName(e.target.value)}
+              />
+            </div>
+            <div>
+              <Label>Subject *</Label>
+              <Input
+                placeholder="Your Subject"
+                value={subject}
+                onChange={(e) => setSubject(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <div>
+            <Label>Recipient Rotation</Label>
+            <div className="flex items-center space-x-2 mt-2">
+              <input
+                type="checkbox"
+                checked={useFromRotation}
+                onChange={(e) => setUseFromRotation(e.target.checked)}
+                className="w-4 h-4"
+              />
+              <Label className="text-sm">Use automatic sender name rotation</Label>
+            </div>
+          </div>
+
+          <div>
+            <Label>Subject Rotation</Label>
+            <div className="flex items-center space-x-2 mt-2">
+              <input
+                type="checkbox"
+                checked={useSubjectRotation}
+                onChange={(e) => setUseSubjectRotation(e.target.checked)}
+                className="w-4 h-4"
+              />
+              <Label className="text-sm">Rotate email subjects automatically</Label>
+            </div>
+          </div>
+
+          <div>
+            <Label>From Name Rotation</Label>
+            <Textarea
+              placeholder="Enter from name variations (one per line)"
+              value={fromNameVariations.join('\n')}
+              onChange={(e) => handleFromNameVariationsChange(e.target.value)}
+              rows={3}
+            />
+          </div>
+
+          <div>
+            <Label>Import Recipients from CSV File</Label>
+            <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
+              <div className="mb-4">
+                <div className="w-12 h-12 mx-auto mb-4 bg-gray-100 rounded-lg flex items-center justify-center">
+                  📄
+                </div>
+                <p className="text-sm text-gray-600 mb-2">
+                  Upload a CSV file with recipient information, First row should contain headers, additional columns are supported
+                </p>
+                <Button size="sm" className="bg-blue-600 hover:bg-blue-700">
+                  Choose CSV File
+                </Button>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <Label>Recipients</Label>
+            <Textarea
+              placeholder="Enter email addresses (one per line or comma-separated)"
+              value={recipients}
+              onChange={(e) => setRecipients(e.target.value)}
+              rows={4}
+            />
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* HTML Content */}
+      <Card>
+        <CardHeader className="bg-gray-50 rounded-t-lg">
+          <CardTitle className="text-gray-900">HTML Content</CardTitle>
+        </CardHeader>
+        <CardContent className="p-6">
+          <div className="mb-4">
+            <div className="flex items-center space-x-2">
+              <input
+                type="checkbox"
+                checked={trackingEnabled}
+                onChange={(e) => setTrackingEnabled(e.target.checked)}
+                className="w-4 h-4"
+              />
+              <Label className="text-sm">Enable click tracking, open tracking, and unsubscribe functionality for emails</Label>
+            </div>
+          </div>
+          <Textarea
+            placeholder="<h1>HTML content here...</h1>"
+            value={htmlContent}
+            onChange={(e) => setHtmlContent(e.target.value)}
+            rows={12}
+          />
+        </CardContent>
+      </Card>
+
+      {/* Plain Text Content */}
+      <Card>
+        <CardHeader className="bg-gray-50 rounded-t-lg">
+          <CardTitle className="text-gray-900">Plain Text Content</CardTitle>
+        </CardHeader>
+        <CardContent className="p-6">
+          <Textarea
+            placeholder="Your plain text email content here..."
+            value={textContent}
+            onChange={(e) => setTextContent(e.target.value)}
+            rows={8}
+          />
+        </CardContent>
+      </Card>
+
+      {/* Send Test Email */}
+      <Card>
+        <CardHeader className="bg-yellow-50 rounded-t-lg">
+          <CardTitle className="text-yellow-900">Send Test Email</CardTitle>
+        </CardHeader>
+        <CardContent className="p-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <div className="flex items-center space-x-2 mb-2">
+                <input
+                  type="checkbox"
+                  checked={useTestAfter}
+                  onChange={(e) => setUseTestAfter(e.target.checked)}
+                  className="w-4 h-4"
+                />
+                <Label className="text-sm font-medium">Test After X Emails</Label>
+              </div>
+              <Input
+                placeholder="test@email.com"
+                value={testAfterEmail}
+                onChange={(e) => setTestAfterEmail(e.target.value)}
+                disabled={!useTestAfter}
+              />
+            </div>
+            <div>
+              <Label className="text-sm font-medium">Send Every X Emails</Label>
+              <Input
+                type="number"
+                placeholder="10"
+                value={testAfterCount}
+                onChange={(e) => setTestAfterCount(parseInt(e.target.value) || 10)}
+                disabled={!useTestAfter}
+              />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Test Campaign */}
+      <Card className="border-yellow-300 bg-yellow-50">
+        <CardContent className="p-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="font-medium text-yellow-900">⚠️ Test Campaign - Use Central Accounts</h3>
+            </div>
+            <Button variant="outline" className="border-yellow-400 text-yellow-800 hover:bg-yellow-100">
+              🧪 Test Campaign
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Create Campaign Button */}
+      <div className="bg-gray-800 p-6 rounded-lg">
+        <div className="text-center">
+          <p className="text-white mb-4">
+            After creating, see <strong>Campaign History</strong> to prepare and send your email.
+          </p>
+          <Button
+            onClick={handleSend}
+            disabled={sending || !fromName || !subject || !recipients || selectedAccounts.length === 0 || (dispatchMethod === 'powermta' && !selectedPowerMTAServer)}
+            size="lg"
+            className="bg-blue-600 hover:bg-blue-700 min-w-[300px] h-12"
+          >
+            {sending ? (
+              <>
+                <Loader2 className="animate-spin w-5 h-5 mr-2" />
+                Creating Campaign...
+              </>
+            ) : (
+              <>
+                <Zap className="w-5 h-5 mr-2" />
+                Create Campaign Draft
+              </>
+            )}
+          </Button>
+        </div>
+      </div>
     </div>
   );
 };
