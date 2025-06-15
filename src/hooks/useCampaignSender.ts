@@ -1,4 +1,3 @@
-
 import { useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useEmailAccounts } from './useEmailAccounts';
@@ -29,6 +28,47 @@ export const useCampaignSender = (organizationId?: string) => {
   const { accounts } = useEmailAccounts(organizationId);
   const { functions } = useGcfFunctions(organizationId);
 
+  // Enhanced fetch with retry logic
+  const fetchWithRetry = async (url: string, options: RequestInit, maxRetries = 3): Promise<Response> => {
+    let lastError: Error;
+    
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        console.log(`🔄 Attempt ${attempt}/${maxRetries} for ${url}`);
+        
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+        
+        const response = await fetch(url, {
+          ...options,
+          signal: controller.signal
+        });
+        
+        clearTimeout(timeoutId);
+        
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(`HTTP ${response.status}: ${errorText}`);
+        }
+        
+        console.log(`✅ Success on attempt ${attempt} for ${url}`);
+        return response;
+        
+      } catch (error: any) {
+        lastError = error;
+        console.error(`❌ Attempt ${attempt} failed for ${url}:`, error.message);
+        
+        if (attempt < maxRetries) {
+          const delay = Math.min(1000 * Math.pow(2, attempt - 1), 5000); // Exponential backoff, max 5s
+          console.log(`⏳ Waiting ${delay}ms before retry ${attempt + 1}`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
+      }
+    }
+    
+    throw lastError;
+  };
+
   const sendCampaign = async (campaignData: CampaignData) => {
     if (!organizationId) {
       throw new Error('Organization not selected');
@@ -38,7 +78,7 @@ export const useCampaignSender = (organizationId?: string) => {
       setIsSending(true);
       setProgress(0);
 
-      console.log('🚀 ULTRA-FAST SEND: Starting lightning-fast campaign dispatch');
+      console.log('🚀 ULTRA-FAST SEND: Starting enhanced campaign dispatch with retry logic');
 
       // Get the campaign from database - single query with minimal data transfer
       const { data: existingCampaign, error: fetchError } = await supabase
@@ -102,10 +142,10 @@ export const useCampaignSender = (organizationId?: string) => {
 
       setProgress(50);
 
-      // FIXED: Better distribution logic to ensure all functions get work
+      // Better distribution logic
       const emailsPerFunction = Math.ceil(preparedEmails.length / enabledFunctions.length);
       
-      // Create ultra-optimized payloads for each function with GUARANTEED parallel execution
+      // Create enhanced payloads with better error handling
       const functionPayloads = enabledFunctions.map((func, funcIndex) => {
         const startIndex = funcIndex * emailsPerFunction;
         const endIndex = Math.min(startIndex + emailsPerFunction, preparedEmails.length);
@@ -137,29 +177,27 @@ export const useCampaignSender = (organizationId?: string) => {
               type: account.type,
               config: {
                 ...account.config,
-                // MAXIMUM SPEED SETTINGS - CRITICAL FOR PERFORMANCE
+                // ENHANCED SPEED SETTINGS
                 ...(account.type === 'smtp' ? {
                   pool: true,
-                  maxConnections: 1000, // INCREASED: More connections
+                  maxConnections: 500, // Increased connections
                   maxMessages: Infinity,
                   rateDelta: 0,
                   rateLimit: false,
-                  connectionTimeout: 300000,
-                  greetingTimeout: 120000,
-                  socketTimeout: 300000,
+                  connectionTimeout: 60000, // Reduced timeout
+                  greetingTimeout: 30000,
+                  socketTimeout: 60000,
                   sendTimeout: 0,
                   idleTimeout: 0,
                   keepAlive: true,
-                  // CRITICAL: Force concurrent sending
-                  concurrentConnections: 50
+                  concurrentConnections: 100 // More concurrent connections
                 } : {
                   exec_url: account.config?.exec_url || account.config?.script_url,
                   script_url: account.config?.script_url,
                   api_key: account.config?.api_key,
-                  timeout: 30000, // Reduced timeout for faster fails
-                  // CRITICAL: Apps Script parallel mode
+                  timeout: 45000, // Longer timeout for Apps Script
                   parallelMode: true,
-                  maxConcurrent: 100
+                  maxConcurrent: 50
                 })
               }
             })),
@@ -167,9 +205,7 @@ export const useCampaignSender = (organizationId?: string) => {
             globalStartIndex: startIndex,
             ultraFastMode: true,
             maxParallel: true,
-            // CRITICAL: Force the Cloud Function to use Promise.all
             forceParallelExecution: true,
-            // Debug info
             functionIndex: funcIndex,
             totalFunctions: enabledFunctions.length
           }
@@ -178,10 +214,9 @@ export const useCampaignSender = (organizationId?: string) => {
 
       setProgress(75);
 
-      console.log(`🚀 ULTRA-FAST: Launching ${functionPayloads.length} functions in MAXIMUM PARALLEL mode`);
-      console.log(`📊 DISTRIBUTION: ${functionPayloads.map((p, i) => `F${i+1}:${p?.payload.slice.preparedEmails.length}`).join(', ')} emails`);
+      console.log(`🚀 ULTRA-FAST: Launching ${functionPayloads.length} functions with enhanced retry logic`);
 
-      // CRITICAL FIX: Fire all functions simultaneously with proper error handling
+      // ENHANCED: Fire all functions with robust error handling and retries
       const functionPromises = functionPayloads.map(async ({ func, payload }, index) => {
         const startTime = Date.now();
         const functionLabel = `F${index + 1}(${func.name})`;
@@ -189,27 +224,19 @@ export const useCampaignSender = (organizationId?: string) => {
         try {
           console.log(`🚀 ${functionLabel}: Firing with ${payload.slice.preparedEmails.length} emails`);
           
-          // CRITICAL: Add headers to ensure proper processing
-          const response = await fetch(func.url, {
+          const response = await fetchWithRetry(func.url, {
             method: 'POST',
             headers: { 
               'Content-Type': 'application/json',
               'Keep-Alive': 'timeout=300, max=1000',
               'Cache-Control': 'no-cache',
-              // CRITICAL: Custom header to ensure parallel processing
               'X-Parallel-Mode': 'true',
               'X-Function-Index': index.toString(),
-              'X-Total-Functions': enabledFunctions.length.toString()
+              'X-Total-Functions': enabledFunctions.length.toString(),
+              'Accept': 'application/json'
             },
-            body: JSON.stringify(payload),
-            // CRITICAL: Longer timeout to prevent premature failures
-            signal: AbortSignal.timeout(300000) // 5 minutes
+            body: JSON.stringify(payload)
           });
-
-          if (!response.ok) {
-            const errorText = await response.text();
-            throw new Error(`HTTP ${response.status}: ${errorText}`);
-          }
 
           const result = await response.json();
           const duration = Date.now() - startTime;
@@ -239,7 +266,7 @@ export const useCampaignSender = (organizationId?: string) => {
         }
       });
 
-      // CRITICAL: Wait for status update and all functions to complete
+      // Wait for all functions with enhanced error reporting
       const [statusResult, ...results] = await Promise.all([statusUpdatePromise, ...functionPromises]);
       
       if (statusResult.error) {
@@ -253,19 +280,20 @@ export const useCampaignSender = (organizationId?: string) => {
       const totalSentEmails = successfulDispatches.reduce((sum, result) => sum + (result.sentCount || 0), 0);
       const totalDuration = Math.max(...results.map(r => r.duration || 0));
 
-      console.log(`🎉 ULTRA-FAST COMPLETE: ${totalSentEmails}/${preparedEmails.length} emails sent in ${totalDuration}ms`);
+      console.log(`🎉 ENHANCED DISPATCH COMPLETE: ${totalSentEmails}/${preparedEmails.length} emails sent in ${totalDuration}ms`);
       console.log(`📊 SUCCESS BREAKDOWN: ${successfulDispatches.map(r => `F${r.functionIndex + 1}:${r.sentCount}`).join(', ')}`);
       
       if (failedDispatches.length > 0) {
         console.error(`❌ FAILED FUNCTIONS: ${failedDispatches.map(r => `F${r.functionIndex + 1}:${r.error}`).join(', ')}`);
       }
 
+      // Enhanced error handling
       if (totalSentEmails === 0) {
         const errors = failedDispatches.map(r => r.error).join(', ');
-        throw new Error(`No emails were sent. Errors: ${errors}`);
+        throw new Error(`No emails were sent. Network errors: ${errors}`);
       }
 
-      // CRITICAL: Update final campaign status with accurate count
+      // Update final campaign status
       const finalUpdate = await supabase
         .from('email_campaigns')
         .update({ 
@@ -279,7 +307,7 @@ export const useCampaignSender = (organizationId?: string) => {
         console.warn('Final status update failed:', finalUpdate.error);
       }
 
-      const successMessage = `Ultra-Fast Campaign Complete! ${totalSentEmails}/${preparedEmails.length} emails sent in ${totalDuration}ms`;
+      const successMessage = `Enhanced Campaign Complete! ${totalSentEmails}/${preparedEmails.length} emails sent in ${totalDuration}ms`;
       const speed = Math.round(totalSentEmails / (totalDuration / 1000));
       
       toast.success(successMessage);
@@ -290,13 +318,13 @@ export const useCampaignSender = (organizationId?: string) => {
         totalEmails: totalSentEmails,
         targetEmails: preparedEmails.length,
         duration: totalDuration,
-        speed: speed, // emails per second
+        speed: speed,
         functionsUsed: successfulDispatches.length,
         functionsFailed: failedDispatches.length
       };
 
     } catch (error: any) {
-      console.error('❌ ULTRA-FAST: Campaign failed:', error);
+      console.error('❌ ENHANCED DISPATCH: Campaign failed:', error);
       toast.error(`Campaign failed: ${error.message}`);
       throw error;
     } finally {
