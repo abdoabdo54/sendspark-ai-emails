@@ -1,4 +1,3 @@
-
 interface SMTPConfig {
   host: string;
   port: number;
@@ -39,20 +38,17 @@ export async function sendEmailViaSMTP(
       text: textContent || htmlContent?.replace(/<[^>]*>/g, '') || ''
     };
 
-    // Enhanced configuration mapping for better compatibility
+    // Simple configuration mapping to match cloud function expectations
     const smtpConfig = {
       host: config.host,
       port: config.port,
       username: config.username,
       password: config.password,
       encryption: config.encryption || config.security || 'tls',
-      auth_required: config.auth_required !== false && config.use_auth !== false,
-      // Ensure backward compatibility
-      security: config.security || config.encryption || 'tls',
-      use_auth: config.use_auth !== false && config.auth_required !== false
+      auth_required: config.auth_required !== false && config.use_auth !== false
     };
 
-    console.log('📧 Calling SMTP edge function with enhanced config:', {
+    console.log('📧 Calling SMTP edge function with config:', {
       host: smtpConfig.host,
       port: smtpConfig.port,
       username: smtpConfig.username,
@@ -113,16 +109,14 @@ export async function testSMTPConnection(config: SMTPConfig): Promise<{ success:
     
     console.log('🔍 Calling SMTP test edge function');
 
-    // Enhanced configuration for testing
+    // Simple configuration for testing
     const testConfig = {
       host: config.host,
       port: config.port,
       username: config.username,
       password: config.password,
       encryption: config.encryption || config.security || 'tls',
-      auth_required: config.auth_required !== false && config.use_auth !== false,
-      security: config.security || config.encryption || 'tls',
-      use_auth: config.use_auth !== false && config.auth_required !== false
+      auth_required: config.auth_required !== false && config.use_auth !== false
     };
 
     const { data, error } = await supabase.functions.invoke('smtp-test', {
