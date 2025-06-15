@@ -69,16 +69,57 @@ export const useCampaignSender = (organizationId?: string) => {
     throw lastError;
   };
 
+  // Add a quick health check before fire (returns true if ok)
+  const checkFunctionHealth = async (url: string) => {
+    try {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ test: true, ping: "health-check" }),
+        signal: AbortSignal.timeout ? AbortSignal.timeout(8000) : undefined
+      });
+      if (!response.ok) return false;
+      return true;
+    } catch (e: any) {
+      console.warn("GCF health check failed:", url, e.message);
+      return false;
+    }
+  };
+
   const sendCampaign = async (campaignData: CampaignData) => {
     if (!organizationId) {
       throw new Error('Organization not selected');
     }
 
+    // LOCAL list for error diagnostics
+    let failedFunctionUrls: string[] = [];
+
     try {
       setIsSending(true);
       setProgress(0);
 
-      console.log('🚀 ULTRA-FAST SEND: Starting enhanced campaign dispatch with retry logic');
+      // STEP 0: Health check all GCFs before firing
+      console.log("🌐 Checking health of GCF endpoints before ultra-fast send...");
+      const { functions } = useGcfFunctions(organizationId);
+
+      const enabledFunctions = functions.filter(f => f.enabled);
+      if (enabledFunctions.length === 0) {
+        throw new Error('No enabled Google Cloud Functions found');
+      }
+
+      const healthResults = await Promise.all(
+        enabledFunctions.map(f => 
+          checkFunctionHealth(f.url).then(ok => ({ url: f.url, ok }))
+        )
+      );
+      const unhealthy = healthResults.filter(r => !r.ok).map(r => r.url);
+      if (unhealthy.length > 0) {
+        throw new Error(
+          `One or more Google Cloud Functions are unreachable: \n${unhealthy.join('\n')}\n` +
+          `Please check your function URLs and deployment, ensure they allow public requests, and support CORS.`
+        );
+      }
+      console.log("✅ All enabled GCF endpoints are reachable.");
 
       // Get the campaign from database - single query with minimal data transfer
       const { data: existingCampaign, error: fetchError } = await supabase
@@ -255,6 +296,7 @@ export const useCampaignSender = (organizationId?: string) => {
         } catch (error: any) {
           const duration = Date.now() - startTime;
           console.error(`❌ ${functionLabel}: Failed after ${duration}ms:`, error);
+          failedFunctionUrls.push(func.url);
           return { 
             success: false, 
             function: func.name, 
@@ -325,8 +367,14 @@ export const useCampaignSender = (organizationId?: string) => {
 
     } catch (error: any) {
       console.error('❌ ENHANCED DISPATCH: Campaign failed:', error);
-      toast.error(`Campaign failed: ${error.message}`);
-      throw error;
+
+      // Show advanced error diagnostics if network/GCF endpoint failures
+      let message = error?.message || "Campaign failed";
+      if (Array.isArray(failedFunctionUrls) && failedFunctionUrls.length > 0) {
+        message += `\nFailed to reach the following endpoints:\n${failedFunctionUrls.join('\n')}\n\nPossible Causes:\n- Cloud Function not deployed or not public\n- Wrong Function URL\n- Cloud Function not allowing CORS or POST\n- Firewall or region issues`;
+      }
+      toast.error(message);
+      throw new Error(message);
     } finally {
       setIsSending(false);
       setProgress(0);
