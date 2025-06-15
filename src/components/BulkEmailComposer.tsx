@@ -9,10 +9,8 @@ import { Separator } from '@/components/ui/separator';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
-import { Send, Loader2, FileText, Users, Settings, Zap } from 'lucide-react';
-import AdvancedConfigurationPanel from './AdvancedConfigurationPanel';
+import { Send, Loader2, Settings, Zap, Server, Cloud, Target } from 'lucide-react';
 import CompactAccountSelector from './CompactAccountSelector';
-import CampaignSendMethodSelector from './CampaignSendMethodSelector';
 import { useSimpleOrganizations } from '@/contexts/SimpleOrganizationContext';
 import { useEmailAccounts } from '@/hooks/useEmailAccounts';
 import { useGcfFunctions } from '@/hooks/useGcfFunctions';
@@ -28,36 +26,38 @@ const BulkEmailComposer: React.FC<BulkEmailComposerProps> = ({ onSend }) => {
   const { functions } = useGcfFunctions(currentOrganization?.id);
   const { servers } = usePowerMTAServers(currentOrganization?.id);
   
+  // Basic campaign fields
   const [fromName, setFromName] = useState('');
   const [subject, setSubject] = useState('');
   const [recipients, setRecipients] = useState('');
   const [htmlContent, setHtmlContent] = useState('');
   const [textContent, setTextContent] = useState('');
   const [selectedAccounts, setSelectedAccounts] = useState<string[]>([]);
+  const [sending, setSending] = useState(false);
+
+  // Send method configuration
   const [sendMethod, setSendMethod] = useState<'cloud_functions' | 'powermta'>('cloud_functions');
   const [selectedPowerMTAServer, setSelectedPowerMTAServer] = useState<string>('');
-  const [sending, setSending] = useState(false);
-  const [showAdvanced, setShowAdvanced] = useState(false);
 
-  // Advanced configuration state - ALL original features restored
-  const [sendingMode, setSendingMode] = useState<'controlled' | 'fast' | 'zero-delay'>('controlled');
-  const [useTestAfter, setUseTestAfter] = useState(false);
-  const [testAfterEmail, setTestAfterEmail] = useState('');
-  const [testAfterCount, setTestAfterCount] = useState(10);
-  const [trackingEnabled, setTrackingEnabled] = useState(true);
+  // Content Rotation
   const [useFromRotation, setUseFromRotation] = useState(false);
   const [useSubjectRotation, setUseSubjectRotation] = useState(false);
+  const [fromNameVariations, setFromNameVariations] = useState<string[]>([]);
+  const [subjectVariations, setSubjectVariations] = useState<string[]>([]);
 
-  // Smart Config features - RESTORED
+  // Smart Configuration
   const [smartConfigEnabled, setSmartConfigEnabled] = useState(false);
   const [delayBetweenEmails, setDelayBetweenEmails] = useState(2000);
   const [batchSize, setBatchSize] = useState(50);
   const [autoRetryFailed, setAutoRetryFailed] = useState(true);
   const [maxRetries, setMaxRetries] = useState(3);
 
-  // Subject and From rotation - RESTORED
-  const [subjectVariations, setSubjectVariations] = useState<string[]>([]);
-  const [fromNameVariations, setFromNameVariations] = useState<string[]>([]);
+  // Sending Configuration
+  const [sendingMode, setSendingMode] = useState<'controlled' | 'fast' | 'zero-delay'>('controlled');
+  const [useTestAfter, setUseTestAfter] = useState(false);
+  const [testAfterEmail, setTestAfterEmail] = useState('');
+  const [testAfterCount, setTestAfterCount] = useState(10);
+  const [trackingEnabled, setTrackingEnabled] = useState(true);
 
   const recipientCount = recipients.split('\n').filter(email => email.trim()).length;
   const activeAccounts = accounts.filter(account => account.is_active);
@@ -158,25 +158,25 @@ const BulkEmailComposer: React.FC<BulkEmailComposerProps> = ({ onSend }) => {
           sendMethod,
           selectedPowerMTAServer: sendMethod === 'powermta' ? selectedPowerMTAServer : null,
           
-          // Advanced sending configuration
-          sendingMode,
-          useTestAfter,
-          testAfterEmail,
-          testAfterCount,
-          trackingEnabled,
-          
-          // Rotation settings - RESTORED
+          // Content rotation settings
           useFromRotation,
           useSubjectRotation,
           fromNameVariations: useFromRotation ? fromNameVariations : [],
           subjectVariations: useSubjectRotation ? subjectVariations : [],
           
-          // Smart config - RESTORED
+          // Smart config settings
           smartConfigEnabled,
           delayBetweenEmails: smartConfigEnabled ? delayBetweenEmails : 2000,
           batchSize: smartConfigEnabled ? batchSize : 50,
           autoRetryFailed,
           maxRetries,
+          
+          // Sending configuration
+          sendingMode,
+          useTestAfter,
+          testAfterEmail,
+          testAfterCount,
+          trackingEnabled,
           
           // Performance settings
           estimatedTime: getEstimatedTime()
@@ -212,246 +212,364 @@ const BulkEmailComposer: React.FC<BulkEmailComposerProps> = ({ onSend }) => {
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-6">
-          {/* Basic Campaign Info */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <Label htmlFor="from_name">From Name</Label>
-              <Input
-                id="from_name"
-                placeholder="Your Name"
-                value={fromName}
-                onChange={(e) => setFromName(e.target.value)}
-                required
-              />
-            </div>
-            <div>
-              <Label htmlFor="subject">Subject</Label>
-              <Input
-                id="subject"
-                placeholder="Your email subject"
-                value={subject}
-                onChange={(e) => setSubject(e.target.value)}
-                required
-              />
-            </div>
-          </div>
+          {/* Campaign Details */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg">Campaign Details</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="from_name">From Name *</Label>
+                  <Input
+                    id="from_name"
+                    placeholder="Your Name"
+                    value={fromName}
+                    onChange={(e) => setFromName(e.target.value)}
+                    required
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="subject">Subject *</Label>
+                  <Input
+                    id="subject"
+                    placeholder="Email Subject"
+                    value={subject}
+                    onChange={(e) => setSubject(e.target.value)}
+                    required
+                  />
+                </div>
+              </div>
 
-          {/* Recipients */}
-          <div>
-            <Label htmlFor="recipients">
-              Recipients 
-              {recipientCount > 0 && <Badge variant="secondary" className="ml-2">{recipientCount} emails</Badge>}
-            </Label>
-            <Textarea
-              id="recipients"
-              placeholder="Enter email addresses (one per line or comma-separated)"
-              value={recipients}
-              onChange={(e) => setRecipients(e.target.value)}
-              rows={4}
-              required
-            />
-          </div>
+              <div>
+                <Label htmlFor="recipients">
+                  Recipients * 
+                  {recipientCount > 0 && <Badge variant="secondary" className="ml-2">{recipientCount} recipients</Badge>}
+                </Label>
+                <Textarea
+                  id="recipients"
+                  placeholder="Enter email addresses (one per line or comma-separated)"
+                  value={recipients}
+                  onChange={(e) => setRecipients(e.target.value)}
+                  rows={4}
+                  required
+                />
+              </div>
+            </CardContent>
+          </Card>
 
-          <Separator />
-
-          {/* Send Method Selection */}
-          <CampaignSendMethodSelector
-            selectedMethod={sendMethod}
-            onMethodChange={setSendMethod}
-            selectedPowerMTAServer={selectedPowerMTAServer}
-            onPowerMTAServerChange={setSelectedPowerMTAServer}
-          />
-
-          <Separator />
-
-          {/* Account Selection */}
-          <CompactAccountSelector
-            selectedAccounts={selectedAccounts}
-            onAccountsChange={setSelectedAccounts}
-            onSelectAll={handleSelectAll}
-            onDeselectAll={handleDeselectAll}
-          />
-
-          <Separator />
-
-          {/* Email Content */}
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <Label className="text-base font-medium">Email Content</Label>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setShowAdvanced(!showAdvanced)}
-              >
-                <Settings className="w-4 h-4 mr-1" />
-                {showAdvanced ? 'Hide' : 'Show'} Advanced
-              </Button>
-            </div>
-
-            <div>
-              <Label htmlFor="html_content">HTML Content</Label>
-              <Textarea
-                id="html_content"
-                placeholder="<h1>Hello!</h1><p>Your HTML email content here...</p>"
-                value={htmlContent}
-                onChange={(e) => setHtmlContent(e.target.value)}
-                rows={8}
-              />
-            </div>
-
-            <div>
-              <Label htmlFor="text_content">Plain Text Content (Optional)</Label>
-              <Textarea
-                id="text_content"
-                placeholder="Your plain text email content here..."
-                value={textContent}
-                onChange={(e) => setTextContent(e.target.value)}
-                rows={4}
-              />
-            </div>
-          </div>
-
-          {/* Advanced Configuration - ALL FEATURES RESTORED */}
-          {showAdvanced && (
-            <>
-              <Separator />
-              
-              {/* Rotation Configuration - RESTORED */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-sm">Content Rotation</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <Label>From Name Rotation</Label>
-                        <input
-                          type="checkbox"
-                          checked={useFromRotation}
-                          onChange={(e) => setUseFromRotation(e.target.checked)}
-                          className="rounded"
-                        />
-                      </div>
-                      {useFromRotation && (
-                        <Textarea
-                          placeholder="Enter from name variations (one per line)"
-                          value={fromNameVariations.join('\n')}
-                          onChange={(e) => handleFromNameVariationsChange(e.target.value)}
-                          rows={3}
-                        />
-                      )}
-                    </div>
-                    
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <Label>Subject Rotation</Label>
-                        <input
-                          type="checkbox"
-                          checked={useSubjectRotation}
-                          onChange={(e) => setUseSubjectRotation(e.target.checked)}
-                          className="rounded"
-                        />
-                      </div>
-                      {useSubjectRotation && (
-                        <Textarea
-                          placeholder="Enter subject variations (one per line)"
-                          value={subjectVariations.join('\n')}
-                          onChange={(e) => handleSubjectVariationsChange(e.target.value)}
-                          rows={3}
-                        />
-                      )}
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Smart Config - RESTORED */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-sm">Smart Configuration</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
+          {/* Content Rotation */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg">Content Rotation</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-3">
                   <div className="flex items-center justify-between">
-                    <Label>Enable Smart Config</Label>
+                    <Label className="text-sm font-medium">From Name Rotation</Label>
                     <input
                       type="checkbox"
-                      checked={smartConfigEnabled}
-                      onChange={(e) => setSmartConfigEnabled(e.target.checked)}
-                      className="rounded"
+                      checked={useFromRotation}
+                      onChange={(e) => setUseFromRotation(e.target.checked)}
+                      className="w-4 h-4 rounded border-gray-300 focus:ring-2 focus:ring-blue-500"
                     />
                   </div>
+                  <p className="text-xs text-gray-500">Rotate sender names</p>
+                  {useFromRotation && (
+                    <Textarea
+                      placeholder="Enter from name variations (one per line)"
+                      value={fromNameVariations.join('\n')}
+                      onChange={(e) => handleFromNameVariationsChange(e.target.value)}
+                      rows={3}
+                      className="text-sm"
+                    />
+                  )}
+                </div>
+                
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-sm font-medium">Subject Rotation</Label>
+                    <input
+                      type="checkbox"
+                      checked={useSubjectRotation}
+                      onChange={(e) => setUseSubjectRotation(e.target.checked)}
+                      className="w-4 h-4 rounded border-gray-300 focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <p className="text-xs text-gray-500">Rotate email subjects</p>
+                  {useSubjectRotation && (
+                    <Textarea
+                      placeholder="Enter subject variations (one per line)"
+                      value={subjectVariations.join('\n')}
+                      onChange={(e) => handleSubjectVariationsChange(e.target.value)}
+                      rows={3}
+                      className="text-sm"
+                    />
+                  )}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Smart Configuration */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg">Smart Configuration</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label className="text-sm font-medium">Enable Smart Config</Label>
+                  <p className="text-xs text-gray-500">Use Manual Configuration Override</p>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={smartConfigEnabled}
+                  onChange={(e) => setSmartConfigEnabled(e.target.checked)}
+                  className="w-4 h-4 rounded border-gray-300 focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              
+              {smartConfigEnabled && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4 border-t">
+                  <div>
+                    <Label className="text-sm">Delay Between Emails (ms)</Label>
+                    <Input
+                      type="number"
+                      value={delayBetweenEmails}
+                      onChange={(e) => setDelayBetweenEmails(parseInt(e.target.value) || 2000)}
+                      min="100"
+                      max="30000"
+                      className="text-sm"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-sm">Batch Size</Label>
+                    <Input
+                      type="number"
+                      value={batchSize}
+                      onChange={(e) => setBatchSize(parseInt(e.target.value) || 50)}
+                      min="1"
+                      max="1000"
+                      className="text-sm"
+                    />
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <Label className="text-sm">Auto Retry Failed</Label>
+                    <input
+                      type="checkbox"
+                      checked={autoRetryFailed}
+                      onChange={(e) => setAutoRetryFailed(e.target.checked)}
+                      className="w-4 h-4 rounded"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-sm">Max Retries</Label>
+                    <Input
+                      type="number"
+                      value={maxRetries}
+                      onChange={(e) => setMaxRetries(parseInt(e.target.value) || 3)}
+                      min="1"
+                      max="10"
+                      className="text-sm"
+                    />
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Sending Configuration */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg flex items-center">
+                <Target className="w-5 h-5 mr-2" />
+                Sending Configuration
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {/* Dispatch Method */}
+              <div>
+                <Label className="text-sm font-medium mb-3 block">Dispatch Method</Label>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <Button
+                    variant={sendMethod === 'cloud_functions' ? 'default' : 'outline'}
+                    onClick={() => setSendMethod('cloud_functions')}
+                    className="h-auto p-4 flex flex-col items-center justify-center space-y-2"
+                    disabled={!hasFunctions}
+                  >
+                    <Cloud className="w-6 h-6" />
+                    <div className="text-center">
+                      <div className="font-medium">Parallel (All functions)</div>
+                      <div className="text-xs opacity-70">{enabledFunctions.length} functions</div>
+                    </div>
+                  </Button>
                   
-                  {smartConfigEnabled && (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <Label>Delay Between Emails (ms)</Label>
-                        <Input
-                          type="number"
-                          value={delayBetweenEmails}
-                          onChange={(e) => setDelayBetweenEmails(parseInt(e.target.value) || 2000)}
-                          min="100"
-                          max="30000"
-                        />
-                      </div>
-                      <div>
-                        <Label>Batch Size</Label>
-                        <Input
-                          type="number"
-                          value={batchSize}
-                          onChange={(e) => setBatchSize(parseInt(e.target.value) || 50)}
-                          min="1"
-                          max="1000"
-                        />
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <Label>Auto Retry Failed</Label>
-                        <input
-                          type="checkbox"
-                          checked={autoRetryFailed}
-                          onChange={(e) => setAutoRetryFailed(e.target.checked)}
-                          className="rounded"
-                        />
-                      </div>
-                      <div>
-                        <Label>Max Retries</Label>
-                        <Input
-                          type="number"
-                          value={maxRetries}
-                          onChange={(e) => setMaxRetries(parseInt(e.target.value) || 3)}
-                          min="1"
-                          max="10"
-                        />
+                  <Button
+                    variant={sendMethod === 'powermta' ? 'default' : 'outline'}
+                    onClick={() => setSendMethod('powermta')}
+                    className="h-auto p-4 flex flex-col items-center justify-center space-y-2"
+                    disabled={!hasPowerMTAServers}
+                  >
+                    <Server className="w-6 h-6" />
+                    <div className="text-center">
+                      <div className="font-medium">Round Robin (Rotate accounts)</div>
+                      <div className="text-xs opacity-70">
+                        {hasPowerMTAServers ? `${activeServers.length} servers` : 'Setup Required'}
                       </div>
                     </div>
+                  </Button>
+                </div>
+
+                {sendMethod === 'powermta' && hasPowerMTAServers && (
+                  <div className="mt-4">
+                    <Label className="text-sm font-medium mb-2 block">Select PowerMTA Server:</Label>
+                    <div className="space-y-2">
+                      {activeServers.map((server) => (
+                        <Button
+                          key={server.id}
+                          variant={selectedPowerMTAServer === server.id ? 'default' : 'outline'}
+                          onClick={() => setSelectedPowerMTAServer(server.id)}
+                          className="w-full justify-start"
+                          size="sm"
+                        >
+                          <Server className="w-4 h-4 mr-2" />
+                          {server.name} ({server.server_host})
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Sending Mode */}
+              <div>
+                <Label className="text-sm font-medium mb-3 block">Sending Mode</Label>
+                <div className="space-y-2">
+                  {[
+                    { value: 'controlled', label: 'Controlled (2s delay)', description: 'Safe sending with delays' },
+                    { value: 'fast', label: 'Fast (0.5s delay)', description: 'Faster sending' },
+                    { value: 'zero-delay', label: 'Zero Delay (Max Speed)', description: 'Maximum speed' }
+                  ].map((mode) => (
+                    <div key={mode.value} className="flex items-center space-x-3">
+                      <input
+                        type="radio"
+                        id={mode.value}
+                        name="sendingMode"
+                        value={mode.value}
+                        checked={sendingMode === mode.value}
+                        onChange={(e) => setSendingMode(e.target.value as any)}
+                        className="w-4 h-4"
+                      />
+                      <div className="flex-1">
+                        <Label htmlFor={mode.value} className="text-sm font-medium cursor-pointer">
+                          {mode.label}
+                        </Label>
+                        <p className="text-xs text-gray-500">{mode.description}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                {recipientCount > 0 && (
+                  <p className="text-xs text-blue-600 mt-2">
+                    Estimated time: {getEstimatedTime()}
+                  </p>
+                )}
+              </div>
+
+              {/* Additional Options */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4 border-t">
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-sm">From Name Rotation</Label>
+                    <span className="text-xs text-gray-500">
+                      {useFromRotation ? 'Enabled' : 'Disabled'}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <Label className="text-sm">Subject Rotation</Label>
+                    <span className="text-xs text-gray-500">
+                      {useSubjectRotation ? 'Enabled' : 'Disabled'}
+                    </span>
+                  </div>
+                </div>
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-sm">Test After</Label>
+                    <input
+                      type="checkbox"
+                      checked={useTestAfter}
+                      onChange={(e) => setUseTestAfter(e.target.checked)}
+                      className="w-4 h-4 rounded"
+                    />
+                  </div>
+                  {useTestAfter && (
+                    <div className="grid grid-cols-2 gap-2">
+                      <Input
+                        placeholder="test@email.com"
+                        value={testAfterEmail}
+                        onChange={(e) => setTestAfterEmail(e.target.value)}
+                        className="text-xs"
+                      />
+                      <Input
+                        type="number"
+                        placeholder="Count"
+                        value={testAfterCount}
+                        onChange={(e) => setTestAfterCount(parseInt(e.target.value) || 10)}
+                        className="text-xs"
+                      />
+                    </div>
                   )}
-                </CardContent>
-              </Card>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
 
-              {/* Standard Advanced Configuration */}
-              <AdvancedConfigurationPanel
-                sendingMode={sendingMode}
-                onSendingModeChange={setSendingMode}
-                useTestAfter={useTestAfter}
-                onUseTestAfterChange={setUseTestAfter}
-                testAfterEmail={testAfterEmail}
-                onTestAfterEmailChange={setTestAfterEmail}
-                testAfterCount={testAfterCount}
-                onTestAfterCountChange={setTestAfterCount}
-                trackingEnabled={trackingEnabled}
-                onTrackingEnabledChange={setTrackingEnabled}
-                useFromRotation={useFromRotation}
-                onUseFromRotationChange={setUseFromRotation}
-                useSubjectRotation={useSubjectRotation}
-                onUseSubjectRotationChange={setUseSubjectRotation}
-                hasAccounts={hasAccounts}
-                hasFunctions={hasFunctions}
-                estimatedTime={getEstimatedTime()}
+          {/* Email Accounts */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg">Email Accounts</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <CompactAccountSelector
+                selectedAccounts={selectedAccounts}
+                onAccountsChange={setSelectedAccounts}
+                onSelectAll={handleSelectAll}
+                onDeselectAll={handleDeselectAll}
               />
-            </>
-          )}
+            </CardContent>
+          </Card>
 
-          <Separator />
+          {/* Email Content */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg">Email Content</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div>
+                <Label htmlFor="html_content">HTML Content</Label>
+                <Textarea
+                  id="html_content"
+                  placeholder="<h1>Hello!</h1><p>Your HTML email content here...</p>"
+                  value={htmlContent}
+                  onChange={(e) => setHtmlContent(e.target.value)}
+                  rows={8}
+                />
+              </div>
+
+              <div>
+                <Label htmlFor="text_content">Plain Text Content (Optional)</Label>
+                <Textarea
+                  id="text_content"
+                  placeholder="Your plain text email content here..."
+                  value={textContent}
+                  onChange={(e) => setTextContent(e.target.value)}
+                  rows={4}
+                />
+              </div>
+            </CardContent>
+          </Card>
 
           {/* Send Button */}
           <div className="flex justify-end">
@@ -487,6 +605,7 @@ const BulkEmailComposer: React.FC<BulkEmailComposerProps> = ({ onSend }) => {
               {smartConfigEnabled && (
                 <><br/><strong>Smart Config:</strong> Advanced timing and retry settings will be applied.</>
               )}
+              <br/><strong>PowerMTA Servers:</strong> Configure PowerMTA servers in Settings → PowerMTA Servers tab.
             </AlertDescription>
           </Alert>
         </CardContent>
