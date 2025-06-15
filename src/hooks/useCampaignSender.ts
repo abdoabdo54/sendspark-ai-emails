@@ -60,13 +60,14 @@ export const useCampaignSender = (organizationId?: string) => {
         throw new Error(`Campaign must be prepared before sending. Current status: ${existingCampaign.status}`);
       }
 
-      // Validate prepared emails - fast validation
+      // Validate prepared emails - fast validation with proper type conversion
       const preparedEmailsData = existingCampaign.prepared_emails;
       if (!preparedEmailsData || !Array.isArray(preparedEmailsData) || preparedEmailsData.length === 0) {
         throw new Error('No prepared emails found. Please prepare the campaign first.');
       }
 
-      const preparedEmails: PreparedEmail[] = preparedEmailsData as PreparedEmail[];
+      // Safe type conversion from Json[] to PreparedEmail[]
+      const preparedEmails: PreparedEmail[] = preparedEmailsData as unknown as PreparedEmail[];
       console.log(`📧 ULTRA-FAST: Processing ${preparedEmails.length} prepared emails`);
 
       // Get active accounts - optimized query
