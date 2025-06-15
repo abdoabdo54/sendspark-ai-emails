@@ -100,8 +100,7 @@ export const useCampaignSender = (organizationId?: string) => {
 
       // STEP 0: Health check all GCFs before firing
       console.log("🌐 Checking health of GCF endpoints before ultra-fast send...");
-      const { functions } = useGcfFunctions(organizationId);
-
+      // Use already loaded functions from useGcfFunctions hook
       const enabledFunctions = functions.filter(f => f.enabled);
       if (enabledFunctions.length === 0) {
         throw new Error('No enabled Google Cloud Functions found');
@@ -161,14 +160,12 @@ export const useCampaignSender = (organizationId?: string) => {
         throw new Error('No active accounts selected for sending.');
       }
 
-      // Get enabled functions - fast filter
-      const enabledFunctions = functions.filter(f => f.enabled);
+      // (Do NOT redeclare enabledFunctions again here! Use the above variable)
       if (enabledFunctions.length === 0) {
         throw new Error('No enabled Google Cloud Functions found');
       }
 
       console.log(`🏪 ULTRA-FAST: Using ${activeAccounts.length} accounts across ${enabledFunctions.length} functions`);
-      
       setProgress(25);
 
       // Update campaign status to sending - non-blocking
