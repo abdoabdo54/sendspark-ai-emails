@@ -28,7 +28,7 @@ export const useCampaignSender = (organizationId?: string) => {
   const { accounts } = useEmailAccounts(organizationId);
   const { functions } = useGcfFunctions(organizationId);
 
-  // Enhanced fetch with retry logic
+  // Enhanced fetch with comprehensive retry logic and better error reporting
   const fetchWithRetry = async (url: string, options: RequestInit, maxRetries = 3): Promise<Response> => {
     let lastError: Error;
     
@@ -37,26 +37,30 @@ export const useCampaignSender = (organizationId?: string) => {
         console.log(`🔄 Attempt ${attempt}/${maxRetries} for ${url}`);
         
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+        const timeoutId = setTimeout(() => controller.abort(), 45000); // Increased to 45 seconds
         
+        const startTime = Date.now();
         const response = await fetch(url, {
           ...options,
           signal: controller.signal
         });
         
         clearTimeout(timeoutId);
+        const duration = Date.now() - startTime;
         
         if (!response.ok) {
           const errorText = await response.text();
+          console.error(`❌ HTTP Error ${response.status} for ${url} after ${duration}ms:`, errorText);
           throw new Error(`HTTP ${response.status}: ${errorText}`);
         }
         
-        console.log(`✅ Success on attempt ${attempt} for ${url}`);
+        console.log(`✅ Success on attempt ${attempt} for ${url} in ${duration}ms`);
         return response;
         
       } catch (error: any) {
         lastError = error;
-        console.error(`❌ Attempt ${attempt} failed for ${url}:`, error.message);
+        const errorType = error.name === 'AbortError' ? 'TIMEOUT' : 'NETWORK';
+        console.error(`❌ Attempt ${attempt} failed for ${url} (${errorType}):`, error.message);
         
         if (attempt < maxRetries) {
           const delay = Math.min(1000 * Math.pow(2, attempt - 1), 5000); // Exponential backoff, max 5s
@@ -69,19 +73,30 @@ export const useCampaignSender = (organizationId?: string) => {
     throw lastError;
   };
 
-  // Add a quick health check before fire (returns true if ok)
+  // Enhanced health check with detailed response handling
   const checkFunctionHealth = async (url: string) => {
     try {
+      console.log(`🔍 Health checking: ${url}`);
       const response = await fetch(url, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          "Accept": "application/json"
+        },
         body: JSON.stringify({ test: true, ping: "health-check" }),
-        signal: AbortSignal.timeout ? AbortSignal.timeout(8000) : undefined
+        signal: AbortSignal.timeout ? AbortSignal.timeout(10000) : undefined // 10 second timeout
       });
-      if (!response.ok) return false;
+      
+      if (!response.ok) {
+        console.error(`❌ Health check failed for ${url}: HTTP ${response.status}`);
+        return false;
+      }
+      
+      const result = await response.json();
+      console.log(`✅ Health check passed for ${url}:`, result.message);
       return true;
     } catch (e: any) {
-      console.warn("GCF health check failed:", url, e.message);
+      console.warn(`❌ Health check error for ${url}:`, e.message);
       return false;
     }
   };
@@ -91,34 +106,51 @@ export const useCampaignSender = (organizationId?: string) => {
       throw new Error('Organization not selected');
     }
 
-    // LOCAL list for error diagnostics
+    // Enhanced error tracking
     let failedFunctionUrls: string[] = [];
+    let healthCheckResults: any[] = [];
 
     try {
       setIsSending(true);
       setProgress(0);
 
-      // STEP 0: Health check all GCFs before firing
-      console.log("🌐 Checking health of GCF endpoints before ultra-fast send...");
+      // Enhanced health check with detailed logging
+      console.log("🌐 Enhanced health check of GCF endpoints...");
       // Use already loaded functions from useGcfFunctions hook
       const enabledFunctions = functions.filter(f => f.enabled);
       if (enabledFunctions.length === 0) {
         throw new Error('No enabled Google Cloud Functions found');
       }
 
+      console.log(`🔍 Health checking ${enabledFunctions.length} functions...`);
       const healthResults = await Promise.all(
-        enabledFunctions.map(f => 
-          checkFunctionHealth(f.url).then(ok => ({ url: f.url, ok }))
-        )
+        enabledFunctions.map(async f => {
+          const startTime = Date.now();
+          const ok = await checkFunctionHealth(f.url);
+          const duration = Date.now() - startTime;
+          return { url: f.url, name: f.name, ok, duration };
+        })
       );
-      const unhealthy = healthResults.filter(r => !r.ok).map(r => r.url);
+      
+      healthCheckResults = healthResults;
+      const unhealthy = healthResults.filter(r => !r.ok);
+      
       if (unhealthy.length > 0) {
+        console.error('❌ Unhealthy functions:', unhealthy);
         throw new Error(
-          `One or more Google Cloud Functions are unreachable: \n${unhealthy.join('\n')}\n` +
-          `Please check your function URLs and deployment, ensure they allow public requests, and support CORS.`
+          `${unhealthy.length}/${healthResults.length} Google Cloud Functions are unreachable:\n` +
+          unhealthy.map(f => `• ${f.name}: ${f.url} (${f.duration}ms)`).join('\n') + '\n\n' +
+          `Possible causes:\n` +
+          `• Function not deployed or not public\n` +
+          `• Wrong Function URL in database\n` +
+          `• Function not allowing CORS or POST requests\n` +
+          `• Firewall or region issues\n` +
+          `• Function memory/timeout limits exceeded`
         );
       }
-      console.log("✅ All enabled GCF endpoints are reachable.");
+      
+      console.log(`✅ All ${healthResults.length} GCF endpoints are healthy`);
+      healthResults.forEach(r => console.log(`  • ${r.name}: ${r.duration}ms`));
 
       // Get the campaign from database - single query with minimal data transfer
       const { data: existingCampaign, error: fetchError } = await supabase
@@ -252,9 +284,9 @@ export const useCampaignSender = (organizationId?: string) => {
 
       setProgress(75);
 
-      console.log(`🚀 ULTRA-FAST: Launching ${functionPayloads.length} functions with enhanced retry logic`);
+      console.log(`🚀 ULTRA-FAST: Launching ${functionPayloads.length} functions with enhanced error handling`);
 
-      // ENHANCED: Fire all functions with robust error handling and retries
+      // Enhanced function execution with comprehensive error handling
       const functionPromises = functionPayloads.map(async ({ func, payload }, index) => {
         const startTime = Date.now();
         const functionLabel = `F${index + 1}(${func.name})`;
@@ -279,7 +311,12 @@ export const useCampaignSender = (organizationId?: string) => {
           const result = await response.json();
           const duration = Date.now() - startTime;
           
-          console.log(`✅ ${functionLabel}: Completed in ${duration}ms, sent ${result.sent || 0} emails`);
+          console.log(`✅ ${functionLabel}: Completed in ${duration}ms`, {
+            sent: result.sent || 0,
+            failed: result.failed || 0,
+            successRate: result.successRate || 0,
+            version: result.version
+          });
           
           return { 
             success: true, 
@@ -287,25 +324,32 @@ export const useCampaignSender = (organizationId?: string) => {
             result,
             sentCount: result.sent || 0,
             duration,
-            functionIndex: index
+            functionIndex: index,
+            enhanced: true
           };
 
         } catch (error: any) {
           const duration = Date.now() - startTime;
-          console.error(`❌ ${functionLabel}: Failed after ${duration}ms:`, error);
+          console.error(`❌ ${functionLabel}: Failed after ${duration}ms:`, {
+            error: error.message,
+            errorType: error.name,
+            url: func.url
+          });
           failedFunctionUrls.push(func.url);
           return { 
             success: false, 
             function: func.name, 
             error: error.message,
+            errorType: error.name,
             sentCount: 0,
             duration,
-            functionIndex: index
+            functionIndex: index,
+            url: func.url
           };
         }
       });
 
-      // Wait for all functions with enhanced error reporting
+      // Enhanced results processing
       const [statusResult, ...results] = await Promise.all([statusUpdatePromise, ...functionPromises]);
       
       if (statusResult.error) {
@@ -323,13 +367,30 @@ export const useCampaignSender = (organizationId?: string) => {
       console.log(`📊 SUCCESS BREAKDOWN: ${successfulDispatches.map(r => `F${r.functionIndex + 1}:${r.sentCount}`).join(', ')}`);
       
       if (failedDispatches.length > 0) {
-        console.error(`❌ FAILED FUNCTIONS: ${failedDispatches.map(r => `F${r.functionIndex + 1}:${r.error}`).join(', ')}`);
+        console.error(`❌ FAILED FUNCTIONS: ${failedDispatches.map(r => `F${r.functionIndex + 1}:${r.error} (${r.errorType})`).join(', ')}`);
       }
 
-      // Enhanced error handling
+      // Enhanced error handling with detailed diagnostics
       if (totalSentEmails === 0) {
-        const errors = failedDispatches.map(r => r.error).join(', ');
-        throw new Error(`No emails were sent. Network errors: ${errors}`);
+        const errorDetails = failedDispatches.map(r => `${r.function}: ${r.error} (${r.errorType})`).join('\n');
+        const diagnostics = `
+DIAGNOSTIC INFORMATION:
+Health Check Results: ${healthCheckResults.map(h => `${h.name}: ${h.ok ? 'OK' : 'FAILED'} (${h.duration}ms)`).join(', ')}
+Failed URLs: ${failedFunctionUrls.join(', ')}
+Function Count: ${enabledFunctions.length}
+Account Count: ${activeAccounts.length}
+
+ERROR DETAILS:
+${errorDetails}
+
+TROUBLESHOOTING STEPS:
+1. Check Cloud Function logs in Google Cloud Console
+2. Verify function URLs in Function Manager
+3. Ensure functions allow unauthenticated requests
+4. Check function memory/timeout settings
+5. Verify CORS configuration
+        `;
+        throw new Error(`No emails were sent. ${diagnostics}`);
       }
 
       // Update final campaign status
@@ -365,11 +426,18 @@ export const useCampaignSender = (organizationId?: string) => {
     } catch (error: any) {
       console.error('❌ ENHANCED DISPATCH: Campaign failed:', error);
 
-      // Show advanced error diagnostics if network/GCF endpoint failures
+      // Enhanced error message with diagnostics
       let message = error?.message || "Campaign failed";
-      if (Array.isArray(failedFunctionUrls) && failedFunctionUrls.length > 0) {
-        message += `\nFailed to reach the following endpoints:\n${failedFunctionUrls.join('\n')}\n\nPossible Causes:\n- Cloud Function not deployed or not public\n- Wrong Function URL\n- Cloud Function not allowing CORS or POST\n- Firewall or region issues`;
+      if (failedFunctionUrls.length > 0) {
+        message += `\n\nFailed Endpoints: ${failedFunctionUrls.join(', ')}`;
       }
+      if (healthCheckResults.length > 0) {
+        const failedHealthChecks = healthCheckResults.filter(h => !h.ok);
+        if (failedHealthChecks.length > 0) {
+          message += `\n\nHealth Check Failures: ${failedHealthChecks.map(h => h.name).join(', ')}`;
+        }
+      }
+      
       toast.error(message);
       throw new Error(message);
     } finally {
