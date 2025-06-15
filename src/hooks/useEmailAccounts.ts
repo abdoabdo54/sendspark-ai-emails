@@ -69,19 +69,11 @@ export const useEmailAccounts = (organizationId?: string) => {
         return {
           ...item,
           type: item.type as 'apps-script' | 'powermta' | 'smtp',
-          // Remove rate limiting from config to use campaign-level controls
-          config: {
-            ...baseConfig,
-            // Remove these rate limiting fields if they exist
-            emails_per_hour: undefined,
-            emails_per_second: undefined,
-            delay_in_seconds: undefined,
-            rate_limit_enabled: false
-          }
+          config: baseConfig
         };
       }) as EmailAccount[];
       
-      console.log('Processed accounts data (rate limits removed):', typedData);
+      console.log('Processed accounts data:', typedData);
       setAccounts(typedData);
     } catch (error) {
       console.error('Error fetching email accounts:', error);
@@ -109,7 +101,7 @@ export const useEmailAccounts = (organizationId?: string) => {
       console.log('Creating account with data:', accountData);
       console.log('Organization ID:', organizationId);
       
-      // Ensure config is always an object and remove rate limiting fields
+      // Ensure config is always an object
       const baseConfig = accountData.config && typeof accountData.config === 'object' ? accountData.config : {};
       
       const accountToCreate = {
@@ -117,20 +109,11 @@ export const useEmailAccounts = (organizationId?: string) => {
         type: accountData.type,
         email: accountData.email,
         is_active: accountData.is_active,
-        // Remove rate limiting from account config - will use campaign-level controls
-        config: {
-          ...baseConfig,
-          // Ensure no rate limiting fields are saved at account level
-          emails_per_hour: undefined,
-          emails_per_second: undefined,
-          delay_in_seconds: undefined,
-          rate_limit_enabled: false,
-          note: "Rate limits controlled at campaign level for optimal performance"
-        },
+        config: baseConfig,
         organization_id: organizationId
       };
 
-      console.log('Account payload to create (no rate limits):', accountToCreate);
+      console.log('Account payload to create:', accountToCreate);
 
       const { data, error } = await supabase
         .from('email_accounts')
@@ -160,7 +143,7 @@ export const useEmailAccounts = (organizationId?: string) => {
       
       toast({
         title: "Success",
-        description: `${accountData.name} has been added successfully. Rate limits will be controlled at campaign level for optimal performance.`
+        description: `${accountData.name} has been added successfully.`
       });
       
       return typedData;
@@ -172,19 +155,11 @@ export const useEmailAccounts = (organizationId?: string) => {
 
   const updateAccount = async (id: string, updates: Partial<EmailAccount>) => {
     try {
-      // Ensure config is always an object and remove rate limiting fields
       const baseConfig = updates.config && typeof updates.config === 'object' ? updates.config : {};
       
       const cleanUpdates = {
         ...updates,
-        config: {
-          ...baseConfig,
-          // Remove rate limiting fields
-          emails_per_hour: undefined,
-          emails_per_second: undefined,
-          delay_in_seconds: undefined,
-          rate_limit_enabled: false
-        },
+        config: baseConfig,
         updated_at: new Date().toISOString()
       };
 
@@ -209,7 +184,7 @@ export const useEmailAccounts = (organizationId?: string) => {
       
       toast({
         title: "Success",
-        description: "Email account updated successfully. Rate limits are now controlled at campaign level."
+        description: "Email account updated successfully."
       });
       
       return typedData;

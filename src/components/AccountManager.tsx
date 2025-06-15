@@ -2,114 +2,59 @@
 import React, { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Trash2, Edit, Plus, RefreshCw } from 'lucide-react';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Trash2, Edit, Plus, RefreshCw, Mail, Server, Cloud } from 'lucide-react';
 import { useEmailAccounts } from '@/hooks/useEmailAccounts';
 import { useSimpleOrganizations } from '@/contexts/SimpleOrganizationContext';
 import { toast } from '@/hooks/use-toast';
+import SMTPConfigForm from './SMTPConfigForm';
+import AppsScriptConfigForm from './AppsScriptConfigForm';
+import PowerMTAConfigForm from './PowerMTAConfigForm';
 
 const AccountManager = () => {
   const { currentOrganization, loading: orgLoading } = useSimpleOrganizations();
   const { accounts, loading, addAccount, updateAccount, deleteAccount, refetch } = useEmailAccounts(currentOrganization?.id);
   
-  const [formData, setFormData] = useState({
-    name: '',
-    email: '',
-    type: 'smtp' as 'smtp' | 'apps-script',
-    config: {
-      host: '',
-      port: 587,
-      secure: false,
-      user: '',
-      pass: '',
-      script_url: ''
-    }
-  });
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [activeTab, setActiveTab] = useState('list');
+  const [editingAccount, setEditingAccount] = useState<any>(null);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    if (!currentOrganization?.id) {
-      toast({
-        title: "Error",
-        description: "Please ensure organization is properly set up",
-        variant: "destructive"
-      });
-      return;
-    }
-
-    if (!formData.name.trim() || !formData.email.trim()) {
-      toast({
-        title: "Error",
-        description: "Please fill in all required fields",
-        variant: "destructive"
-      });
-      return;
-    }
-
-    setIsSubmitting(true);
-
+  const handleAddAccount = async (type: 'smtp' | 'apps-script' | 'powermta', name: string, email: string, config: any) => {
     try {
-      const accountData = {
-        name: formData.name.trim(),
-        email: formData.email.trim(),
-        type: formData.type,
+      await addAccount({
+        name,
+        email,
+        type,
         is_active: true,
-        config: {
-          ...formData.config
-          // NO rate limiting fields - completely removed
-        }
-      };
-
-      if (editingId) {
-        await updateAccount(editingId, accountData);
-        setEditingId(null);
-      } else {
-        await addAccount(accountData);
-      }
-      
-      // Reset form
-      setFormData({
-        name: '',
-        email: '',
-        type: 'smtp',
-        config: {
-          host: '',
-          port: 587,
-          secure: false,
-          user: '',
-          pass: '',
-          script_url: ''
-        }
+        config
       });
-
+      setActiveTab('list');
+      setEditingAccount(null);
     } catch (error) {
-      console.error('Error saving account:', error);
-    } finally {
-      setIsSubmitting(false);
+      console.error('Error adding account:', error);
+    }
+  };
+
+  const handleEditAccount = async (type: 'smtp' | 'apps-script' | 'powermta', name: string, email: string, config: any) => {
+    if (!editingAccount) return;
+    
+    try {
+      await updateAccount(editingAccount.id, {
+        name,
+        email,
+        type,
+        config
+      });
+      setActiveTab('list');
+      setEditingAccount(null);
+    } catch (error) {
+      console.error('Error updating account:', error);
     }
   };
 
   const handleEdit = (account: any) => {
-    setFormData({
-      name: account.name,
-      email: account.email,
-      type: account.type,
-      config: {
-        host: account.config?.host || '',
-        port: account.config?.port || 587,
-        secure: account.config?.secure || false,
-        user: account.config?.user || '',
-        pass: account.config?.pass || '',
-        script_url: account.config?.script_url || ''
-      }
-    });
-    setEditingId(account.id);
+    setEditingAccount(account);
+    setActiveTab(account.type);
   };
 
   const handleDelete = async (accountId: string) => {
@@ -120,6 +65,11 @@ const AccountManager = () => {
         console.error('Error deleting account:', error);
       }
     }
+  };
+
+  const handleCancel = () => {
+    setActiveTab('list');
+    setEditingAccount(null);
   };
 
   if (orgLoading) {
@@ -144,8 +94,9 @@ const AccountManager = () => {
     );
   }
 
-  console.log('Current accounts:', accounts);
-  console.log('Accounts loading:', loading);
+  const smtpAccounts = accounts.filter(acc => acc.type === 'smtp');
+  const appsScriptAccounts = accounts.filter(acc => acc.type === 'apps-script');
+  const powerMTAAccounts = accounts.filter(acc => acc.type === 'powermta');
 
   return (
     <div className="space-y-6">
@@ -154,7 +105,7 @@ const AccountManager = () => {
           <CardTitle className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Plus className="w-5 h-5" />
-              {editingId ? 'Edit Email Account' : 'Add Email Account'}
+              Email Account Management
             </div>
             <Button 
               variant="outline" 
@@ -171,209 +122,101 @@ const AccountManager = () => {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div>
-                <Label htmlFor="name">Account Name</Label>
-                <Input
-                  id="name"
-                  value={formData.name}
-                  onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
-                  placeholder="My Email Account"
-                  required
-                />
-              </div>
-              
-              <div>
-                <Label htmlFor="email">Email Address</Label>
-                <Input
-                  id="email"
-                  type="email"
-                  value={formData.email}
-                  onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
-                  placeholder="your@email.com"
-                  required
-                />
-              </div>
+          <Tabs value={activeTab} onValueChange={setActiveTab}>
+            <TabsList className="grid w-full grid-cols-4">
+              <TabsTrigger value="list" className="flex items-center gap-2">
+                <Mail className="w-4 h-4" />
+                All Accounts ({accounts.length})
+              </TabsTrigger>
+              <TabsTrigger value="smtp" className="flex items-center gap-2">
+                <Mail className="w-4 h-4" />
+                SMTP ({smtpAccounts.length})
+              </TabsTrigger>
+              <TabsTrigger value="apps-script" className="flex items-center gap-2">
+                <Cloud className="w-4 h-4" />
+                Apps Script ({appsScriptAccounts.length})
+              </TabsTrigger>
+              <TabsTrigger value="powermta" className="flex items-center gap-2">
+                <Server className="w-4 h-4" />
+                PowerMTA ({powerMTAAccounts.length})
+              </TabsTrigger>
+            </TabsList>
 
-              <div>
-                <Label htmlFor="type">Account Type</Label>
-                <Select value={formData.type} onValueChange={(value: 'smtp' | 'apps-script') => setFormData(prev => ({ ...prev, type: value }))}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="smtp">SMTP</SelectItem>
-                    <SelectItem value="apps-script">Google Apps Script</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            {formData.type === 'smtp' && (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="host">SMTP Host</Label>
-                  <Input
-                    id="host"
-                    value={formData.config.host}
-                    onChange={(e) => setFormData(prev => ({
-                      ...prev,
-                      config: { ...prev.config, host: e.target.value }
-                    }))}
-                    placeholder="smtp.gmail.com"
-                    required
-                  />
+            <TabsContent value="list" className="space-y-4">
+              {loading ? (
+                <div className="text-center py-4">
+                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600 mx-auto mb-2"></div>
+                  <p>Loading accounts...</p>
                 </div>
-                
-                <div>
-                  <Label htmlFor="port">Port</Label>
-                  <Input
-                    id="port"
-                    type="number"
-                    value={formData.config.port}
-                    onChange={(e) => setFormData(prev => ({
-                      ...prev,
-                      config: { ...prev.config, port: parseInt(e.target.value) }
-                    }))}
-                    required
-                  />
+              ) : accounts.length === 0 ? (
+                <div className="text-center py-8 text-slate-500">
+                  <p className="mb-2">No email accounts configured yet.</p>
+                  <p className="text-sm">Add your first account using the tabs above.</p>
                 </div>
-                
-                <div>
-                  <Label htmlFor="user">Username</Label>
-                  <Input
-                    id="user"
-                    value={formData.config.user}
-                    onChange={(e) => setFormData(prev => ({
-                      ...prev,
-                      config: { ...prev.config, user: e.target.value }
-                    }))}
-                    placeholder="your@email.com"
-                    required
-                  />
-                </div>
-                
-                <div>
-                  <Label htmlFor="pass">Password</Label>
-                  <Input
-                    id="pass"
-                    type="password"
-                    value={formData.config.pass}
-                    onChange={(e) => setFormData(prev => ({
-                      ...prev,
-                      config: { ...prev.config, pass: e.target.value }
-                    }))}
-                    placeholder="Your app password"
-                    required
-                  />
-                </div>
-              </div>
-            )}
-
-            {formData.type === 'apps-script' && (
-              <div>
-                <Label htmlFor="scriptUrl">Apps Script URL</Label>
-                <Input
-                  id="scriptUrl"
-                  value={formData.config.script_url}
-                  onChange={(e) => setFormData(prev => ({
-                    ...prev,
-                    config: { ...prev.config, script_url: e.target.value }
-                  }))}
-                  placeholder="https://script.google.com/macros/s/..."
-                  required
-                />
-              </div>
-            )}
-
-            <div className="flex gap-2">
-              <Button type="submit" disabled={isSubmitting}>
-                {isSubmitting ? 'Saving...' : (editingId ? 'Update Account' : 'Add Account')}
-              </Button>
-              {editingId && (
-                <Button 
-                  type="button" 
-                  variant="outline" 
-                  onClick={() => {
-                    setEditingId(null);
-                    setFormData({
-                      name: '',
-                      email: '',
-                      type: 'smtp',
-                      config: {
-                        host: '',
-                        port: 587,
-                        secure: false,
-                        user: '',
-                        pass: '',
-                        script_url: ''
-                      }
-                    });
-                  }}
-                >
-                  Cancel
-                </Button>
-              )}
-            </div>
-          </form>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Email Accounts ({accounts.length}) - No Rate Limits Applied</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {loading ? (
-            <div className="text-center py-4">
-              <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600 mx-auto mb-2"></div>
-              <p>Loading accounts...</p>
-            </div>
-          ) : accounts.length === 0 ? (
-            <div className="text-center py-8 text-slate-500">
-              <p className="mb-2">No email accounts configured yet.</p>
-              <p className="text-sm">Add your first account above to get started.</p>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {accounts.map((account) => (
-                <div key={account.id} className="border rounded-lg p-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex-1">
-                      <h3 className="font-medium">{account.name}</h3>
-                      <p className="text-sm text-slate-600">{account.email}</p>
-                      <div className="flex items-center gap-2 mt-2">
-                        <Badge variant="outline">{account.type}</Badge>
-                        <Badge variant={account.is_active ? "default" : "secondary"}>
-                          {account.is_active ? "Active" : "Inactive"}
-                        </Badge>
-                        <Badge variant="secondary" className="bg-green-100 text-green-800">
-                          No Rate Limits
-                        </Badge>
+              ) : (
+                <div className="space-y-4">
+                  {accounts.map((account) => (
+                    <div key={account.id} className="border rounded-lg p-4">
+                      <div className="flex items-center justify-between">
+                        <div className="flex-1">
+                          <h3 className="font-medium">{account.name}</h3>
+                          <p className="text-sm text-slate-600">{account.email}</p>
+                          <div className="flex items-center gap-2 mt-2">
+                            <Badge variant="outline" className="capitalize">
+                              {account.type === 'apps-script' ? 'Apps Script' : account.type.toUpperCase()}
+                            </Badge>
+                            <Badge variant={account.is_active ? "default" : "secondary"}>
+                              {account.is_active ? "Active" : "Inactive"}
+                            </Badge>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleEdit(account)}
+                          >
+                            <Edit className="w-4 h-4" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleDelete(account.id)}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        </div>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => handleEdit(account)}
-                      >
-                        <Edit className="w-4 h-4" />
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => handleDelete(account.id)}
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
-                    </div>
-                  </div>
+                  ))}
                 </div>
-              ))}
-            </div>
-          )}
+              )}
+            </TabsContent>
+
+            <TabsContent value="smtp">
+              <SMTPConfigForm
+                onSubmit={(name, email, config) => handleAddAccount('smtp', name, email, config)}
+                onCancel={handleCancel}
+                initialData={editingAccount?.type === 'smtp' ? editingAccount : undefined}
+              />
+            </TabsContent>
+
+            <TabsContent value="apps-script">
+              <AppsScriptConfigForm
+                onSubmit={(name, email, config) => handleAddAccount('apps-script', name, email, config)}
+                onCancel={handleCancel}
+                initialData={editingAccount?.type === 'apps-script' ? editingAccount : undefined}
+              />
+            </TabsContent>
+
+            <TabsContent value="powermta">
+              <PowerMTAConfigForm
+                onSubmit={(name, email, config) => handleAddAccount('powermta', name, email, config)}
+                onCancel={handleCancel}
+                initialData={editingAccount?.type === 'powermta' ? editingAccount : undefined}
+              />
+            </TabsContent>
+          </Tabs>
         </CardContent>
       </Card>
     </div>
