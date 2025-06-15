@@ -1,137 +1,214 @@
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Badge } from "@/components/ui/badge";
+import React, { useState } from 'react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Card, CardHeader, CardContent, CardTitle } from '@/components/ui/card';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { toast } from 'sonner';
+import { testPowerMTAConnection } from '@/utils/powerMTASender';
 
 interface PowerMTAConfig {
+  name: string;
   server_host: string;
-  api_port: number;
+  ssh_port: number;
   username: string;
   password: string;
-  virtual_mta: string;
-  job_pool: string;
-  max_hourly_rate: number;
+  api_port?: number;
+  virtual_mta?: string;
+  job_pool?: string;
 }
 
 interface PowerMTAConfigFormProps {
-  config: PowerMTAConfig;
-  onChange: (config: PowerMTAConfig) => void;
+  onSave: (config: PowerMTAConfig) => void;
+  initialConfig?: PowerMTAConfig;
+  isEditing?: boolean;
 }
 
-const PowerMTAConfigForm = ({ config, onChange }: PowerMTAConfigFormProps) => {
-  const updateConfig = (field: keyof PowerMTAConfig, value: any) => {
-    onChange({
-      ...config,
-      [field]: value
-    });
+const PowerMTAConfigForm: React.FC<PowerMTAConfigFormProps> = ({ 
+  onSave, 
+  initialConfig, 
+  isEditing = false 
+}) => {
+  const [config, setConfig] = useState<PowerMTAConfig>(
+    initialConfig || {
+      name: '',
+      server_host: '',
+      ssh_port: 22,
+      username: 'root',
+      password: '',
+      api_port: 8080,
+      virtual_mta: 'default',
+      job_pool: 'default'
+    }
+  );
+  
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<any>(null);
+
+  const handleInputChange = (field: keyof PowerMTAConfig, value: string | number) => {
+    setConfig(prev => ({ ...prev, [field]: value }));
+  };
+
+  const handleTest = async () => {
+    setTesting(true);
+    setTestResult(null);
+    
+    try {
+      const result = await testPowerMTAConnection(config);
+      setTestResult(result);
+      
+      if (result.success) {
+        toast.success('PowerMTA connection successful!');
+      } else {
+        toast.error(`PowerMTA connection failed: ${result.error}`);
+      }
+    } catch (error) {
+      toast.error('PowerMTA test failed');
+      setTestResult({ success: false, error: error.message });
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  const handleSave = () => {
+    if (!config.name || !config.server_host || !config.password) {
+      toast.error('Please fill in all required fields');
+      return;
+    }
+    
+    onSave(config);
   };
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>PowerMTA Configuration</CardTitle>
-        <CardDescription>
-          Configure your PowerMTA server for enterprise-level email delivery
-        </CardDescription>
+        <CardTitle>
+          {isEditing ? 'Edit' : 'Add'} PowerMTA Server Configuration
+        </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
+        <Alert>
+          <AlertDescription>
+            PowerMTA server will act as a bridge to distribute campaigns using your SMTP and Apps Script accounts.
+            The server must have PowerMTA installed and API access enabled.
+          </AlertDescription>
+        </Alert>
+        
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="space-y-2">
-            <Label htmlFor="powermta-host">Server Host</Label>
+          <div>
+            <Label htmlFor="name">Server Name</Label>
             <Input
-              id="powermta-host"
-              placeholder="smtp.yourdomain.com"
+              id="name"
+              placeholder="e.g., PowerMTA-Server-1"
+              value={config.name}
+              onChange={(e) => handleInputChange('name', e.target.value)}
+              required
+            />
+          </div>
+          
+          <div>
+            <Label htmlFor="server_host">Server IP/Host</Label>
+            <Input
+              id="server_host"
+              placeholder="e.g., 192.168.1.100"
               value={config.server_host}
-              onChange={(e) => updateConfig('server_host', e.target.value)}
+              onChange={(e) => handleInputChange('server_host', e.target.value)}
+              required
             />
           </div>
-          <div className="space-y-2">
-            <Label htmlFor="api-port">API Port</Label>
+          
+          <div>
+            <Label htmlFor="ssh_port">SSH Port</Label>
             <Input
-              id="api-port"
+              id="ssh_port"
               type="number"
-              placeholder="25"
-              value={config.api_port}
-              onChange={(e) => updateConfig('api_port', parseInt(e.target.value) || 25)}
+              value={config.ssh_port}
+              onChange={(e) => handleInputChange('ssh_port', parseInt(e.target.value))}
             />
           </div>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="space-y-2">
-            <Label htmlFor="powermta-username">Username</Label>
+          
+          <div>
+            <Label htmlFor="username">SSH Username</Label>
             <Input
-              id="powermta-username"
-              placeholder="admin"
+              id="username"
               value={config.username}
-              onChange={(e) => updateConfig('username', e.target.value)}
+              onChange={(e) => handleInputChange('username', e.target.value)}
+              required
             />
           </div>
-          <div className="space-y-2">
-            <Label htmlFor="powermta-password">Password</Label>
+          
+          <div>
+            <Label htmlFor="password">SSH Password</Label>
             <Input
-              id="powermta-password"
+              id="password"
               type="password"
-              placeholder="Your PowerMTA password"
               value={config.password}
-              onChange={(e) => updateConfig('password', e.target.value)}
+              onChange={(e) => handleInputChange('password', e.target.value)}
+              required
+            />
+          </div>
+          
+          <div>
+            <Label htmlFor="api_port">PowerMTA API Port</Label>
+            <Input
+              id="api_port"
+              type="number"
+              value={config.api_port}
+              onChange={(e) => handleInputChange('api_port', parseInt(e.target.value))}
+            />
+          </div>
+          
+          <div>
+            <Label htmlFor="virtual_mta">Virtual MTA</Label>
+            <Input
+              id="virtual_mta"
+              placeholder="default"
+              value={config.virtual_mta}
+              onChange={(e) => handleInputChange('virtual_mta', e.target.value)}
+            />
+          </div>
+          
+          <div>
+            <Label htmlFor="job_pool">Job Pool</Label>
+            <Input
+              id="job_pool"
+              placeholder="default"
+              value={config.job_pool}
+              onChange={(e) => handleInputChange('job_pool', e.target.value)}
             />
           </div>
         </div>
 
-        <div className="space-y-2">
-          <Label htmlFor="virtual-mta">Virtual MTA</Label>
-          <Input
-            id="virtual-mta"
-            placeholder="default"
-            value={config.virtual_mta}
-            onChange={(e) => updateConfig('virtual_mta', e.target.value)}
-          />
-        </div>
+        {testResult && (
+          <Alert className={testResult.success ? 'border-green-200 bg-green-50' : 'border-red-200 bg-red-50'}>
+            <AlertDescription>
+              {testResult.success ? (
+                <>✅ PowerMTA Connection Successful! Server Info: {testResult.serverInfo}</>
+              ) : (
+                <>❌ PowerMTA Connection Failed: {testResult.error}</>
+              )}
+            </AlertDescription>
+          </Alert>
+        )}
 
-        <div className="space-y-2">
-          <Label htmlFor="job-pool">Job Pool</Label>
-          <Select value={config.job_pool} onValueChange={(value) => updateConfig('job_pool', value)}>
-            <SelectTrigger>
-              <SelectValue placeholder="Select job pool" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="default">Default</SelectItem>
-              <SelectItem value="marketing">Marketing</SelectItem>
-              <SelectItem value="transactional">Transactional</SelectItem>
-              <SelectItem value="bulk">Bulk</SelectItem>
-            </SelectContent>
-          </Select>
+        <div className="flex space-x-2">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={handleTest}
+            disabled={testing || !config.server_host || !config.password}
+          >
+            {testing ? 'Testing...' : 'Test Connection'}
+          </Button>
+          
+          <Button
+            onClick={handleSave}
+            disabled={!config.name || !config.server_host || !config.password}
+          >
+            {isEditing ? 'Update' : 'Save'} PowerMTA Configuration
+          </Button>
         </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="max-hourly-rate">Max Hourly Rate</Label>
-          <Input
-            id="max-hourly-rate"
-            type="number"
-            placeholder="10000"
-            value={config.max_hourly_rate}
-            onChange={(e) => updateConfig('max_hourly_rate', parseInt(e.target.value) || 10000)}
-          />
-        </div>
-
-        <div className="bg-green-50 p-4 rounded-lg">
-          <h4 className="font-medium text-green-900 mb-2">PowerMTA Features:</h4>
-          <div className="grid grid-cols-2 gap-2 text-sm text-green-800">
-            <div>• High-volume delivery</div>
-            <div>• Advanced bounce handling</div>
-            <div>• IP warming support</div>
-            <div>• Real-time monitoring</div>
-            <div>• Domain-based routing</div>
-            <div>• Feedback loop processing</div>
-          </div>
-        </div>
-
-        <Badge variant="default" className="bg-green-600">
-          Enterprise Solution: Up to millions of emails/day
-        </Badge>
       </CardContent>
     </Card>
   );
