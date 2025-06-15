@@ -482,20 +482,6 @@ const BulkEmailComposer: React.FC<BulkEmailComposerProps> = ({ onSend }) => {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4 border-t">
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
-                    <Label className="text-sm">From Name Rotation</Label>
-                    <span className="text-xs text-gray-500">
-                      {useFromRotation ? 'Enabled' : 'Disabled'}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <Label className="text-sm">Subject Rotation</Label>
-                    <span className="text-xs text-gray-500">
-                      {useSubjectRotation ? 'Enabled' : 'Disabled'}
-                    </span>
-                  </div>
-                </div>
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
                     <Label className="text-sm">Test After</Label>
                     <input
                       type="checkbox"
@@ -521,6 +507,17 @@ const BulkEmailComposer: React.FC<BulkEmailComposerProps> = ({ onSend }) => {
                       />
                     </div>
                   )}
+                </div>
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-sm">Enable Tracking</Label>
+                    <input
+                      type="checkbox"
+                      checked={trackingEnabled}
+                      onChange={(e) => setTrackingEnabled(e.target.checked)}
+                      className="w-4 h-4 rounded"
+                    />
+                  </div>
                 </div>
               </div>
             </CardContent>
