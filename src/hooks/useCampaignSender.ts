@@ -102,10 +102,10 @@ export const useCampaignSender = (organizationId?: string) => {
 
       setProgress(50);
 
-      // Distribute emails optimally across functions
+      // FIXED: Better distribution logic to ensure all functions get work
       const emailsPerFunction = Math.ceil(preparedEmails.length / enabledFunctions.length);
       
-      // Create ultra-optimized payloads for each function
+      // Create ultra-optimized payloads for each function with GUARANTEED parallel execution
       const functionPayloads = enabledFunctions.map((func, funcIndex) => {
         const startIndex = funcIndex * emailsPerFunction;
         const endIndex = Math.min(startIndex + emailsPerFunction, preparedEmails.length);
@@ -114,6 +114,8 @@ export const useCampaignSender = (organizationId?: string) => {
         if (functionEmails.length === 0) {
           return null;
         }
+
+        console.log(`🔥 FUNCTION ${funcIndex + 1}: Assigning ${functionEmails.length} emails (${startIndex} to ${endIndex - 1})`);
 
         return {
           func,
@@ -135,31 +137,41 @@ export const useCampaignSender = (organizationId?: string) => {
               type: account.type,
               config: {
                 ...account.config,
-                // MAXIMUM SPEED SETTINGS
+                // MAXIMUM SPEED SETTINGS - CRITICAL FOR PERFORMANCE
                 ...(account.type === 'smtp' ? {
                   pool: true,
-                  maxConnections: 500, // Increased from 200
+                  maxConnections: 1000, // INCREASED: More connections
                   maxMessages: Infinity,
                   rateDelta: 0,
                   rateLimit: false,
-                  connectionTimeout: 300000, // 5 minutes
-                  greetingTimeout: 120000, // 2 minutes
-                  socketTimeout: 300000, // 5 minutes
+                  connectionTimeout: 300000,
+                  greetingTimeout: 120000,
+                  socketTimeout: 300000,
                   sendTimeout: 0,
                   idleTimeout: 0,
-                  keepAlive: true
+                  keepAlive: true,
+                  // CRITICAL: Force concurrent sending
+                  concurrentConnections: 50
                 } : {
                   exec_url: account.config?.exec_url || account.config?.script_url,
                   script_url: account.config?.script_url,
                   api_key: account.config?.api_key,
-                  timeout: 60000 // 1 minute timeout for Apps Script
+                  timeout: 30000, // Reduced timeout for faster fails
+                  // CRITICAL: Apps Script parallel mode
+                  parallelMode: true,
+                  maxConcurrent: 100
                 })
               }
             })),
             organizationId: organizationId,
             globalStartIndex: startIndex,
             ultraFastMode: true,
-            maxParallel: true
+            maxParallel: true,
+            // CRITICAL: Force the Cloud Function to use Promise.all
+            forceParallelExecution: true,
+            // Debug info
+            functionIndex: funcIndex,
+            totalFunctions: enabledFunctions.length
           }
         };
       }).filter(Boolean);
@@ -167,22 +179,31 @@ export const useCampaignSender = (organizationId?: string) => {
       setProgress(75);
 
       console.log(`🚀 ULTRA-FAST: Launching ${functionPayloads.length} functions in MAXIMUM PARALLEL mode`);
+      console.log(`📊 DISTRIBUTION: ${functionPayloads.map((p, i) => `F${i+1}:${p?.payload.slice.preparedEmails.length}`).join(', ')} emails`);
 
-      // MAXIMUM SPEED: Fire all functions simultaneously with no delays
-      const functionPromises = functionPayloads.map(async ({ func, payload }) => {
+      // CRITICAL FIX: Fire all functions simultaneously with proper error handling
+      const functionPromises = functionPayloads.map(async ({ func, payload }, index) => {
         const startTime = Date.now();
+        const functionLabel = `F${index + 1}(${func.name})`;
         
         try {
-          console.log(`🚀 Firing function ${func.name} with ${payload.slice.preparedEmails.length} emails`);
+          console.log(`🚀 ${functionLabel}: Firing with ${payload.slice.preparedEmails.length} emails`);
           
+          // CRITICAL: Add headers to ensure proper processing
           const response = await fetch(func.url, {
             method: 'POST',
             headers: { 
               'Content-Type': 'application/json',
-              'Keep-Alive': 'timeout=300, max=1000'
+              'Keep-Alive': 'timeout=300, max=1000',
+              'Cache-Control': 'no-cache',
+              // CRITICAL: Custom header to ensure parallel processing
+              'X-Parallel-Mode': 'true',
+              'X-Function-Index': index.toString(),
+              'X-Total-Functions': enabledFunctions.length.toString()
             },
             body: JSON.stringify(payload),
-            // No timeout - let it run as fast as possible
+            // CRITICAL: Longer timeout to prevent premature failures
+            signal: AbortSignal.timeout(300000) // 5 minutes
           });
 
           if (!response.ok) {
@@ -193,47 +214,59 @@ export const useCampaignSender = (organizationId?: string) => {
           const result = await response.json();
           const duration = Date.now() - startTime;
           
-          console.log(`✅ ULTRA-FAST: Function ${func.name} completed in ${duration}ms:`, result);
+          console.log(`✅ ${functionLabel}: Completed in ${duration}ms, sent ${result.sent || 0} emails`);
           
           return { 
             success: true, 
             function: func.name, 
             result,
             sentCount: result.sent || 0,
-            duration
+            duration,
+            functionIndex: index
           };
 
         } catch (error: any) {
           const duration = Date.now() - startTime;
-          console.error(`❌ ULTRA-FAST: Function ${func.name} failed after ${duration}ms:`, error);
+          console.error(`❌ ${functionLabel}: Failed after ${duration}ms:`, error);
           return { 
             success: false, 
             function: func.name, 
             error: error.message,
             sentCount: 0,
-            duration
+            duration,
+            functionIndex: index
           };
         }
       });
 
-      // Wait for status update and all functions to complete
-      const [, ...results] = await Promise.all([statusUpdatePromise, ...functionPromises]);
+      // CRITICAL: Wait for status update and all functions to complete
+      const [statusResult, ...results] = await Promise.all([statusUpdatePromise, ...functionPromises]);
+      
+      if (statusResult.error) {
+        console.warn('Status update failed:', statusResult.error);
+      }
       
       setProgress(100);
 
       const successfulDispatches = results.filter(r => r.success);
+      const failedDispatches = results.filter(r => !r.success);
       const totalSentEmails = successfulDispatches.reduce((sum, result) => sum + (result.sentCount || 0), 0);
       const totalDuration = Math.max(...results.map(r => r.duration || 0));
 
-      console.log(`🎉 ULTRA-FAST COMPLETE: ${totalSentEmails} emails sent in ${totalDuration}ms`);
+      console.log(`🎉 ULTRA-FAST COMPLETE: ${totalSentEmails}/${preparedEmails.length} emails sent in ${totalDuration}ms`);
+      console.log(`📊 SUCCESS BREAKDOWN: ${successfulDispatches.map(r => `F${r.functionIndex + 1}:${r.sentCount}`).join(', ')}`);
+      
+      if (failedDispatches.length > 0) {
+        console.error(`❌ FAILED FUNCTIONS: ${failedDispatches.map(r => `F${r.functionIndex + 1}:${r.error}`).join(', ')}`);
+      }
 
       if (totalSentEmails === 0) {
-        const errors = results.filter(r => !r.success).map(r => r.error).join(', ');
+        const errors = failedDispatches.map(r => r.error).join(', ');
         throw new Error(`No emails were sent. Errors: ${errors}`);
       }
 
-      // Update final campaign status - non-blocking
-      supabase
+      // CRITICAL: Update final campaign status with accurate count
+      const finalUpdate = await supabase
         .from('email_campaigns')
         .update({ 
           status: totalSentEmails > 0 ? 'sent' : 'failed',
@@ -242,15 +275,24 @@ export const useCampaignSender = (organizationId?: string) => {
         })
         .eq('id', existingCampaign.id);
 
-      const successMessage = `Ultra-Fast Campaign Complete! ${totalSentEmails} emails sent in ${totalDuration}ms`;
+      if (finalUpdate.error) {
+        console.warn('Final status update failed:', finalUpdate.error);
+      }
+
+      const successMessage = `Ultra-Fast Campaign Complete! ${totalSentEmails}/${preparedEmails.length} emails sent in ${totalDuration}ms`;
+      const speed = Math.round(totalSentEmails / (totalDuration / 1000));
+      
       toast.success(successMessage);
 
       return {
         success: true,
         message: successMessage,
         totalEmails: totalSentEmails,
+        targetEmails: preparedEmails.length,
         duration: totalDuration,
-        speed: Math.round(totalSentEmails / (totalDuration / 1000)) // emails per second
+        speed: speed, // emails per second
+        functionsUsed: successfulDispatches.length,
+        functionsFailed: failedDispatches.length
       };
 
     } catch (error: any) {

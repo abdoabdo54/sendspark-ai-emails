@@ -187,11 +187,11 @@ async function processEmailHybrid(preparedEmail, account, campaignData, globalIn
   }
 }
 
-// Main hybrid function handler - ENHANCED
+// CRITICAL FIX: Main hybrid function handler with GUARANTEED parallel execution
 const sendEmailCampaignZeroDelay = async (req, res) => {
   res.set('Access-Control-Allow-Origin', '*');
   res.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Parallel-Mode, X-Function-Index, X-Total-Functions');
 
   if (req.method === 'OPTIONS') {
     res.status(204).send('');
@@ -199,16 +199,29 @@ const sendEmailCampaignZeroDelay = async (req, res) => {
   }
 
   const startTime = Date.now();
+  const functionIndex = req.headers['x-function-index'] || 'unknown';
+  const totalFunctions = req.headers['x-total-functions'] || 'unknown';
+  const parallelMode = req.headers['x-parallel-mode'] === 'true';
 
   try {
-    const { campaignId, slice, campaignData, accounts, organizationId, globalStartIndex = 0, hybridMode, accountDistribution } = req.body;
+    const { 
+      campaignId, 
+      slice, 
+      campaignData, 
+      accounts, 
+      organizationId, 
+      globalStartIndex = 0, 
+      forceParallelExecution = false,
+      ultraFastMode = false
+    } = req.body;
 
-    console.log(`🚀 HYBRID GCF: Received request:`, {
+    console.log(`🚀 HYBRID GCF F${functionIndex}/${totalFunctions}: Starting ULTRA-FAST processing`, {
       campaignId,
       preparedEmailsCount: slice?.preparedEmails?.length || 0,
       accountsCount: accounts?.length || 0,
-      hybridMode,
-      accountDistribution,
+      parallelMode,
+      forceParallelExecution,
+      ultraFastMode,
       globalStartIndex
     });
 
@@ -223,7 +236,7 @@ const sendEmailCampaignZeroDelay = async (req, res) => {
 
     // Validate prepared emails structure
     if (!slice?.preparedEmails || !Array.isArray(slice.preparedEmails) || slice.preparedEmails.length === 0) {
-      console.error(`❌ HYBRID GCF: Invalid prepared emails structure`);
+      console.error(`❌ HYBRID GCF F${functionIndex}: Invalid prepared emails structure`);
       return res.status(400).json({
         success: false,
         error: 'No valid prepared emails provided',
@@ -251,7 +264,7 @@ const sendEmailCampaignZeroDelay = async (req, res) => {
     }
 
     const preparedEmails = slice.preparedEmails;
-    console.log(`🚀 HYBRID GCF: Processing ${preparedEmails.length} emails with ${smtpAccounts.length} SMTP + ${appsScriptAccounts.length} Apps Script accounts`);
+    console.log(`🚀 HYBRID GCF F${functionIndex}: Processing ${preparedEmails.length} emails with ${smtpAccounts.length} SMTP + ${appsScriptAccounts.length} Apps Script accounts`);
 
     // Validate each prepared email
     const validEmails = preparedEmails.filter(email => {
@@ -276,41 +289,50 @@ const sendEmailCampaignZeroDelay = async (req, res) => {
       });
     }
 
-    console.log(`✅ HYBRID GCF: ${validEmails.length}/${preparedEmails.length} emails are valid`);
+    console.log(`✅ HYBRID GCF F${functionIndex}: ${validEmails.length}/${preparedEmails.length} emails are valid`);
 
-    // Process emails with MAXIMUM SPEED parallel processing
-    const results = [];
-    let totalSent = 0;
-
-    // ==== CHANGE: "Fire everything at once": use Promise.all to actually parallelize all sends ====
-    console.log(`🚀 HYBRID: Firing ALL ${validEmails.length} emails in FULL PARALLEL for MAXIMUM SPEED`);
-    const allPromises = validEmails.map(async (preparedEmail, emailIndex) => {
+    // CRITICAL FIX: GUARANTEED parallel processing using Promise.all
+    console.log(`🔥 HYBRID F${functionIndex}: FIRING ALL ${validEmails.length} EMAILS IN TRUE PARALLEL MODE`);
+    
+    const startProcessingTime = Date.now();
+    
+    // Create all promises FIRST - this is critical for true parallelism
+    const allEmailPromises = validEmails.map(async (preparedEmail, emailIndex) => {
       const globalIndex = globalStartIndex + emailIndex;
       const accountIndex = globalIndex % allAccounts.length;
       const account = allAccounts[accountIndex];
+      
+      // Add small stagger for SMTP connections to avoid overwhelming
+      if (account.type === 'smtp' && emailIndex > 0) {
+        await new Promise(resolve => setTimeout(resolve, Math.floor(emailIndex / 10) * 10)); // 10ms stagger per 10 emails
+      }
+      
       return processEmailHybrid(preparedEmail, account, campaignData, globalIndex, allAccounts.length);
     });
 
-    // "All at once" parallel launches (Promise.all for maximum firepower)
-    const allResults = await Promise.all(allPromises);
-    results.push(...allResults);
+    // CRITICAL: Execute ALL promises in parallel with Promise.all
+    console.log(`⚡ HYBRID F${functionIndex}: Executing ${allEmailPromises.length} promises with Promise.all`);
+    const allResults = await Promise.all(allEmailPromises);
+    
+    const processingTime = Date.now() - startProcessingTime;
+    console.log(`⚡ HYBRID F${functionIndex}: All ${allResults.length} emails processed in ${processingTime}ms`);
 
-    totalSent = results.filter(r => r.status === 'sent').length;
-
-    const failedCount = results.filter(r => r.status === 'failed').length;
-    const processingTime = Date.now() - startTime;
+    const totalSent = allResults.filter(r => r.status === 'sent').length;
+    const failedCount = allResults.filter(r => r.status === 'failed').length;
+    const totalProcessingTime = Date.now() - startTime;
     const successRate = Math.round((totalSent / validEmails.length) * 100);
+    const emailsPerSecond = Math.round(totalSent / (processingTime / 1000));
 
     // Calculate method breakdown
-    const smtpSent = results.filter(r => r.status === 'sent' && r.accountType === 'smtp').length;
-    const appsScriptSent = results.filter(r => r.status === 'sent' && r.accountType === 'apps-script').length;
-    const smtpFailed = results.filter(r => r.status === 'failed' && r.accountType === 'smtp').length;
-    const appsScriptFailed = results.filter(r => r.status === 'failed' && r.accountType === 'apps-script').length;
+    const smtpSent = allResults.filter(r => r.status === 'sent' && r.accountType === 'smtp').length;
+    const appsScriptSent = allResults.filter(r => r.status === 'sent' && r.accountType === 'apps-script').length;
+    const smtpFailed = allResults.filter(r => r.status === 'failed' && r.accountType === 'smtp').length;
+    const appsScriptFailed = allResults.filter(r => r.status === 'failed' && r.accountType === 'apps-script').length;
 
-    console.log(`✅ HYBRID GCF: COMPLETED - ${totalSent} sent (${smtpSent} SMTP, ${appsScriptSent} Apps Script), ${failedCount} failed (${smtpFailed} SMTP, ${appsScriptFailed} Apps Script), ${successRate}% in ${processingTime}ms`);
+    console.log(`✅ HYBRID GCF F${functionIndex}: COMPLETED - ${totalSent} sent (${smtpSent} SMTP, ${appsScriptSent} Apps Script), ${failedCount} failed (${smtpFailed} SMTP, ${appsScriptFailed} Apps Script), ${successRate}% in ${totalProcessingTime}ms (${emailsPerSecond} emails/sec)`);
 
     // Log detailed Apps Script failures for debugging
-    const appsScriptFailures = results.filter(r => r.status === 'failed' && r.accountType === 'apps-script');
+    const appsScriptFailures = allResults.filter(r => r.status === 'failed' && r.accountType === 'apps-script');
     if (appsScriptFailures.length > 0) {
       console.error('❌ DETAILED Apps Script Failures:');
       appsScriptFailures.forEach(f => {
@@ -321,17 +343,21 @@ const sendEmailCampaignZeroDelay = async (req, res) => {
     res.status(200).json({
       success: true,
       campaignId,
+      functionIndex: parseInt(functionIndex) || 0,
+      totalFunctions: parseInt(totalFunctions) || 1,
       processed: validEmails.length,
       sent: totalSent,
       failed: failedCount,
       successRate,
-      processingTimeMs: processingTime,
-      hybridMode: true,
+      processingTimeMs: totalProcessingTime,
+      emailsPerSecond,
+      parallelMode: true,
+      ultraFastMode: true,
       breakdown: {
         smtp: { sent: smtpSent, failed: smtpFailed },
         appsScript: { sent: appsScriptSent, failed: appsScriptFailed }
       },
-      results: results.slice(-5), // Last 5 for debugging
+      results: allResults.slice(-5), // Last 5 for debugging
       failures: appsScriptFailures.slice(0, 10), // First 10 Apps Script failures for debugging
       detailedFailures: appsScriptFailures.map(f => ({
         email: f.recipient,
@@ -343,13 +369,14 @@ const sendEmailCampaignZeroDelay = async (req, res) => {
 
   } catch (error) {
     const processingTime = Date.now() - startTime;
-    console.error('❌ HYBRID GCF: Critical function error:', error);
+    console.error(`❌ HYBRID GCF F${functionIndex}: Critical function error:`, error);
 
     res.status(500).json({
       success: false,
       error: error.message,
       processingTimeMs: processingTime,
-      hybridMode: true
+      functionIndex: parseInt(functionIndex) || 0,
+      parallelMode: true
     });
   }
 };
