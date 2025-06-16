@@ -12,6 +12,8 @@ export interface Campaign {
   html_content: string;
   text_content: string;
   send_method: string;
+  selected_accounts: string[]; // Added this property
+  selected_powermta_server?: string; // Added this property
   status: string;
   sent_count: number;
   total_recipients: number;

@@ -54,8 +54,8 @@ const EmailComposer = ({ activeTab = 'campaign' }: EmailComposerProps) => {
         html_content: campaignData.html_content || '',
         text_content: campaignData.text_content || '',
         send_method: campaignData.send_method || 'cloud-functions',
-        selected_accounts: campaignData.selected_accounts || [], // Ensure this is included
-        selected_powermta_server: campaignData.selected_powermta_server || null,
+        selected_accounts: campaignData.selected_accounts || [],
+        selected_powermta_server: campaignData.selected_powermta_server || undefined,
         status: 'draft',
         sent_count: 0,
         total_recipients: recipients.length,
@@ -64,7 +64,7 @@ const EmailComposer = ({ activeTab = 'campaign' }: EmailComposerProps) => {
 
       if (newCampaign) {
         console.log('✅ Campaign created successfully:', newCampaign.id);
-        console.log('📋 Campaign includes accounts:', newCampaign.config?.selected_accounts);
+        console.log('📋 Campaign includes accounts:', newCampaign.selected_accounts);
         toast.success(`Campaign created successfully! Go to Campaign History to prepare and send.`);
       } else {
         throw new Error('Failed to create campaign');
