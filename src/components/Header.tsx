@@ -23,6 +23,7 @@ const Header = () => {
   const location = useLocation();
   const { currentOrganization } = useSimpleOrganizations();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isOrgDialogOpen, setIsOrgDialogOpen] = useState(false);
 
   const navItems = [
     { path: '/', label: 'Campaigns', icon: Mail },
@@ -76,7 +77,13 @@ const Header = () => {
 
           {/* Mobile menu button and Organization */}
           <div className="flex items-center gap-2">
-            <OrganizationDialog />
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setIsOrgDialogOpen(true)}
+            >
+              Organizations
+            </Button>
             
             <Button
               variant="ghost"
@@ -119,6 +126,11 @@ const Header = () => {
           </div>
         )}
       </div>
+
+      <OrganizationDialog 
+        isOpen={isOrgDialogOpen} 
+        onClose={() => setIsOrgDialogOpen(false)} 
+      />
     </header>
   );
 };
