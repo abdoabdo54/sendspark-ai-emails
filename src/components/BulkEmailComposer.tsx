@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -11,6 +12,7 @@ import { toast } from 'sonner';
 import { Send, Loader2, Settings, Server, Cloud, Target, Upload, TestTube, Zap, Users, Wrench } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import CompactAccountSelector from './CompactAccountSelector';
+import CampaignSendMethodSelector from './CampaignSendMethodSelector';
 import { useSimpleOrganizations } from '@/contexts/SimpleOrganizationContext';
 import { useEmailAccounts } from '@/hooks/useEmailAccounts';
 import { useGcfFunctions } from '@/hooks/useGcfFunctions';
@@ -36,13 +38,16 @@ const BulkEmailComposer: React.FC<BulkEmailComposerProps> = ({ onSend }) => {
   const [selectedAccounts, setSelectedAccounts] = useState<string[]>([]);
   const [sending, setSending] = useState(false);
 
+  // Send Method Selection
+  const [sendMethod, setSendMethod] = useState<'cloud_functions' | 'powermta'>('cloud_functions');
+  const [selectedPowerMTAServer, setSelectedPowerMTAServer] = useState<string>('');
+
   // Manual Configuration Override
   const [useManualOverride, setUseManualOverride] = useState(false);
 
   // Dispatch Method and Sending Configuration
   const [dispatchMethod, setDispatchMethod] = useState<'parallel' | 'round_robin' | 'sequential'>('parallel');
   const [sendingMode, setSendingMode] = useState<'controlled' | 'fast' | 'zero-delay'>('controlled');
-  const [selectedPowerMTAServer, setSelectedPowerMTAServer] = useState<string>('');
 
   // Rotation Settings (moved to campaign details)
   const [useFromRotation, setUseFromRotation] = useState(false);
@@ -65,10 +70,10 @@ const BulkEmailComposer: React.FC<BulkEmailComposerProps> = ({ onSend }) => {
 
   // Auto-select first PowerMTA server when switching to PowerMTA method
   useEffect(() => {
-    if (dispatchMethod === 'sequential' && activeServers.length > 0 && !selectedPowerMTAServer) {
+    if (sendMethod === 'powermta' && activeServers.length > 0 && !selectedPowerMTAServer) {
       setSelectedPowerMTAServer(activeServers[0].id);
     }
-  }, [dispatchMethod, activeServers, selectedPowerMTAServer]);
+  }, [sendMethod, activeServers, selectedPowerMTAServer]);
 
   const handleSubjectVariationsChange = (value: string) => {
     const variations = value.split('\n').filter(line => line.trim());
@@ -148,11 +153,12 @@ const BulkEmailComposer: React.FC<BulkEmailComposerProps> = ({ onSend }) => {
         recipients,
         html_content: htmlContent,
         text_content: textContent,
-        send_method: dispatchMethod,
+        send_method: sendMethod === 'powermta' ? 'sequential' : dispatchMethod,
         config: {
           selectedAccounts,
+          sendMethod,
           dispatchMethod,
-          selectedPowerMTAServer: dispatchMethod === 'sequential' ? selectedPowerMTAServer : null,
+          selectedPowerMTAServer: sendMethod === 'powermta' ? selectedPowerMTAServer : null,
           useFromRotation,
           useSubjectRotation,
           fromNameVariations: useFromRotation ? fromNameVariations : [],
@@ -192,6 +198,14 @@ const BulkEmailComposer: React.FC<BulkEmailComposerProps> = ({ onSend }) => {
         <h1 className="text-3xl font-bold text-gray-900 mb-2">📧 Create Email Campaign</h1>
         <p className="text-gray-600">Configure and send bulk email campaigns</p>
       </div>
+
+      {/* Send Method Selection */}
+      <CampaignSendMethodSelector
+        selectedMethod={sendMethod}
+        onMethodChange={setSendMethod}
+        selectedPowerMTAServer={selectedPowerMTAServer}
+        onPowerMTAServerChange={setSelectedPowerMTAServer}
+      />
 
       {/* Navigation Buttons */}
       <Card>
@@ -303,24 +317,26 @@ const BulkEmailComposer: React.FC<BulkEmailComposerProps> = ({ onSend }) => {
               </RadioGroup>
             </div>
 
-            {/* Dispatch Method */}
-            <div className="space-y-3">
-              <Label className="text-sm font-medium">Dispatch Method</Label>
-              <RadioGroup value={dispatchMethod} onValueChange={(value: any) => setDispatchMethod(value)}>
-                <div className="flex items-center space-x-2">
-                  <RadioGroupItem value="parallel" id="parallel" />
-                  <Label htmlFor="parallel" className="text-sm">🚀 Parallel (All functions)</Label>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <RadioGroupItem value="round_robin" id="round_robin" />
-                  <Label htmlFor="round_robin" className="text-sm">Round Robin (Rotate accounts)</Label>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <RadioGroupItem value="sequential" id="sequential" />
-                  <Label htmlFor="sequential" className="text-sm">Sequential</Label>
-                </div>
-              </RadioGroup>
-            </div>
+            {/* Dispatch Method - Only show for Cloud Functions */}
+            {sendMethod === 'cloud_functions' && (
+              <div className="space-y-3">
+                <Label className="text-sm font-medium">Dispatch Method</Label>
+                <RadioGroup value={dispatchMethod} onValueChange={(value: any) => setDispatchMethod(value)}>
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="parallel" id="parallel" />
+                    <Label htmlFor="parallel" className="text-sm">🚀 Parallel (All functions)</Label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="round_robin" id="round_robin" />
+                    <Label htmlFor="round_robin" className="text-sm">Round Robin (Rotate accounts)</Label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="sequential" id="sequential" />
+                    <Label htmlFor="sequential" className="text-sm">Sequential</Label>
+                  </div>
+                </RadioGroup>
+              </div>
+            )}
           </div>
 
           {/* Current Selection Display */}
@@ -332,7 +348,8 @@ const BulkEmailComposer: React.FC<BulkEmailComposerProps> = ({ onSend }) => {
             <p className="text-blue-700 text-sm">
               {sendingMode === 'zero-delay' ? 'Zero Delay (Max Speed)' : 
                sendingMode === 'fast' ? 'Fast (0.5s delay)' : 'Controlled (2s delay)'} + {' '}
-              {dispatchMethod === 'parallel' ? 'Parallel (All functions)' :
+              {sendMethod === 'powermta' ? 'PowerMTA Sequential' :
+               dispatchMethod === 'parallel' ? 'Parallel (All functions)' :
                dispatchMethod === 'round_robin' ? 'Round Robin (Rotate accounts)' : 'Sequential'}
             </p>
           </div>
