@@ -419,7 +419,7 @@ const BulkEmailComposer: React.FC<BulkEmailComposerProps> = ({ onSend }) => {
                       <SelectContent>
                         {activePowerMTAServers.map((server) => (
                           <SelectItem key={server.id} value={server.id}>
-                            {server.name} ({server.server_host})
+                            {String(server.name)} ({String(server.server_host)})
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -606,13 +606,13 @@ const BulkEmailComposer: React.FC<BulkEmailComposerProps> = ({ onSend }) => {
                               onCheckedChange={() => handleAccountToggle(account.id)}
                             />
                             <div>
-                              <p className="font-medium">{account.name || account.email}</p>
-                              <p className="text-sm text-gray-600">{account.email}</p>
+                              <p className="font-medium">{String(account.name || account.email)}</p>
+                              <p className="text-sm text-gray-600">{String(account.email)}</p>
                             </div>
                           </div>
                           <div className="flex items-center gap-2 mt-2">
                             <Badge variant={account.type === 'smtp' ? 'default' : 'secondary'}>
-                              {account.type.toUpperCase()}
+                              {String(account.type).toUpperCase()}
                             </Badge>
                             <Badge variant="outline">
                               Active
@@ -648,14 +648,16 @@ const BulkEmailComposer: React.FC<BulkEmailComposerProps> = ({ onSend }) => {
                       <div key={server.id} className="border rounded-lg p-4">
                         <div className="flex items-center justify-between">
                           <div>
-                            <h4 className="font-medium">{server.name}</h4>
-                            <p className="text-sm text-gray-600">{server.server_host}:{server.ssh_port}</p>
+                            <h4 className="font-medium">{String(server.name)}</h4>
+                            <p className="text-sm text-gray-600">
+                              {String(server.server_host)}:{String(server.ssh_port)}
+                            </p>
                             <div className="flex items-center gap-2 mt-2">
                               <Badge variant="outline">
-                                Virtual MTA: {server.virtual_mta || 'default'}
+                                Virtual MTA: {String(server.virtual_mta || 'default')}
                               </Badge>
                               <Badge variant="outline">
-                                Job Pool: {server.job_pool || 'default'}
+                                Job Pool: {String(server.job_pool || 'default')}
                               </Badge>
                             </div>
                           </div>
