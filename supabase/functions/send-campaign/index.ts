@@ -64,8 +64,8 @@ async function sendEmailViaSMTP(config: any, emailData: any): Promise<{ success:
 }
 
 async function sendViaCloudFunctions(accounts: EmailAccount[], campaign: Campaign, recipients: string[], config: any) {
-  console.log(`Sending via Cloud Functions with ${accounts.length} accounts`);
-  console.log(`Sending Mode: ${config.sending_mode}, Dispatch Method: ${config.dispatch_method}`);
+  console.log(`📤 Sending via Cloud Functions with ${accounts.length} accounts`);
+  console.log(`⚙️ Sending Mode: ${config.sending_mode}, Dispatch Method: ${config.dispatch_method}`);
   
   const results = [];
   
@@ -79,7 +79,7 @@ async function sendViaCloudFunctions(accounts: EmailAccount[], campaign: Campaig
     delay = 2000; // 2 seconds for controlled mode
   }
 
-  console.log(`Using ${delay}ms delay between emails`);
+  console.log(`⏱️ Using ${delay}ms delay between emails`);
   
   // Handle different dispatch methods
   if (config.dispatch_method === 'parallel' && config.sending_mode === 'zero_delay') {
@@ -219,8 +219,8 @@ async function sendViaAppsScript(account: EmailAccount, emailData: any): Promise
 }
 
 async function sendViaCloudFunctionsWithPowerMTA(accounts: EmailAccount[], campaign: Campaign, recipients: string[], config: any, powerMTAServerId: string) {
-  console.log(`Sending via Cloud Functions + PowerMTA monitoring`);
-  console.log(`PowerMTA Server ID: ${powerMTAServerId}`);
+  console.log(`📡 Sending via Cloud Functions + PowerMTA monitoring`);
+  console.log(`🖥️ PowerMTA Server ID: ${powerMTAServerId}`);
   
   // First, send using cloud functions
   const cloudResults = await sendViaCloudFunctions(accounts, campaign, recipients, config);
@@ -228,7 +228,7 @@ async function sendViaCloudFunctionsWithPowerMTA(accounts: EmailAccount[], campa
   // Then, notify PowerMTA for monitoring (if PowerMTA integration is available)
   try {
     // This would be where you integrate with PowerMTA monitoring API
-    console.log(`PowerMTA monitoring enabled for campaign ${campaign.id}`);
+    console.log(`📊 PowerMTA monitoring enabled for campaign ${campaign.id}`);
     
     // Add PowerMTA monitoring metadata to results
     for (const result of cloudResults) {
@@ -236,7 +236,7 @@ async function sendViaCloudFunctionsWithPowerMTA(accounts: EmailAccount[], campa
       result.powermta_server_id = powerMTAServerId;
     }
   } catch (error) {
-    console.log('PowerMTA monitoring setup failed:', error);
+    console.log('⚠️ PowerMTA monitoring setup failed:', error);
   }
   
   return cloudResults;
@@ -266,31 +266,46 @@ serve(async (req) => {
 
     // Parse campaign config
     const campaignConfig = campaign.config || {};
-    console.log('Campaign Configuration:', campaignConfig);
-    console.log('Send Method:', campaign.send_method);
-    console.log('Selected Accounts:', campaign.selected_accounts);
-    console.log('Selected PowerMTA Server:', campaign.selected_powermta_server);
+    console.log('📋 Campaign Configuration:', campaignConfig);
+    console.log('📤 Send Method:', campaign.send_method);
+    console.log('👥 Selected Accounts from campaign:', campaign.selected_accounts);
+    console.log('🖥️ Selected PowerMTA Server:', campaign.selected_powermta_server);
+
+    // Get the selected accounts - FIXED LOGIC
+    let selectedAccountIds = campaign.selected_accounts || [];
+    
+    // Also check in the config as backup
+    if (!selectedAccountIds || selectedAccountIds.length === 0) {
+      selectedAccountIds = campaignConfig.selected_accounts || [];
+    }
+
+    console.log('🔍 Final selected account IDs:', selectedAccountIds);
+
+    if (!selectedAccountIds || selectedAccountIds.length === 0) {
+      throw new Error('No email accounts selected for this campaign. Please select at least one SMTP or Apps Script account.');
+    }
 
     // Get selected email accounts
     const { data: accounts, error: accountError } = await supabase
       .from('email_accounts')
       .select('*')
-      .in('id', campaign.selected_accounts || [])
+      .in('id', selectedAccountIds)
       .eq('is_active', true)
 
     if (accountError) throw accountError
     if (!accounts || accounts.length === 0) {
-      throw new Error('No active email accounts found for the selected accounts')
+      throw new Error(`No active email accounts found for the selected account IDs: ${selectedAccountIds.join(', ')}`)
     }
 
-    console.log(`Found ${accounts.length} active accounts for sending`);
+    console.log(`📧 Found ${accounts.length} active accounts for sending`);
+    accounts.forEach(acc => console.log(`  - ${acc.name} (${acc.type}): ${acc.email}`));
 
     // Parse recipients
     const recipients = campaign.recipients.split(',')
       .map((email: string) => email.trim())
       .filter((email: string) => email.length > 0)
 
-    console.log(`Sending campaign ${campaignId} to ${recipients.length} recipients`);
+    console.log(`📬 Sending campaign ${campaignId} to ${recipients.length} recipients`);
 
     let results = [];
 
@@ -313,7 +328,7 @@ serve(async (req) => {
     const sentCount = results.filter(r => r.status === 'sent').length;
     const failedCount = results.length - sentCount;
 
-    console.log(`Campaign ${campaignId} results: ${sentCount} sent, ${failedCount} failed`);
+    console.log(`📊 Campaign ${campaignId} results: ${sentCount} sent, ${failedCount} failed`);
 
     // Update campaign status
     const finalStatus = sentCount === recipients.length ? 'sent' : 
@@ -361,7 +376,7 @@ serve(async (req) => {
       }
     )
   } catch (error) {
-    console.error('Error sending campaign:', error)
+    console.error('❌ Error sending campaign:', error)
     return new Response(
       JSON.stringify({ error: error.message }),
       { 

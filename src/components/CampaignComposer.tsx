@@ -82,7 +82,6 @@ const CampaignComposer: React.FC<CampaignComposerProps> = ({ onSend }) => {
   // Check if PowerMTA mode is enabled
   const isPowerMTAMode = sendMethod === 'cloud-functions-powermta';
 
-  // Sending modes configuration
   const sendingModes = [
     {
       value: 'controlled',
@@ -197,7 +196,7 @@ const CampaignComposer: React.FC<CampaignComposerProps> = ({ onSend }) => {
     setSubjectRotation(updated);
   };
 
-  // Form submission - UPDATED VALIDATION
+  // Form submission - FIXED VALIDATION
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
@@ -206,17 +205,25 @@ const CampaignComposer: React.FC<CampaignComposerProps> = ({ onSend }) => {
       return;
     }
 
-    // Always require email accounts for both cloud functions modes
+    // ALWAYS require email accounts for BOTH modes - this is the key fix
     if (selectedAccounts.length === 0) {
       toast.error('Please select at least one email account (SMTP or Apps Script)');
       return;
     }
 
-    // PowerMTA server is required only when using PowerMTA mode
+    // PowerMTA server is required only when using PowerMTA mode for monitoring
     if (isPowerMTAMode && !selectedPowerMTAServer) {
       toast.error('Please select a PowerMTA server for monitoring and control');
       return;
     }
+
+    // Debug logging to see what's being sent
+    console.log('🚀 Submitting campaign with:', {
+      sendMethod,
+      selectedAccounts,
+      selectedPowerMTAServer: isPowerMTAMode ? selectedPowerMTAServer : null,
+      accountsCount: selectedAccounts.length
+    });
 
     const campaignData = {
       from_rotation: fromRotation,
@@ -225,7 +232,7 @@ const CampaignComposer: React.FC<CampaignComposerProps> = ({ onSend }) => {
       html_content: htmlContent,
       text_content: textContent,
       send_method: sendMethod,
-      selected_accounts: selectedAccounts,
+      selected_accounts: selectedAccounts, // This is crucial!
       selected_powermta_server: isPowerMTAMode ? selectedPowerMTAServer : null,
       config: {
         use_test_after: useTestAfter,
@@ -307,7 +314,7 @@ const CampaignComposer: React.FC<CampaignComposerProps> = ({ onSend }) => {
         <TabsContent value="compose" className="space-y-6">
           <form onSubmit={handleSubmit} className="space-y-6">
             
-            {/* Account Selection */}
+            {/* Account Selection - ALWAYS REQUIRED */}
             <CompactAccountSelector
               selectedAccounts={selectedAccounts}
               onAccountsChange={handleAccountsChange}
@@ -315,7 +322,7 @@ const CampaignComposer: React.FC<CampaignComposerProps> = ({ onSend }) => {
               onDeselectAll={handleDeselectAllAccounts}
             />
 
-            {/* Sending Method Selection - NEW STRUCTURE */}
+            {/* Sending Method Selection - CORRECTED STRUCTURE */}
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
@@ -377,206 +384,211 @@ const CampaignComposer: React.FC<CampaignComposerProps> = ({ onSend }) => {
               </CardContent>
             </Card>
 
-            {/* Smart Configuration Section - Only show for cloud functions */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Zap className="w-5 h-5" />
-                  Smart Configuration - FULLY UPGRADED ⚡
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <Label className="text-base font-medium">Enable Smart Configuration</Label>
-                    <p className="text-sm text-gray-600">Automatically optimize account usage and delivery performance</p>
-                  </div>
-                  <Switch checked={smartConfigEnabled} onCheckedChange={setSmartConfigEnabled} />
-                </div>
+            {/* Show Cloud Functions features only for cloud-functions mode */}
+            {sendMethod === 'cloud-functions' && (
+              <>
+                {/* Smart Configuration Section */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <Zap className="w-5 h-5" />
+                      Smart Configuration - Cloud Functions ⚡
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-6">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <Label className="text-base font-medium">Enable Smart Configuration</Label>
+                        <p className="text-sm text-gray-600">Automatically optimize account usage and delivery performance</p>
+                      </div>
+                      <Switch checked={smartConfigEnabled} onCheckedChange={setSmartConfigEnabled} />
+                    </div>
 
-                {smartConfigEnabled && (
-                  <>
-                    <Separator />
+                    {smartConfigEnabled && (
+                      <>
+                        <Separator />
+                        
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                          <div>
+                            <Label>Functions to Use</Label>
+                            <Input
+                              type="number"
+                              value={functionsToUse}
+                              onChange={(e) => setFunctionsToUse(parseInt(e.target.value) || 1)}
+                              min="1"
+                              max="10"
+                            />
+                          </div>
+                          <div>
+                            <Label>Accounts to Use</Label>
+                            <Input
+                              type="number"
+                              value={accountsToUse}
+                              onChange={(e) => setAccountsToUse(parseInt(e.target.value) || 0)}
+                              min="0"
+                              max={activeAccounts.length}
+                            />
+                          </div>
+                        </div>
+
+                        <div className="space-y-4">
+                          <Label className="text-base font-medium">Smart Optimization Features</Label>
+                          <div className="grid grid-cols-2 gap-4">
+                            <div className="flex items-center justify-between">
+                              <Label>Account Load Balancing</Label>
+                              <Switch 
+                                checked={smartOptimization.accountLoadBalancing}
+                                onCheckedChange={(checked) => 
+                                  setSmartOptimization(prev => ({ ...prev, accountLoadBalancing: checked }))
+                                }
+                              />
+                            </div>
+                            <div className="flex items-center justify-between">
+                              <Label>Delivery Optimization</Label>
+                              <Switch 
+                                checked={smartOptimization.deliveryOptimization}
+                                onCheckedChange={(checked) => 
+                                  setSmartOptimization(prev => ({ ...prev, deliveryOptimization: checked }))
+                                }
+                              />
+                            </div>
+                            <div className="flex items-center justify-between">
+                              <Label>Rate Limit Adjustment</Label>
+                              <Switch 
+                                checked={smartOptimization.rateLimitAdjustment}
+                                onCheckedChange={(checked) => 
+                                  setSmartOptimization(prev => ({ ...prev, rateLimitAdjustment: checked }))
+                                }
+                              />
+                            </div>
+                            <div className="flex items-center justify-between">
+                              <Label>Failover Protection</Label>
+                              <Switch 
+                                checked={smartOptimization.failoverProtection}
+                                onCheckedChange={(checked) => 
+                                  setSmartOptimization(prev => ({ ...prev, failoverProtection: checked }))
+                                }
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      </>
+                    )}
+                  </CardContent>
+                </Card>
+
+                {/* Sending Configuration */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <Send className="w-5 h-5" />
+                      Cloud Functions Configuration ⚡
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-6">
                     
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      <div>
-                        <Label>Functions to Use</Label>
-                        <Input
-                          type="number"
-                          value={functionsToUse}
-                          onChange={(e) => setFunctionsToUse(parseInt(e.target.value) || 1)}
-                          min="1"
-                          max="10"
-                        />
-                      </div>
-                      <div>
-                        <Label>Accounts to Use</Label>
-                        <Input
-                          type="number"
-                          value={accountsToUse}
-                          onChange={(e) => setAccountsToUse(parseInt(e.target.value) || 0)}
-                          min="0"
-                          max={activeAccounts.length}
-                        />
-                      </div>
-                    </div>
-
+                    {/* Sending Mode Selection */}
                     <div className="space-y-4">
-                      <Label className="text-base font-medium">Smart Optimization Features</Label>
-                      <div className="grid grid-cols-2 gap-4">
-                        <div className="flex items-center justify-between">
-                          <Label>Account Load Balancing</Label>
-                          <Switch 
-                            checked={smartOptimization.accountLoadBalancing}
-                            onCheckedChange={(checked) => 
-                              setSmartOptimization(prev => ({ ...prev, accountLoadBalancing: checked }))
-                            }
-                          />
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <Label>Delivery Optimization</Label>
-                          <Switch 
-                            checked={smartOptimization.deliveryOptimization}
-                            onCheckedChange={(checked) => 
-                              setSmartOptimization(prev => ({ ...prev, deliveryOptimization: checked }))
-                            }
-                          />
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <Label>Rate Limit Adjustment</Label>
-                          <Switch 
-                            checked={smartOptimization.rateLimitAdjustment}
-                            onCheckedChange={(checked) => 
-                              setSmartOptimization(prev => ({ ...prev, rateLimitAdjustment: checked }))
-                            }
-                          />
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <Label>Failover Protection</Label>
-                          <Switch 
-                            checked={smartOptimization.failoverProtection}
-                            onCheckedChange={(checked) => 
-                              setSmartOptimization(prev => ({ ...prev, failoverProtection: checked }))
-                            }
-                          />
-                        </div>
+                      <div>
+                        <Label className="text-base font-medium">Sending Mode</Label>
+                        <p className="text-sm text-gray-600 mb-3">Control the speed and rate of email delivery</p>
                       </div>
-                    </div>
-                  </>
-                )}
-              </CardContent>
-            </Card>
+                      
+                      <Select value={sendingMode} onValueChange={setSendingMode}>
+                        <SelectTrigger className="w-full">
+                          <SelectValue placeholder="Select sending mode" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {sendingModes.map((mode) => (
+                            <SelectItem key={mode.value} value={mode.value}>
+                              <div className="flex items-center gap-2">
+                                <mode.icon className={`w-4 h-4 text-${mode.color}-600`} />
+                                <span>{mode.label}</span>
+                              </div>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
 
-            {/* Sending Configuration - Show advanced options only for cloud functions */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Send className="w-5 h-5" />
-                  Sending Configuration - FULLY UPGRADED ⚡
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                
-                {/* Sending Mode Selection */}
-                <div className="space-y-4">
-                  <div>
-                    <Label className="text-base font-medium">Sending Mode</Label>
-                    <p className="text-sm text-gray-600 mb-3">Control the speed and rate of email delivery</p>
-                  </div>
-                  
-                  <Select value={sendingMode} onValueChange={setSendingMode}>
-                    <SelectTrigger className="w-full">
-                      <SelectValue placeholder="Select sending mode" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {sendingModes.map((mode) => (
-                        <SelectItem key={mode.value} value={mode.value}>
-                          <div className="flex items-center gap-2">
-                            <mode.icon className={`w-4 h-4 text-${mode.color}-600`} />
-                            <span>{mode.label}</span>
+                      {selectedMode && (
+                        <div className="p-3 border rounded-lg bg-gray-50">
+                          <div className="flex items-center gap-2 mb-2">
+                            <selectedMode.icon className={`w-4 h-4 text-${selectedMode.color}-600`} />
+                            <span className="font-medium">{selectedMode.label}</span>
+                            <Badge variant="outline" className={`text-${selectedMode.color}-600`}>
+                              {selectedMode.value === 'zero_delay' ? 'EXTREME' : 
+                               selectedMode.value === 'fast' ? 'FAST' : 'SAFE'}
+                            </Badge>
                           </div>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-
-                  {selectedMode && (
-                    <div className="p-3 border rounded-lg bg-gray-50">
-                      <div className="flex items-center gap-2 mb-2">
-                        <selectedMode.icon className={`w-4 h-4 text-${selectedMode.color}-600`} />
-                        <span className="font-medium">{selectedMode.label}</span>
-                        <Badge variant="outline" className={`text-${selectedMode.color}-600`}>
-                          {selectedMode.value === 'zero_delay' ? 'EXTREME' : 
-                           selectedMode.value === 'fast' ? 'FAST' : 'SAFE'}
-                        </Badge>
-                      </div>
-                      <p className="text-sm text-gray-600">{selectedMode.description}</p>
+                          <p className="text-sm text-gray-600">{selectedMode.description}</p>
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>
 
-                <Separator />
+                    <Separator />
 
-                {/* Dispatch Method Selection */}
-                <div className="space-y-4">
-                  <div>
-                    <Label className="text-base font-medium">Dispatch Method</Label>
-                    <p className="text-sm text-gray-600 mb-3">Choose how to distribute emails across functions and accounts</p>
-                  </div>
-                  
-                  <Select value={dispatchMethod} onValueChange={setDispatchMethod}>
-                    <SelectTrigger className="w-full">
-                      <SelectValue placeholder="Select dispatch method" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {dispatchMethods.map((method) => (
-                        <SelectItem key={method.value} value={method.value}>
-                          <div className="flex items-center gap-2">
-                            <method.icon className={`w-4 h-4 text-${method.color}-600`} />
-                            <span>{method.label}</span>
+                    {/* Dispatch Method Selection */}
+                    <div className="space-y-4">
+                      <div>
+                        <Label className="text-base font-medium">Dispatch Method</Label>
+                        <p className="text-sm text-gray-600 mb-3">Choose how to distribute emails across functions and accounts</p>
+                      </div>
+                      
+                      <Select value={dispatchMethod} onValueChange={setDispatchMethod}>
+                        <SelectTrigger className="w-full">
+                          <SelectValue placeholder="Select dispatch method" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {dispatchMethods.map((method) => (
+                            <SelectItem key={method.value} value={method.value}>
+                              <div className="flex items-center gap-2">
+                                <method.icon className={`w-4 h-4 text-${method.color}-600`} />
+                                <span>{method.label}</span>
+                              </div>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+
+                      {selectedDispatch && (
+                        <div className="p-3 border rounded-lg bg-gray-50">
+                          <div className="flex items-center gap-2 mb-2">
+                            <selectedDispatch.icon className={`w-4 h-4 text-${selectedDispatch.color}-600`} />
+                            <span className="font-medium">{selectedDispatch.label}</span>
+                            <Badge variant="outline" className={`text-${selectedDispatch.color}-600`}>
+                              {selectedDispatch.value === 'parallel' ? 'MAX POWER' : 
+                               selectedDispatch.value === 'round_robin' ? 'BALANCED' : 'SEQUENTIAL'}
+                            </Badge>
                           </div>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-
-                  {selectedDispatch && (
-                    <div className="p-3 border rounded-lg bg-gray-50">
-                      <div className="flex items-center gap-2 mb-2">
-                        <selectedDispatch.icon className={`w-4 h-4 text-${selectedDispatch.color}-600`} />
-                        <span className="font-medium">{selectedDispatch.label}</span>
-                        <Badge variant="outline" className={`text-${selectedDispatch.color}-600`}>
-                          {selectedDispatch.value === 'parallel' ? 'MAX POWER' : 
-                           selectedDispatch.value === 'round_robin' ? 'BALANCED' : 'SEQUENTIAL'}
-                        </Badge>
-                      </div>
-                      <p className="text-sm text-gray-600">{selectedDispatch.description}</p>
+                          <p className="text-sm text-gray-600">{selectedDispatch.description}</p>
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>
 
-                {/* Performance Warnings */}
-                {sendingMode === 'zero_delay' && (
-                  <Alert className="border-red-200 bg-red-50">
-                    <Zap className="h-4 w-4 text-red-600" />
-                    <AlertDescription className="text-red-800">
-                      <strong>⚡ EXTREME MODE:</strong> Zero Delay mode removes ALL rate limits and timeouts for maximum speed. 
-                      Use with caution and ensure your email providers can handle high-volume sending.
-                    </AlertDescription>
-                  </Alert>
-                )}
+                    {/* Performance Warnings */}
+                    {sendingMode === 'zero_delay' && (
+                      <Alert className="border-red-200 bg-red-50">
+                        <Zap className="h-4 w-4 text-red-600" />
+                        <AlertDescription className="text-red-800">
+                          <strong>⚡ EXTREME MODE:</strong> Zero Delay mode removes ALL rate limits and timeouts for maximum speed. 
+                          Use with caution and ensure your email providers can handle high-volume sending.
+                        </AlertDescription>
+                      </Alert>
+                    )}
 
-                {sendingMode === 'zero_delay' && dispatchMethod === 'parallel' && (
-                  <Alert className="border-purple-200 bg-purple-50">
-                    <Layers className="h-4 w-4 text-purple-600" />
-                    <AlertDescription className="text-purple-800">
-                      <strong>🚀 MAXIMUM POWER MODE:</strong> You've selected the most aggressive configuration possible. 
-                      This will use all functions in parallel with zero delays for unprecedented sending speed.
-                    </AlertDescription>
-                  </Alert>
-                )}
-              </CardContent>
-            </Card>
+                    {sendingMode === 'zero_delay' && dispatchMethod === 'parallel' && (
+                      <Alert className="border-purple-200 bg-purple-50">
+                        <Layers className="h-4 w-4 text-purple-600" />
+                        <AlertDescription className="text-purple-800">
+                          <strong>🚀 MAXIMUM POWER MODE:</strong> You've selected the most aggressive configuration possible. 
+                          This will use all functions in parallel with zero delays for unprecedented sending speed.
+                        </AlertDescription>
+                      </Alert>
+                    )}
+                  </CardContent>
+                </Card>
+              </>
+            )}
             
             {/* From Email Rotation */}
             <Card>
@@ -592,22 +604,14 @@ const CampaignComposer: React.FC<CampaignComposerProps> = ({ onSend }) => {
                     <Input
                       placeholder="Sender Name"
                       value={from.name}
-                      onChange={(e) => {
-                        const updated = [...fromRotation];
-                        updated[index].name = e.target.value;
-                        setFromRotation(updated);
-                      }}
+                      onChange={(e) => updateFromEmail(index, 'name', e.target.value)}
                       className="flex-1"
                     />
                     <Input
                       placeholder="sender@example.com"
                       type="email"
                       value={from.email}
-                      onChange={(e) => {
-                        const updated = [...fromRotation];
-                        updated[index].email = e.target.value;
-                        setFromRotation(updated);
-                      }}
+                      onChange={(e) => updateFromEmail(index, 'email', e.target.value)}
                       className="flex-1"
                     />
                     {fromRotation.length > 1 && (
@@ -615,18 +619,14 @@ const CampaignComposer: React.FC<CampaignComposerProps> = ({ onSend }) => {
                         type="button" 
                         variant="outline" 
                         size="sm"
-                        onClick={() => {
-                          if (fromRotation.length > 1) {
-                            setFromRotation(fromRotation.filter((_, i) => i !== index));
-                          }
-                        }}
+                        onClick={() => removeFromEmail(index)}
                       >
                         <X className="w-4 h-4" />
                       </Button>
                     )}
                   </div>
                 ))}
-                <Button type="button" variant="outline" onClick={() => setFromRotation([...fromRotation, { name: '', email: '' }])}>
+                <Button type="button" variant="outline" onClick={addFromEmail}>
                   Add From Email
                 </Button>
               </CardContent>
@@ -646,11 +646,7 @@ const CampaignComposer: React.FC<CampaignComposerProps> = ({ onSend }) => {
                     <Input
                       placeholder="Subject line..."
                       value={subject}
-                      onChange={(e) => {
-                        const updated = [...subjectRotation];
-                        updated[index] = e.target.value;
-                        setSubjectRotation(updated);
-                      }}
+                      onChange={(e) => updateSubject(index, e.target.value)}
                       className="flex-1"
                     />
                     {subjectRotation.length > 1 && (
@@ -658,18 +654,14 @@ const CampaignComposer: React.FC<CampaignComposerProps> = ({ onSend }) => {
                         type="button" 
                         variant="outline" 
                         size="sm"
-                        onClick={() => {
-                          if (subjectRotation.length > 1) {
-                            setSubjectRotation(subjectRotation.filter((_, i) => i !== index));
-                          }
-                        }}
+                        onClick={() => removeSubject(index)}
                       >
                         <X className="w-4 h-4" />
                       </Button>
                     )}
                   </div>
                 ))}
-                <Button type="button" variant="outline" onClick={() => setSubjectRotation([...subjectRotation, ''])}>
+                <Button type="button" variant="outline" onClick={addSubject}>
                   Add Subject Variation
                 </Button>
               </CardContent>

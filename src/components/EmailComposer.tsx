@@ -23,7 +23,10 @@ const EmailComposer = ({ activeTab = 'campaign' }: EmailComposerProps) => {
     }
 
     try {
-      console.log('Creating campaign (draft status) with data:', campaignData);
+      console.log('🚀 Creating campaign (draft status) with data:', campaignData);
+      console.log('📧 Selected accounts:', campaignData.selected_accounts);
+      console.log('🔧 Send method:', campaignData.send_method);
+      console.log('🖥️ PowerMTA server:', campaignData.selected_powermta_server);
       
       // Parse recipients to get total count
       const recipients = campaignData.recipients
@@ -36,6 +39,13 @@ const EmailComposer = ({ activeTab = 'campaign' }: EmailComposerProps) => {
         return;
       }
 
+      // Ensure selected_accounts is included in the config
+      const config = {
+        ...campaignData.config,
+        selected_accounts: campaignData.selected_accounts,
+        selected_powermta_server: campaignData.selected_powermta_server
+      };
+
       // Create campaign as DRAFT (not sending immediately)
       const newCampaign = await createCampaign({
         from_name: campaignData.from_rotation?.[0]?.name || '',
@@ -43,22 +53,25 @@ const EmailComposer = ({ activeTab = 'campaign' }: EmailComposerProps) => {
         recipients: campaignData.recipients,
         html_content: campaignData.html_content || '',
         text_content: campaignData.text_content || '',
-        send_method: campaignData.send_method || 'smtp',
+        send_method: campaignData.send_method || 'cloud-functions',
+        selected_accounts: campaignData.selected_accounts || [], // Ensure this is included
+        selected_powermta_server: campaignData.selected_powermta_server || null,
         status: 'draft',
         sent_count: 0,
         total_recipients: recipients.length,
-        config: campaignData.config || {}
+        config: config
       });
 
       if (newCampaign) {
         console.log('✅ Campaign created successfully:', newCampaign.id);
+        console.log('📋 Campaign includes accounts:', newCampaign.config?.selected_accounts);
         toast.success(`Campaign created successfully! Go to Campaign History to prepare and send.`);
       } else {
         throw new Error('Failed to create campaign');
       }
 
     } catch (error) {
-      console.error('Error creating campaign:', error);
+      console.error('❌ Error creating campaign:', error);
       toast.error(`Campaign creation failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   };
