@@ -142,7 +142,7 @@ export const useCampaigns = (organizationId?: string) => {
       const startIndex = (page - 1) * limit;
       query = query.range(startIndex, startIndex + limit - 1);
 
-      const { data, error } = await query;
+      const { data, error, count } = await query;
 
       if (error) {
         console.error('❌ Campaign fetch error:', error);
