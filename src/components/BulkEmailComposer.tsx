@@ -10,6 +10,7 @@ import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from 'sonner';
 import { 
   Send, 
@@ -31,10 +32,18 @@ import {
   Palette,
   Code,
   Globe,
-  Shield
+  Shield,
+  Server,
+  Shuffle,
+  Settings2,
+  Plus,
+  Minus,
+  Info
 } from 'lucide-react';
 import { useEmailAccounts } from '@/hooks/useEmailAccounts';
 import { useSimpleOrganizations } from '@/contexts/SimpleOrganizationContext';
+import { usePowerMTAServers } from '@/hooks/usePowerMTAServers';
+import { useGcfFunctions } from '@/hooks/useGcfFunctions';
 
 interface BulkEmailComposerProps {
   onSend: (campaignData: any) => void;
@@ -43,6 +52,8 @@ interface BulkEmailComposerProps {
 const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
   const { currentOrganization } = useSimpleOrganizations();
   const { accounts, loading: accountsLoading } = useEmailAccounts(currentOrganization?.id);
+  const { servers: powerMTAServers } = usePowerMTAServers(currentOrganization?.id);
+  const { functions: gcfFunctions } = useGcfFunctions(currentOrganization?.id);
   
   // Basic campaign settings
   const [fromName, setFromName] = useState('');
@@ -51,11 +62,24 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
   const [htmlContent, setHtmlContent] = useState('');
   const [textContent, setTextContent] = useState('');
   const [sendMethod, setSendMethod] = useState<'cloud_functions' | 'middleware'>('cloud_functions');
-  const [selectedAccount, setSelectedAccount] = useState('');
+  const [selectedAccounts, setSelectedAccounts] = useState<string[]>([]);
   const [sending, setSending] = useState(false);
   const [testing, setTesting] = useState(false);
 
-  // Advanced features restored
+  // Rotation and Smart Configuration
+  const [enableRotation, setEnableRotation] = useState(false);
+  const [fromNames, setFromNames] = useState<string[]>(['']);
+  const [subjects, setSubjects] = useState<string[]>(['']);
+  const [sendingMethod, setSendingMethod] = useState<'round-robin' | 'random' | 'single'>('round-robin');
+  const [enableSmartConfig, setEnableSmartConfig] = useState(false);
+  const [smartConfigEngine, setSmartConfigEngine] = useState({
+    autoSelectAccounts: true,
+    balanceLoad: true,
+    optimizeDelivery: true,
+    adaptiveRateLimit: true
+  });
+
+  // Advanced features
   const [enableTestMode, setEnableTestMode] = useState(false);
   const [testEmail, setTestEmail] = useState('');
   const [enableScheduling, setEnableScheduling] = useState(false);
@@ -80,14 +104,24 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
   const [enablePreview, setEnablePreview] = useState(false);
   const [previewMode, setPreviewMode] = useState<'desktop' | 'mobile' | 'tablet'>('desktop');
 
+  // Google Cloud Functions settings
+  const [selectedGcfFunction, setSelectedGcfFunction] = useState('');
+  const [gcfBatchSize, setGcfBatchSize] = useState(10);
+  const [gcfRateLimit, setGcfRateLimit] = useState(3600);
+
+  // PowerMTA settings
+  const [selectedPowerMTAServer, setSelectedPowerMTAServer] = useState('');
+  const [powerMTAJobPool, setPowerMTAJobPool] = useState('default');
+  const [powerMTAVirtualMTA, setPowerMTAVirtualMTA] = useState('');
+
   const activeAccounts = accounts.filter(account => account.is_active);
   
-  // Auto-select first available account
+  // Auto-select first available accounts
   useEffect(() => {
-    if (activeAccounts.length > 0 && !selectedAccount) {
-      setSelectedAccount(activeAccounts[0].id);
+    if (activeAccounts.length > 0 && selectedAccounts.length === 0) {
+      setSelectedAccounts([activeAccounts[0].id]);
     }
-  }, [activeAccounts, selectedAccount]);
+  }, [activeAccounts, selectedAccounts.length]);
 
   const validateRecipients = (recipientList: string): boolean => {
     const emails = recipientList.split(',').map(email => email.trim()).filter(email => email);
@@ -97,6 +131,38 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
 
   const getRecipientCount = (): number => {
     return recipients.split(',').map(email => email.trim()).filter(email => email).length;
+  };
+
+  const addFromName = () => {
+    setFromNames([...fromNames, '']);
+  };
+
+  const removeFromName = (index: number) => {
+    if (fromNames.length > 1) {
+      setFromNames(fromNames.filter((_, i) => i !== index));
+    }
+  };
+
+  const updateFromName = (index: number, value: string) => {
+    const updated = [...fromNames];
+    updated[index] = value;
+    setFromNames(updated);
+  };
+
+  const addSubject = () => {
+    setSubjects([...subjects, '']);
+  };
+
+  const removeSubject = (index: number) => {
+    if (subjects.length > 1) {
+      setSubjects(subjects.filter((_, i) => i !== index));
+    }
+  };
+
+  const updateSubject = (index: number, value: string) => {
+    const updated = [...subjects];
+    updated[index] = value;
+    setSubjects(updated);
   };
 
   const handleImportCSV = () => {
@@ -126,7 +192,12 @@ HTML Content:
 ${htmlContent || 'Your HTML content here...'}
 
 Text Content:
-${textContent || 'Your text content here...'}`;
+${textContent || 'Your text content here...'}
+
+Rotation Settings:
+From Names: ${fromNames.join(', ')}
+Subjects: ${subjects.join(', ')}
+Sending Method: ${sendingMethod}`;
     
     const blob = new Blob([template], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
@@ -160,11 +231,17 @@ ${textContent || 'Your text content here...'}`;
         html_content: htmlContent,
         text_content: textContent,
         send_method: sendMethod,
-        selected_account: selectedAccount,
+        selected_accounts: selectedAccounts,
         config: {
           sendMethod,
-          selectedAccount,
+          selectedAccounts,
           isTest: true,
+          rotation: enableRotation ? {
+            enabled: true,
+            fromNames: fromNames.filter(n => n.trim()),
+            subjects: subjects.filter(s => s.trim()),
+            sendingMethod
+          } : null,
           tracking: {
             track_opens: trackOpens,
             track_clicks: trackClicks
@@ -176,7 +253,18 @@ ${textContent || 'Your text content here...'}`;
             enabled: enableRetries,
             max_retries: maxRetries,
             delay: retryDelay
-          }
+          },
+          smartConfig: enableSmartConfig ? smartConfigEngine : null,
+          gcfSettings: sendMethod === 'cloud_functions' ? {
+            function_id: selectedGcfFunction,
+            batch_size: gcfBatchSize,
+            rate_limit: gcfRateLimit
+          } : null,
+          powerMTASettings: sendMethod === 'middleware' ? {
+            server_id: selectedPowerMTAServer,
+            job_pool: powerMTAJobPool,
+            virtual_mta: powerMTAVirtualMTA
+          } : null
         }
       };
 
@@ -193,11 +281,11 @@ ${textContent || 'Your text content here...'}`;
 
   const handleSend = async () => {
     // Validation
-    if (!fromName.trim()) {
+    if (!fromName.trim() && (!enableRotation || fromNames.every(n => !n.trim()))) {
       toast.error('From name is required');
       return;
     }
-    if (!subject.trim()) {
+    if (!subject.trim() && (!enableRotation || subjects.every(s => !s.trim()))) {
       toast.error('Subject is required');
       return;
     }
@@ -213,6 +301,10 @@ ${textContent || 'Your text content here...'}`;
       toast.error('Please enter valid email addresses separated by commas');
       return;
     }
+    if (selectedAccounts.length === 0) {
+      toast.error('Please select at least one email account');
+      return;
+    }
 
     setSending(true);
     
@@ -224,10 +316,17 @@ ${textContent || 'Your text content here...'}`;
         html_content: htmlContent,
         text_content: textContent,
         send_method: sendMethod,
-        selected_account: selectedAccount,
+        selected_accounts: selectedAccounts,
         config: {
           sendMethod,
-          selectedAccount,
+          selectedAccounts,
+          sendingMethod,
+          rotation: enableRotation ? {
+            enabled: true,
+            fromNames: fromNames.filter(n => n.trim()),
+            subjects: subjects.filter(s => s.trim()),
+            sendingMethod
+          } : null,
           scheduling: enableScheduling ? {
             scheduled_date: scheduledDate,
             scheduled_time: scheduledTime
@@ -254,6 +353,17 @@ ${textContent || 'Your text content here...'}`;
             enabled: true,
             limit: rateLimit,
             period: rateLimitPeriod
+          } : null,
+          smartConfig: enableSmartConfig ? smartConfigEngine : null,
+          gcfSettings: sendMethod === 'cloud_functions' ? {
+            function_id: selectedGcfFunction,
+            batch_size: gcfBatchSize,
+            rate_limit: gcfRateLimit
+          } : null,
+          powerMTASettings: sendMethod === 'middleware' ? {
+            server_id: selectedPowerMTAServer,
+            job_pool: powerMTAJobPool,
+            virtual_mta: powerMTAVirtualMTA
           } : null
         }
       };
@@ -267,7 +377,9 @@ ${textContent || 'Your text content here...'}`;
       setRecipients('');
       setHtmlContent('');
       setTextContent('');
-      setSelectedAccount(activeAccounts.length > 0 ? activeAccounts[0].id : '');
+      setSelectedAccounts(activeAccounts.length > 0 ? [activeAccounts[0].id] : []);
+      setFromNames(['']);
+      setSubjects(['']);
     } catch (error) {
       console.error('Send error:', error);
     } finally {
@@ -285,73 +397,111 @@ ${textContent || 'Your text content here...'}`;
   }
 
   return (
-    <div className="max-w-6xl mx-auto p-6 space-y-6">
+    <div className="max-w-7xl mx-auto p-6 space-y-6">
       {/* Header */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Send className="w-5 h-5" />
-            Professional Bulk Email Campaign
-            <Badge variant="outline">Enhanced</Badge>
-          </CardTitle>
-        </CardHeader>
-      </Card>
-
-      {/* Send Method Selection */}
       <Card className="border-2 border-blue-200 bg-gradient-to-r from-blue-50 to-indigo-50">
         <CardHeader>
-          <CardTitle className="text-lg flex items-center gap-2">
-            <Zap className="w-5 h-5 text-blue-600" />
-            1. Choose Send Method
+          <CardTitle className="flex items-center gap-2 text-xl">
+            <Send className="w-6 h-6 text-blue-600" />
+            Smart Configuration Engine - FULLY UPGRADED ⚡
+            <Badge variant="outline" className="bg-blue-100 text-blue-800">Enhanced</Badge>
           </CardTitle>
+          <p className="text-gray-600">
+            Professional bulk email campaign system with advanced rotation, smart configuration, and multi-method sending
+          </p>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <Button
-              variant={sendMethod === 'cloud_functions' ? 'default' : 'outline'}
-              onClick={() => setSendMethod('cloud_functions')}
-              className="h-auto p-4 flex flex-col items-center space-y-2"
-            >
-              <Cloud className="w-8 h-8" />
-              <div className="text-center">
-                <div className="font-semibold">Google Cloud Functions</div>
-                <div className="text-xs opacity-70">Ultra-fast direct sending</div>
-              </div>
-            </Button>
-
-            <Button
-              variant={sendMethod === 'middleware' ? 'default' : 'outline'}
-              onClick={() => setSendMethod('middleware')}
-              className="h-auto p-4 flex flex-col items-center space-y-2"
-            >
-              <Zap className="w-8 h-8" />
-              <div className="text-center">
-                <div className="font-semibold flex items-center gap-1">
-                  PowerMTA Middleware
-                  <Badge variant="outline" className="text-xs">Pro</Badge>
-                </div>
-                <div className="text-xs opacity-70">Advanced monitoring & control</div>
-              </div>
-            </Button>
-          </div>
-          
-          <Alert>
-            <Shield className="w-4 h-4" />
-            <AlertDescription>
-              {sendMethod === 'cloud_functions' && 
-                "⚡ Google Cloud Functions: Ultra-fast sending using your SMTP/Apps Script accounts with automatic scaling and reliability."
-              }
-              {sendMethod === 'middleware' && 
-                "🚀 PowerMTA Middleware: Professional-grade email distribution with real-time monitoring, pause/resume control, and detailed analytics via PowerMTA dashboard."
-              }
-            </AlertDescription>
-          </Alert>
-        </CardContent>
       </Card>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Main Campaign Settings */}
-        <div className="lg:col-span-2 space-y-6">
+      {/* Quick Action Buttons */}
+      <div className="flex gap-2 mb-6">
+        <Button 
+          variant="outline" 
+          onClick={() => window.open('/settings', '_blank')}
+          className="flex items-center gap-2"
+        >
+          <Settings className="w-4 h-4" />
+          Functions
+        </Button>
+        <Button 
+          variant="outline" 
+          onClick={() => window.open('/settings', '_blank')}
+          className="flex items-center gap-2"
+        >
+          <Users className="w-4 h-4" />
+          Accounts
+        </Button>
+        <Button 
+          variant="outline" 
+          onClick={() => setEnableSmartConfig(!enableSmartConfig)}
+          className="flex items-center gap-2"
+        >
+          <Settings2 className="w-4 h-4" />
+          SmartConfig
+        </Button>
+      </div>
+
+      <Tabs defaultValue="basic" className="w-full">
+        <TabsList className="grid w-full grid-cols-4">
+          <TabsTrigger value="basic">Basic Settings</TabsTrigger>
+          <TabsTrigger value="rotation">Rotation & Smart Config</TabsTrigger>
+          <TabsTrigger value="advanced">Advanced Features</TabsTrigger>
+          <TabsTrigger value="sending">Sending Configuration</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="basic" className="space-y-6">
+          {/* Send Method Selection */}
+          <Card className="border-2 border-blue-200">
+            <CardHeader>
+              <CardTitle className="text-lg flex items-center gap-2">
+                <Zap className="w-5 h-5 text-blue-600" />
+                1. Choose Send Method
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <Button
+                  variant={sendMethod === 'cloud_functions' ? 'default' : 'outline'}
+                  onClick={() => setSendMethod('cloud_functions')}
+                  className="h-auto p-4 flex flex-col items-center space-y-2"
+                >
+                  <Cloud className="w-8 h-8" />
+                  <div className="text-center">
+                    <div className="font-semibold">Google Cloud Functions</div>
+                    <div className="text-xs opacity-70">Ultra-fast direct sending</div>
+                  </div>
+                </Button>
+
+                <Button
+                  variant={sendMethod === 'middleware' ? 'default' : 'outline'}
+                  onClick={() => setSendMethod('middleware')}
+                  className="h-auto p-4 flex flex-col items-center space-y-2"
+                >
+                  <Server className="w-8 h-8" />
+                  <div className="text-center">
+                    <div className="font-semibold flex items-center gap-1">
+                      PowerMTA Middleware
+                      <Badge variant="outline" className="text-xs">Pro</Badge>
+                    </div>
+                    <div className="text-xs opacity-70">Advanced monitoring & control</div>
+                  </div>
+                </Button>
+              </div>
+              
+              <Alert>
+                <Shield className="w-4 h-4" />
+                <AlertDescription>
+                  {sendMethod === 'cloud_functions' && 
+                    "⚡ Google Cloud Functions: Ultra-fast sending using your SMTP/Apps Script accounts with automatic scaling and reliability."
+                  }
+                  {sendMethod === 'middleware' && 
+                    "🚀 PowerMTA Middleware: Professional-grade email distribution with real-time monitoring, pause/resume control, and detailed analytics."
+                  }
+                </AlertDescription>
+              </Alert>
+            </CardContent>
+          </Card>
+
+          {/* Campaign Settings */}
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -410,19 +560,32 @@ ${textContent || 'Your text content here...'}`;
               {/* Account Selection */}
               {activeAccounts.length > 0 && (
                 <div className="space-y-2">
-                  <Label htmlFor="account">Email Account</Label>
-                  <Select value={selectedAccount} onValueChange={setSelectedAccount}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select email account" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {activeAccounts.map((account) => (
-                        <SelectItem key={account.id} value={account.id}>
+                  <Label>Email Accounts (Multi-select)</Label>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-40 overflow-y-auto">
+                    {activeAccounts.map((account) => (
+                      <div key={account.id} className="flex items-center space-x-2">
+                        <input
+                          type="checkbox"
+                          id={account.id}
+                          checked={selectedAccounts.includes(account.id)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedAccounts([...selectedAccounts, account.id]);
+                            } else {
+                              setSelectedAccounts(selectedAccounts.filter(id => id !== account.id));
+                            }
+                          }}
+                          className="rounded"
+                        />
+                        <Label htmlFor={account.id} className="text-sm cursor-pointer">
                           {account.name} ({account.email}) - {account.type.toUpperCase()}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                        </Label>
+                      </div>
+                    ))}
+                  </div>
+                  {selectedAccounts.length > 0 && (
+                    <Badge variant="secondary">{selectedAccounts.length} accounts selected</Badge>
+                  )}
                 </div>
               )}
             </CardContent>
@@ -519,10 +682,178 @@ ${textContent || 'Your text content here...'}`;
               </div>
             </CardContent>
           </Card>
-        </div>
+        </TabsContent>
 
-        {/* Advanced Features Sidebar */}
-        <div className="space-y-6">
+        <TabsContent value="rotation" className="space-y-6">
+          {/* Smart Configuration Engine */}
+          <Card className="border-2 border-purple-200 bg-gradient-to-r from-purple-50 to-pink-50">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Settings2 className="w-5 h-5 text-purple-600" />
+                Smart Configuration Engine
+                <Badge variant="outline" className="bg-purple-100 text-purple-800">AI-Powered</Badge>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-center space-x-2">
+                <Switch
+                  id="smart-config"
+                  checked={enableSmartConfig}
+                  onCheckedChange={setEnableSmartConfig}
+                />
+                <Label htmlFor="smart-config" className="text-base">Enable Smart Configuration</Label>
+              </div>
+              
+              {enableSmartConfig && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                  <div className="flex items-center space-x-2">
+                    <Switch
+                      checked={smartConfigEngine.autoSelectAccounts}
+                      onCheckedChange={(checked) => 
+                        setSmartConfigEngine({...smartConfigEngine, autoSelectAccounts: checked})
+                      }
+                    />
+                    <Label className="text-sm">Auto-select Best Accounts</Label>
+                  </div>
+                  
+                  <div className="flex items-center space-x-2">
+                    <Switch
+                      checked={smartConfigEngine.balanceLoad}
+                      onCheckedChange={(checked) => 
+                        setSmartConfigEngine({...smartConfigEngine, balanceLoad: checked})
+                      }
+                    />
+                    <Label className="text-sm">Balance Load Distribution</Label>
+                  </div>
+                  
+                  <div className="flex items-center space-x-2">
+                    <Switch
+                      checked={smartConfigEngine.optimizeDelivery}
+                      onCheckedChange={(checked) => 
+                        setSmartConfigEngine({...smartConfigEngine, optimizeDelivery: checked})
+                      }
+                    />
+                    <Label className="text-sm">Optimize Delivery Times</Label>
+                  </div>
+                  
+                  <div className="flex items-center space-x-2">
+                    <Switch
+                      checked={smartConfigEngine.adaptiveRateLimit}
+                      onCheckedChange={(checked) => 
+                        setSmartConfigEngine({...smartConfigEngine, adaptiveRateLimit: checked})
+                      }
+                    />
+                    <Label className="text-sm">Adaptive Rate Limiting</Label>
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Rotation Settings */}
+          <Card className="border-2 border-green-200 bg-gradient-to-r from-green-50 to-teal-50">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Shuffle className="w-5 h-5 text-green-600" />
+                Rotation Configuration
+                <Badge variant="outline" className="bg-green-100 text-green-800">Advanced</Badge>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-center space-x-2">
+                <Switch
+                  id="rotation"
+                  checked={enableRotation}
+                  onCheckedChange={setEnableRotation}
+                />
+                <Label htmlFor="rotation" className="text-base">Enable Rotation</Label>
+              </div>
+              
+              {enableRotation && (
+                <div className="space-y-6">
+                  {/* From Names Rotation */}
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-sm font-medium">From Names</Label>
+                      <Button onClick={addFromName} variant="outline" size="sm">
+                        <Plus className="w-3 h-3 mr-1" />
+                        Add
+                      </Button>
+                    </div>
+                    <div className="space-y-2">
+                      {fromNames.map((name, index) => (
+                        <div key={index} className="flex gap-2">
+                          <Input
+                            value={name}
+                            onChange={(e) => updateFromName(index, e.target.value)}
+                            placeholder={`From name ${index + 1}`}
+                          />
+                          {fromNames.length > 1 && (
+                            <Button 
+                              onClick={() => removeFromName(index)} 
+                              variant="outline" 
+                              size="sm"
+                            >
+                              <Minus className="w-3 h-3" />
+                            </Button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Subjects Rotation */}
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-sm font-medium">Subject Lines</Label>
+                      <Button onClick={addSubject} variant="outline" size="sm">
+                        <Plus className="w-3 h-3 mr-1" />
+                        Add
+                      </Button>
+                    </div>
+                    <div className="space-y-2">
+                      {subjects.map((subject, index) => (
+                        <div key={index} className="flex gap-2">
+                          <Input
+                            value={subject}
+                            onChange={(e) => updateSubject(index, e.target.value)}
+                            placeholder={`Subject line ${index + 1}`}
+                          />
+                          {subjects.length > 1 && (
+                            <Button 
+                              onClick={() => removeSubject(index)} 
+                              variant="outline" 
+                              size="sm"
+                            >
+                              <Minus className="w-3 h-3" />
+                            </Button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Sending Method */}
+                  <div className="space-y-2">
+                    <Label>Sending Method</Label>
+                    <Select value={sendingMethod} onValueChange={(value: 'round-robin' | 'random' | 'single') => setSendingMethod(value)}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="round-robin">Round Robin</SelectItem>
+                        <SelectItem value="random">Random</SelectItem>
+                        <SelectItem value="single">Single Account</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="advanced" className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Test Email */}
           <Card className="border-orange-200 bg-orange-50">
             <CardHeader>
@@ -785,6 +1116,114 @@ ${textContent || 'Your text content here...'}`;
               )}
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="sending" className="space-y-6">
+          {/* Google Cloud Functions Configuration */}
+          {sendMethod === 'cloud_functions' && (
+            <Card className="border-2 border-blue-200">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Cloud className="w-5 h-5 text-blue-600" />
+                  Google Cloud Functions Configuration
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {gcfFunctions.length > 0 && (
+                  <div className="space-y-2">
+                    <Label>Select Cloud Function</Label>
+                    <Select value={selectedGcfFunction} onValueChange={setSelectedGcfFunction}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Choose a cloud function" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {gcfFunctions.map((func) => (
+                          <SelectItem key={func.id} value={func.id}>
+                            {func.name} - {func.url}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Batch Size</Label>
+                    <Input
+                      type="number"
+                      value={gcfBatchSize}
+                      onChange={(e) => setGcfBatchSize(parseInt(e.target.value) || 10)}
+                      min="1"
+                      max="50"
+                    />
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <Label>Rate Limit (emails/hour)</Label>
+                    <Input
+                      type="number"
+                      value={gcfRateLimit}
+                      onChange={(e) => setGcfRateLimit(parseInt(e.target.value) || 3600)}
+                      min="1"
+                      max="10000"
+                    />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* PowerMTA Configuration */}
+          {sendMethod === 'middleware' && (
+            <Card className="border-2 border-purple-200">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Server className="w-5 h-5 text-purple-600" />
+                  PowerMTA Middleware Configuration
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {powerMTAServers.length > 0 && (
+                  <div className="space-y-2">
+                    <Label>Select PowerMTA Server</Label>
+                    <Select value={selectedPowerMTAServer} onValueChange={setSelectedPowerMTAServer}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Choose a PowerMTA server" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {powerMTAServers.map((server) => (
+                          <SelectItem key={server.id} value={server.id}>
+                            {server.name} - {server.server_host}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Job Pool</Label>
+                    <Input
+                      value={powerMTAJobPool}
+                      onChange={(e) => setPowerMTAJobPool(e.target.value)}
+                      placeholder="default"
+                    />
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <Label>Virtual MTA</Label>
+                    <Input
+                      value={powerMTAVirtualMTA}
+                      onChange={(e) => setPowerMTAVirtualMTA(e.target.value)}
+                      placeholder="vmta1"
+                    />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           {/* Custom Headers */}
           <Card>
@@ -807,15 +1246,15 @@ ${textContent || 'Your text content here...'}`;
               </p>
             </CardContent>
           </Card>
-        </div>
-      </div>
+        </TabsContent>
+      </Tabs>
 
       {/* Action Buttons */}
       <Card>
         <CardContent className="pt-6">
           {activeAccounts.length === 0 ? (
             <Alert>
-              <Settings className="w-4 h-4" />
+              <Info className="w-4 h-4" />
               <AlertDescription>
                 No active email accounts found. Please add an email account first in the Accounts tab.
               </AlertDescription>
@@ -823,7 +1262,7 @@ ${textContent || 'Your text content here...'}`;
           ) : (
             <Button
               onClick={handleSend}
-              disabled={sending || !fromName || !subject || !recipients || (!htmlContent && !textContent)}
+              disabled={sending || (!fromName && (!enableRotation || fromNames.every(n => !n.trim()))) || (!subject && (!enableRotation || subjects.every(s => !s.trim()))) || !recipients || (!htmlContent && !textContent) || selectedAccounts.length === 0}
               className="w-full"
               size="lg"
             >
@@ -837,6 +1276,8 @@ ${textContent || 'Your text content here...'}`;
                   <Send className="w-4 h-4 mr-2" />
                   Create Campaign ({getRecipientCount()} recipients) - {sendMethod === 'cloud_functions' ? 'Cloud Functions' : 'PowerMTA Middleware'}
                   {enableScheduling && scheduledDate && ' (Scheduled)'}
+                  {enableRotation && ' (with Rotation)'}
+                  {enableSmartConfig && ' (Smart Config)'}
                 </>
               )}
             </Button>
