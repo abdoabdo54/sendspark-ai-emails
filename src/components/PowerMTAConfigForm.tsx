@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -38,6 +37,7 @@ const PowerMTAConfigForm: React.FC<PowerMTAConfigFormProps> = ({
   const [webTestUrl, setWebTestUrl] = useState('');
   const [newOverrideKey, setNewOverrideKey] = useState('');
   const [newOverrideValue, setNewOverrideValue] = useState('');
+  const [pushingConfig, setPushingConfig] = useState(false);
 
   useEffect(() => {
     if (initialData) {
@@ -146,6 +146,66 @@ const PowerMTAConfigForm: React.FC<PowerMTAConfigFormProps> = ({
       });
     } finally {
       setTesting(false);
+    }
+  };
+
+  const handlePushConfiguration = async () => {
+    if (!formData.server_host || !formData.username || !formData.password) {
+      toast({
+        title: "Error",
+        description: "Please fill in server host, username and password before pushing configuration",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    setPushingConfig(true);
+    console.log('📤 Pushing configuration to PowerMTA server:', {
+      host: formData.server_host,
+      port: formData.ssh_port,
+      username: formData.username
+    });
+
+    try {
+      const { pushSenderAccountsToServer } = await import('@/utils/powerMTASender');
+      
+      // Get current sender accounts from the parent component
+      // This would need to be passed as a prop or fetched here
+      const senderAccounts: any[] = []; // This should come from props or context
+      
+      const result = await pushSenderAccountsToServer({
+        name: formData.name,
+        server_host: formData.server_host,
+        ssh_port: formData.ssh_port,
+        username: formData.username,
+        password: formData.password,
+        api_port: formData.api_port,
+        virtual_mta: formData.virtual_mta,
+        job_pool: formData.job_pool,
+        manual_overrides: formData.manual_overrides
+      }, senderAccounts);
+
+      if (result.success) {
+        toast({
+          title: "Configuration Pushed",
+          description: `PowerMTA server configuration updated successfully. Files: ${result.configFiles?.join(', ')}`
+        });
+      } else {
+        toast({
+          title: "Push Failed",
+          description: result.error || "Failed to push configuration to PowerMTA server",
+          variant: "destructive"
+        });
+      }
+    } catch (error) {
+      console.error('❌ PowerMTA config push error:', error);
+      toast({
+        title: "Push Error",
+        description: error instanceof Error ? error.message : "Unknown error occurred",
+        variant: "destructive"
+      });
+    } finally {
+      setPushingConfig(false);
     }
   };
 
@@ -338,6 +398,21 @@ const PowerMTAConfigForm: React.FC<PowerMTAConfigFormProps> = ({
                   <Terminal className="w-4 h-4" />
                 )}
                 {testing ? 'Testing SSH...' : 'Test SSH Connection'}
+              </Button>
+
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handlePushConfiguration}
+                disabled={pushingConfig}
+                className="flex items-center gap-2"
+              >
+                {pushingConfig ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <TestTube className="w-4 h-4" />
+                )}
+                {pushingConfig ? 'Pushing Config...' : 'Push Configuration'}
               </Button>
 
               <Button
