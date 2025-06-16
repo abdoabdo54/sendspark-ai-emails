@@ -6,6 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardHeader, CardContent, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { toast } from 'sonner';
 import { Send, Loader2, Settings, Server, Cloud, Target, Upload, TestTube, Zap, Users, Wrench } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
@@ -35,20 +36,21 @@ const BulkEmailComposer: React.FC<BulkEmailComposerProps> = ({ onSend }) => {
   const [selectedAccounts, setSelectedAccounts] = useState<string[]>([]);
   const [sending, setSending] = useState(false);
 
-  // Dispatch Method
-  const [dispatchMethod, setDispatchMethod] = useState<'cloud_functions' | 'powermta'>('cloud_functions');
+  // Manual Configuration Override
+  const [useManualOverride, setUseManualOverride] = useState(false);
+
+  // Dispatch Method and Sending Configuration
+  const [dispatchMethod, setDispatchMethod] = useState<'parallel' | 'round_robin' | 'sequential'>('parallel');
+  const [sendingMode, setSendingMode] = useState<'controlled' | 'fast' | 'zero-delay'>('controlled');
   const [selectedPowerMTAServer, setSelectedPowerMTAServer] = useState<string>('');
 
-  // Sending Configuration
-  const [sendingMode, setSendingMode] = useState<'controlled' | 'fast' | 'zero-delay'>('controlled');
-  
-  // Rotation Settings
+  // Rotation Settings (moved to campaign details)
   const [useFromRotation, setUseFromRotation] = useState(false);
   const [useSubjectRotation, setUseSubjectRotation] = useState(false);
   const [fromNameVariations, setFromNameVariations] = useState<string[]>([]);
   const [subjectVariations, setSubjectVariations] = useState<string[]>([]);
 
-  // Advanced Settings
+  // Other Advanced Settings
   const [useTestAfter, setUseTestAfter] = useState(false);
   const [testAfterEmail, setTestAfterEmail] = useState('');
   const [testAfterCount, setTestAfterCount] = useState(10);
@@ -63,7 +65,7 @@ const BulkEmailComposer: React.FC<BulkEmailComposerProps> = ({ onSend }) => {
 
   // Auto-select first PowerMTA server when switching to PowerMTA method
   useEffect(() => {
-    if (dispatchMethod === 'powermta' && activeServers.length > 0 && !selectedPowerMTAServer) {
+    if (dispatchMethod === 'sequential' && activeServers.length > 0 && !selectedPowerMTAServer) {
       setSelectedPowerMTAServer(activeServers[0].id);
     }
   }, [dispatchMethod, activeServers, selectedPowerMTAServer]);
@@ -109,9 +111,7 @@ const BulkEmailComposer: React.FC<BulkEmailComposerProps> = ({ onSend }) => {
   };
 
   const handleNavigateToAccounts = () => {
-    // Navigate to accounts section (assuming it's in settings or main page)
     navigate('/');
-    // You might want to add a URL hash or query parameter to jump to accounts section
   };
 
   const handleNavigateToSmartConfig = () => {
@@ -126,11 +126,6 @@ const BulkEmailComposer: React.FC<BulkEmailComposerProps> = ({ onSend }) => {
 
     if (selectedAccounts.length === 0) {
       toast.error('Please select at least one email account');
-      return;
-    }
-
-    if (dispatchMethod === 'powermta' && !selectedPowerMTAServer) {
-      toast.error('Please select a PowerMTA server');
       return;
     }
 
@@ -157,7 +152,7 @@ const BulkEmailComposer: React.FC<BulkEmailComposerProps> = ({ onSend }) => {
         config: {
           selectedAccounts,
           dispatchMethod,
-          selectedPowerMTAServer: dispatchMethod === 'powermta' ? selectedPowerMTAServer : null,
+          selectedPowerMTAServer: dispatchMethod === 'sequential' ? selectedPowerMTAServer : null,
           useFromRotation,
           useSubjectRotation,
           fromNameVariations: useFromRotation ? fromNameVariations : [],
@@ -194,7 +189,7 @@ const BulkEmailComposer: React.FC<BulkEmailComposerProps> = ({ onSend }) => {
     <div className="max-w-4xl mx-auto p-6 space-y-6">
       {/* Header */}
       <div className="text-center mb-8">
-        <h1 className="text-3xl font-bold text-gray-900 mb-2">Create Email Campaign</h1>
+        <h1 className="text-3xl font-bold text-gray-900 mb-2">📧 Create Email Campaign</h1>
         <p className="text-gray-600">Configure and send bulk email campaigns</p>
       </div>
 
@@ -244,115 +239,102 @@ const BulkEmailComposer: React.FC<BulkEmailComposerProps> = ({ onSend }) => {
         <CardContent className="space-y-4">
           <div className="flex items-center justify-between">
             <Label className="text-sm font-medium">Use Manual Configuration Override</Label>
-            <Switch />
+            <Switch 
+              checked={useManualOverride}
+              onCheckedChange={setUseManualOverride}
+            />
           </div>
           
-          <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
-            <div className="flex items-center gap-2 mb-3">
-              <Settings className="w-4 h-4 text-blue-600" />
-              <span className="text-sm font-medium text-blue-800">Manual Override Configuration</span>
-            </div>
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <Label className="text-xs text-blue-700 mb-2 block">Functions to Use</Label>
-                <div className="bg-white p-3 rounded border border-blue-200">
-                  <div className="text-2xl font-bold text-center mb-1">1</div>
-                  <div className="text-xs text-blue-600 text-center">Available: {enabledFunctions.length} functions</div>
-                </div>
+          {useManualOverride && (
+            <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
+              <div className="flex items-center gap-2 mb-3">
+                <Settings className="w-4 h-4 text-blue-600" />
+                <span className="text-sm font-medium text-blue-800">Manual Override Configuration</span>
               </div>
               
-              <div>
-                <Label className="text-xs text-blue-700 mb-2 block">Accounts to Use</Label>
-                <div className="bg-white p-3 rounded border border-blue-200">
-                  <div className="text-2xl font-bold text-center mb-1">1</div>
-                  <div className="text-xs text-blue-600 text-center">Selected: {selectedAccounts.length} accounts</div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <Label className="text-xs text-blue-700 mb-2 block">Functions to Use</Label>
+                  <div className="bg-white p-3 rounded border border-blue-200">
+                    <div className="text-2xl font-bold text-center mb-1">1</div>
+                    <div className="text-xs text-blue-600 text-center">Available: {enabledFunctions.length} functions</div>
+                  </div>
+                </div>
+                
+                <div>
+                  <Label className="text-xs text-blue-700 mb-2 block">Accounts to Use</Label>
+                  <div className="bg-white p-3 rounded border border-blue-200">
+                    <div className="text-2xl font-bold text-center mb-1">1</div>
+                    <div className="text-xs text-blue-600 text-center">Selected: {selectedAccounts.length} accounts</div>
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
+          )}
         </CardContent>
       </Card>
 
-      {/* Campaign Configuration */}
+      {/* Sending Configuration */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Settings className="w-5 h-5" />
-            Campaign Configuration
+            <Target className="w-5 h-5" />
+            Sending Configuration
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-6">
-          {/* Sending Configuration */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+            {/* Sending Mode */}
             <div className="space-y-3">
               <Label className="text-sm font-medium">Sending Mode</Label>
-              <div className="space-y-2">
-                {[
-                  { value: 'controlled', label: 'Controlled (2s delay)', icon: '🕒' },
-                  { value: 'fast', label: 'Fast (0.5s delay)', icon: '⚡' },
-                  { value: 'zero-delay', label: 'Zero Delay (Max Speed)', icon: '🚀' }
-                ].map((mode) => (
-                  <label key={mode.value} className="flex items-center gap-3 p-3 border rounded-lg cursor-pointer hover:bg-gray-50">
-                    <input
-                      type="radio"
-                      name="sendingMode"
-                      value={mode.value}
-                      checked={sendingMode === mode.value}
-                      onChange={(e) => setSendingMode(e.target.value as any)}
-                      className="w-4 h-4"
-                    />
-                    <span className="text-sm">{mode.icon} {mode.label}</span>
-                  </label>
-                ))}
-              </div>
+              <RadioGroup value={sendingMode} onValueChange={(value: any) => setSendingMode(value)}>
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="controlled" id="controlled" />
+                  <Label htmlFor="controlled" className="text-sm">🕒 Controlled (2s delay)</Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="fast" id="fast" />
+                  <Label htmlFor="fast" className="text-sm">⚡ Fast (0.5s delay)</Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="zero-delay" id="zero-delay" />
+                  <Label htmlFor="zero-delay" className="text-sm">🚀 Zero Delay (Max Speed)</Label>
+                </div>
+              </RadioGroup>
             </div>
 
-            <div className="space-y-4">
-              <Label className="text-sm font-medium">Advanced Options</Label>
-              <div className="space-y-3">
-                <div className="flex items-center justify-between p-3 border rounded-lg">
-                  <div>
-                    <div className="text-sm font-medium">From Name Rotation</div>
-                    <div className="text-xs text-gray-500">Rotate sender names</div>
-                  </div>
-                  <Switch
-                    checked={useFromRotation}
-                    onCheckedChange={setUseFromRotation}
-                  />
+            {/* Dispatch Method */}
+            <div className="space-y-3">
+              <Label className="text-sm font-medium">Dispatch Method</Label>
+              <RadioGroup value={dispatchMethod} onValueChange={(value: any) => setDispatchMethod(value)}>
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="parallel" id="parallel" />
+                  <Label htmlFor="parallel" className="text-sm">🚀 Parallel (All functions)</Label>
                 </div>
-                <div className="flex items-center justify-between p-3 border rounded-lg">
-                  <div>
-                    <div className="text-sm font-medium">Subject Rotation</div>
-                    <div className="text-xs text-gray-500">Rotate email subjects</div>
-                  </div>
-                  <Switch
-                    checked={useSubjectRotation}
-                    onCheckedChange={setUseSubjectRotation}
-                  />
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="round_robin" id="round_robin" />
+                  <Label htmlFor="round_robin" className="text-sm">Round Robin (Rotate accounts)</Label>
                 </div>
-                <div className="flex items-center justify-between p-3 border rounded-lg">
-                  <div>
-                    <div className="text-sm font-medium">Email Tracking</div>
-                    <div className="text-xs text-gray-500">Track opens & clicks</div>
-                  </div>
-                  <Switch
-                    checked={trackingEnabled}
-                    onCheckedChange={setTrackingEnabled}
-                  />
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="sequential" id="sequential" />
+                  <Label htmlFor="sequential" className="text-sm">Sequential</Label>
                 </div>
-                <div className="flex items-center justify-between p-3 border rounded-lg">
-                  <div>
-                    <div className="text-sm font-medium">Test After X Emails</div>
-                    <div className="text-xs text-gray-500">Send test emails</div>
-                  </div>
-                  <Switch
-                    checked={useTestAfter}
-                    onCheckedChange={setUseTestAfter}
-                  />
-                </div>
-              </div>
+              </RadioGroup>
             </div>
+          </div>
+
+          {/* Current Selection Display */}
+          <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
+            <div className="flex items-center gap-2 mb-2">
+              <Target className="w-4 h-4 text-blue-600" />
+              <span className="text-sm font-medium text-blue-800">Current Selection:</span>
+            </div>
+            <p className="text-blue-700 text-sm">
+              {sendingMode === 'zero-delay' ? 'Zero Delay (Max Speed)' : 
+               sendingMode === 'fast' ? 'Fast (0.5s delay)' : 'Controlled (2s delay)'} + {' '}
+              {dispatchMethod === 'parallel' ? 'Parallel (All functions)' :
+               dispatchMethod === 'round_robin' ? 'Round Robin (Rotate accounts)' : 'Sequential'}
+            </p>
           </div>
 
           {recipientCount > 0 && (
@@ -360,69 +342,6 @@ const BulkEmailComposer: React.FC<BulkEmailComposerProps> = ({ onSend }) => {
               <p className="text-blue-800 text-sm">
                 ⏱️ Estimated sending time: <span className="font-medium">{getEstimatedTime()}</span> for {recipientCount} recipients
               </p>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Dispatch Method */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Target className="w-5 h-5" />
-            Dispatch Method
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-            <Button
-              variant={dispatchMethod === 'cloud_functions' ? 'default' : 'outline'}
-              onClick={() => setDispatchMethod('cloud_functions')}
-              className="h-20 flex flex-col items-center justify-center space-y-2"
-              disabled={!hasFunctions}
-            >
-              <Cloud className="w-6 h-6" />
-              <div className="text-center">
-                <div className="font-medium">Cloud Functions</div>
-                <div className="text-xs opacity-75">{enabledFunctions.length} functions available</div>
-              </div>
-            </Button>
-            
-            <Button
-              variant={dispatchMethod === 'powermta' ? 'default' : 'outline'}
-              onClick={() => setDispatchMethod('powermta')}
-              className="h-20 flex flex-col items-center justify-center space-y-2"
-              disabled={!hasPowerMTAServers}
-            >
-              <Server className="w-6 h-6" />
-              <div className="text-center">
-                <div className="font-medium">PowerMTA</div>
-                <div className="text-xs opacity-75">
-                  {hasPowerMTAServers ? `${activeServers.length} servers` : 'Setup Required'}
-                </div>
-              </div>
-            </Button>
-          </div>
-
-          {dispatchMethod === 'powermta' && hasPowerMTAServers && (
-            <div className="space-y-3">
-              <Label className="text-sm font-medium">Select PowerMTA Server:</Label>
-              <div className="space-y-2">
-                {activeServers.map((server) => (
-                  <Button
-                    key={server.id}
-                    variant={selectedPowerMTAServer === server.id ? 'default' : 'outline'}
-                    onClick={() => setSelectedPowerMTAServer(server.id)}
-                    className="w-full justify-start h-auto p-3"
-                  >
-                    <Server className="w-4 h-4 mr-3" />
-                    <div className="text-left">
-                      <div className="font-medium">{server.name}</div>
-                      <div className="text-xs opacity-75">{server.server_host}</div>
-                    </div>
-                  </Button>
-                ))}
-              </div>
             </div>
           )}
         </CardContent>
@@ -470,25 +389,54 @@ const BulkEmailComposer: React.FC<BulkEmailComposerProps> = ({ onSend }) => {
           <CardTitle>Campaign Details</CardTitle>
         </CardHeader>
         <CardContent className="space-y-6">
-          {/* Basic Fields */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="fromName">From Name *</Label>
-              <Input
-                id="fromName"
-                placeholder="Your Name"
-                value={fromName}
-                onChange={(e) => setFromName(e.target.value)}
-              />
+          {/* Basic Fields with Rotation Options */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="fromName">From Name *</Label>
+                <Input
+                  id="fromName"
+                  placeholder="Your Name"
+                  value={fromName}
+                  onChange={(e) => setFromName(e.target.value)}
+                />
+              </div>
+              
+              {/* From Name Rotation */}
+              <div className="flex items-center justify-between p-3 border rounded-lg">
+                <div>
+                  <div className="text-sm font-medium">From Name Rotation</div>
+                  <div className="text-xs text-gray-500">Rotate sender names</div>
+                </div>
+                <Switch
+                  checked={useFromRotation}
+                  onCheckedChange={setUseFromRotation}
+                />
+              </div>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="subject">Subject *</Label>
-              <Input
-                id="subject"
-                placeholder="Your Subject"
-                value={subject}
-                onChange={(e) => setSubject(e.target.value)}
-              />
+            
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="subject">Subject *</Label>
+                <Input
+                  id="subject"
+                  placeholder="Your Subject"
+                  value={subject}
+                  onChange={(e) => setSubject(e.target.value)}
+                />
+              </div>
+              
+              {/* Subject Rotation */}
+              <div className="flex items-center justify-between p-3 border rounded-lg">
+                <div>
+                  <div className="text-sm font-medium">Subject Rotation</div>
+                  <div className="text-xs text-gray-500">Rotate email subjects</div>
+                </div>
+                <Switch
+                  checked={useSubjectRotation}
+                  onCheckedChange={setUseSubjectRotation}
+                />
+              </div>
             </div>
           </div>
 
@@ -516,6 +464,30 @@ const BulkEmailComposer: React.FC<BulkEmailComposerProps> = ({ onSend }) => {
               />
             </div>
           )}
+
+          {/* Other Advanced Options */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="flex items-center justify-between p-3 border rounded-lg">
+              <div>
+                <div className="text-sm font-medium">Email Tracking</div>
+                <div className="text-xs text-gray-500">Track opens & clicks</div>
+              </div>
+              <Switch
+                checked={trackingEnabled}
+                onCheckedChange={setTrackingEnabled}
+              />
+            </div>
+            <div className="flex items-center justify-between p-3 border rounded-lg">
+              <div>
+                <div className="text-sm font-medium">Test After X Emails</div>
+                <div className="text-xs text-gray-500">Send test emails</div>
+              </div>
+              <Switch
+                checked={useTestAfter}
+                onCheckedChange={setUseTestAfter}
+              />
+            </div>
+          </div>
 
           {/* Test After Configuration */}
           {useTestAfter && (
@@ -631,7 +603,7 @@ const BulkEmailComposer: React.FC<BulkEmailComposerProps> = ({ onSend }) => {
         </p>
         <Button
           onClick={handleSend}
-          disabled={sending || !fromName || !subject || !recipients || selectedAccounts.length === 0 || (dispatchMethod === 'powermta' && !selectedPowerMTAServer)}
+          disabled={sending || !fromName || !subject || !recipients || selectedAccounts.length === 0}
           size="lg"
           className="bg-blue-600 hover:bg-blue-700 min-w-[250px]"
         >
