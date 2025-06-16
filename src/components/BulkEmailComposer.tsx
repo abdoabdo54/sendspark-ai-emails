@@ -8,8 +8,9 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
+import { Switch } from '@/components/ui/switch';
 import { toast } from 'sonner';
-import { Send, Users, Settings, FileText, Loader2 } from 'lucide-react';
+import { Send, Users, Settings, FileText, Loader2, TestTube, Cloud, Zap } from 'lucide-react';
 import { useEmailAccounts } from '@/hooks/useEmailAccounts';
 import { useSimpleOrganizations } from '@/contexts/SimpleOrganizationContext';
 
@@ -29,6 +30,9 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
   const [sendMethod, setSendMethod] = useState<'cloud_functions' | 'middleware'>('cloud_functions');
   const [selectedAccount, setSelectedAccount] = useState('');
   const [sending, setSending] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [enableTestMode, setEnableTestMode] = useState(false);
+  const [testEmail, setTestEmail] = useState('');
 
   const activeAccounts = accounts.filter(account => account.is_active);
   
@@ -47,6 +51,48 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
 
   const getRecipientCount = (): number => {
     return recipients.split(',').map(email => email.trim()).filter(email => email).length;
+  };
+
+  const handleTestEmail = async () => {
+    if (!testEmail.trim()) {
+      toast.error('Please enter a test email address');
+      return;
+    }
+    if (!fromName.trim() || !subject.trim()) {
+      toast.error('Please fill in From Name and Subject for testing');
+      return;
+    }
+    if (!htmlContent.trim() && !textContent.trim()) {
+      toast.error('Please add email content for testing');
+      return;
+    }
+
+    setTesting(true);
+    try {
+      const testCampaignData = {
+        from_name: fromName,
+        subject: `[TEST] ${subject}`,
+        recipients: testEmail,
+        html_content: htmlContent,
+        text_content: textContent,
+        send_method: sendMethod,
+        selected_account: selectedAccount,
+        config: {
+          sendMethod,
+          selectedAccount,
+          isTest: true
+        }
+      };
+
+      console.log('🧪 Sending test email:', testCampaignData);
+      await onSend(testCampaignData);
+      toast.success('Test email sent successfully!');
+    } catch (error) {
+      console.error('Test email error:', error);
+      toast.error('Test email failed');
+    } finally {
+      setTesting(false);
+    }
   };
 
   const handleSend = async () => {
@@ -125,6 +171,55 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-6">
+          {/* Send Method Selection */}
+          <Card className="border-2 border-blue-200 bg-gradient-to-r from-blue-50 to-indigo-50">
+            <CardHeader>
+              <CardTitle className="text-lg flex items-center gap-2">
+                <Zap className="w-5 h-5 text-blue-600" />
+                Send Method Selection
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <Button
+                  variant={sendMethod === 'cloud_functions' ? 'default' : 'outline'}
+                  onClick={() => setSendMethod('cloud_functions')}
+                  className="h-auto p-4 flex flex-col items-center space-y-2"
+                >
+                  <Cloud className="w-8 h-8" />
+                  <div className="text-center">
+                    <div className="font-semibold">Google Cloud Functions</div>
+                    <div className="text-xs opacity-70">Direct cloud sending</div>
+                  </div>
+                </Button>
+
+                <Button
+                  variant={sendMethod === 'middleware' ? 'default' : 'outline'}
+                  onClick={() => setSendMethod('middleware')}
+                  className="h-auto p-4 flex flex-col items-center space-y-2"
+                >
+                  <Zap className="w-8 h-8" />
+                  <div className="text-center">
+                    <div className="font-semibold flex items-center gap-1">
+                      PowerMTA Middleware
+                      <Badge variant="outline" className="text-xs">Advanced</Badge>
+                    </div>
+                    <div className="text-xs opacity-70">Apps Script + PowerMTA Control</div>
+                  </div>
+                </Button>
+              </div>
+              
+              <div className="text-xs text-gray-600 bg-white p-3 rounded border">
+                {sendMethod === 'cloud_functions' && (
+                  "✨ Fast and reliable sending using Google Cloud Functions with your configured email accounts"
+                )}
+                {sendMethod === 'middleware' && (
+                  "⚡ Advanced middleware that uses PowerMTA for monitoring, pausing, and resuming while sending emails via Google Apps Script. Best of both worlds!"
+                )}
+              </div>
+            </CardContent>
+          </Card>
+
           {/* Campaign Settings */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
@@ -138,27 +233,14 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
             </div>
             
             <div className="space-y-2">
-              <Label htmlFor="sendMethod">Send Method</Label>
-              <Select value={sendMethod} onValueChange={(value: 'cloud_functions' | 'middleware') => setSendMethod(value)}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select send method" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="cloud_functions">Google Cloud Functions</SelectItem>
-                  <SelectItem value="middleware">PowerMTA Middleware</SelectItem>
-                </SelectContent>
-              </Select>
+              <Label htmlFor="subject">Subject</Label>
+              <Input
+                id="subject"
+                value={subject}
+                onChange={(e) => setSubject(e.target.value)}
+                placeholder="Email subject line"
+              />
             </div>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="subject">Subject</Label>
-            <Input
-              id="subject"
-              value={subject}
-              onChange={(e) => setSubject(e.target.value)}
-              placeholder="Email subject line"
-            />
           </div>
 
           {/* Recipients */}
@@ -230,22 +312,63 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
             </div>
           )}
 
+          {/* Test Email Section */}
+          <Card className="border-orange-200 bg-orange-50">
+            <CardContent className="p-4">
+              <div className="flex items-center space-x-2 mb-3">
+                <Switch
+                  id="test-mode"
+                  checked={enableTestMode}
+                  onCheckedChange={setEnableTestMode}
+                />
+                <Label htmlFor="test-mode" className="flex items-center gap-2">
+                  <TestTube className="w-4 h-4" />
+                  Enable Test Mode
+                </Label>
+              </div>
+              
+              {enableTestMode && (
+                <div className="space-y-3">
+                  <div className="space-y-2">
+                    <Label htmlFor="testEmail">Test Email Address</Label>
+                    <Input
+                      id="testEmail"
+                      type="email"
+                      value={testEmail}
+                      onChange={(e) => setTestEmail(e.target.value)}
+                      placeholder="test@example.com"
+                    />
+                  </div>
+                  <Button
+                    onClick={handleTestEmail}
+                    disabled={testing || !testEmail.trim()}
+                    variant="outline"
+                    size="sm"
+                    className="w-full"
+                  >
+                    {testing ? (
+                      <>
+                        <Loader2 className="animate-spin w-4 h-4 mr-2" />
+                        Sending Test...
+                      </>
+                    ) : (
+                      <>
+                        <TestTube className="w-4 h-4 mr-2" />
+                        Send Test Email
+                      </>
+                    )}
+                  </Button>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
           {activeAccounts.length === 0 && (
             <div className="text-center p-4 bg-yellow-50 rounded-lg border border-yellow-200">
               <Settings className="w-6 h-6 mx-auto mb-2 text-yellow-600" />
               <p className="text-yellow-800">No active email accounts found. Please add an email account first.</p>
             </div>
           )}
-
-          {/* Send Method Info */}
-          <div className="text-xs text-gray-600 bg-gray-50 p-3 rounded border">
-            {sendMethod === 'cloud_functions' && (
-              "✨ Fast and reliable sending using Google Cloud Functions with your configured email accounts"
-            )}
-            {sendMethod === 'middleware' && (
-              "⚡ Advanced middleware that uses PowerMTA for monitoring, pausing, and resuming while sending emails via Google Apps Script. Best of both worlds!"
-            )}
-          </div>
 
           <Button
             onClick={handleSend}

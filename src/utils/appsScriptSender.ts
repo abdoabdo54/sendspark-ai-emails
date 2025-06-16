@@ -1,112 +1,72 @@
 
-export interface AppsScriptAccount {
+interface AppsScriptConfig {
   exec_url: string;
   daily_quota: number;
 }
 
-export interface AppsScriptResponse {
+interface AppsScriptResponse {
   success: boolean;
   error?: string;
+  message?: string;
+  quota_used?: number;
   quota_remaining?: number;
-  remainingQuota?: number;
-  sent_at?: string;
 }
 
-export const testAppsScriptConnection = async (
-  account: AppsScriptAccount
-): Promise<AppsScriptResponse> => {
-  try {
-    console.log(`🔌 Testing Apps Script connection to ${account.exec_url}`);
-    
-    const response = await fetch(account.exec_url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        action: 'test'
-      })
-    });
-
-    if (!response.ok) {
-      throw new Error(`Apps Script API error: ${response.status}`);
-    }
-
-    const result = await response.json();
-    
-    if (result.success) {
-      return {
-        success: true,
-        quota_remaining: result.quota_remaining,
-        remainingQuota: result.quota_remaining
-      };
-    } else {
-      return {
-        success: false,
-        error: result.error || 'Apps Script connection test failed'
-      };
-    }
-  } catch (error) {
-    console.error('Apps Script connection test error:', error);
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : 'Unknown error'
-    };
-  }
-};
-
-export const sendEmailViaAppsScript = async (
-  account: AppsScriptAccount,
+export async function sendEmailViaAppsScript(
+  config: AppsScriptConfig,
   fromEmail: string,
   fromName: string,
   toEmail: string,
   subject: string,
-  htmlContent: string,
+  htmlContent?: string,
   textContent?: string
-): Promise<AppsScriptResponse> => {
+): Promise<AppsScriptResponse> {
   try {
     console.log(`📧 Sending email via Apps Script to ${toEmail}`);
     
-    const response = await fetch(account.exec_url, {
+    const payload = {
+      from_email: fromEmail,
+      from_name: fromName,
+      to_email: toEmail,
+      subject: subject,
+      html_content: htmlContent || textContent,
+      text_content: textContent
+    };
+
+    const response = await fetch(config.exec_url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        action: 'sendEmail',
-        fromEmail,
-        fromName,
-        toEmail,
-        subject,
-        htmlContent,
-        textContent: textContent || htmlContent
-      })
+      body: JSON.stringify(payload)
     });
 
     if (!response.ok) {
-      throw new Error(`Apps Script API error: ${response.status}`);
+      throw new Error(`Apps Script HTTP ${response.status}: ${response.statusText}`);
     }
 
     const result = await response.json();
     
     if (result.success) {
+      console.log(`✅ Apps Script success for ${toEmail}`);
       return {
         success: true,
-        quota_remaining: result.quota_remaining,
-        remainingQuota: result.quota_remaining,
-        sent_at: new Date().toISOString()
+        message: result.message || 'Email sent successfully',
+        quota_used: result.quota_used,
+        quota_remaining: result.quota_remaining
       };
     } else {
+      console.log(`❌ Apps Script failed for ${toEmail}: ${result.error}`);
       return {
         success: false,
         error: result.error || 'Apps Script sending failed'
       };
     }
   } catch (error) {
-    console.error('Apps Script sending error:', error);
+    console.error(`❌ Apps Script error for ${toEmail}:`, error);
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error'
     };
   }
-};
+}

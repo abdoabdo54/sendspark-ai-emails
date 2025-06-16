@@ -175,12 +175,12 @@ export const useMiddlewareController = (config: MiddlewareConfig) => {
   // Start/stop middleware
   const startMiddleware = useCallback(() => {
     setStatus(prev => ({ ...prev, isRunning: true, errors: [] }));
-    toast.success('Middleware started');
+    toast.success('PowerMTA Middleware started');
   }, []);
 
   const stopMiddleware = useCallback(() => {
     setStatus(prev => ({ ...prev, isRunning: false }));
-    toast.success('Middleware stopped');
+    toast.success('PowerMTA Middleware stopped');
   }, []);
 
   // Pause/resume campaign
@@ -195,7 +195,7 @@ export const useMiddlewareController = (config: MiddlewareConfig) => {
       if (error) throw error;
       
       await updateStatus();
-      toast.success('Campaign paused');
+      toast.success('Campaign paused successfully');
     } catch (error) {
       console.error('Error pausing campaign:', error);
       toast.error('Failed to pause campaign');
@@ -213,7 +213,7 @@ export const useMiddlewareController = (config: MiddlewareConfig) => {
       if (error) throw error;
       
       await updateStatus();
-      toast.success('Campaign resumed');
+      toast.success('Campaign resumed successfully');
     } catch (error) {
       console.error('Error resuming campaign:', error);
       toast.error('Failed to resume campaign');

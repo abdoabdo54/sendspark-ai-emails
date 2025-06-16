@@ -15,8 +15,6 @@ import {
   Settings, 
   Activity,
   AlertCircle,
-  CheckCircle,
-  Clock,
   Zap
 } from 'lucide-react';
 
@@ -30,7 +28,7 @@ const MiddlewareController: React.FC<MiddlewareControllerProps> = ({
   onConfigChange
 }) => {
   const [config, setConfig] = useState<MiddlewareConfig>({
-    appsScriptExecUrl: '',
+    appsScriptExecUrl: 'https://script.google.com/macros/s/YOUR_DEPLOYMENT_ID/exec',
     controlTableType: 'supabase',
     pollingInterval: 5000,
     maxConcurrency: 5,
@@ -216,9 +214,15 @@ const MiddlewareController: React.FC<MiddlewareControllerProps> = ({
             </div>
           </div>
           
-          <div className="text-sm text-gray-600">
-            <p>The middleware will poll for email jobs every {config.pollingInterval / 1000} seconds and process up to {config.maxConcurrency} emails concurrently.</p>
-            <p>PowerMTA integration allows real-time pause/resume control via the dashboard.</p>
+          <div className="text-sm text-gray-600 bg-blue-50 p-3 rounded border">
+            <div className="font-semibold mb-1">How PowerMTA Middleware Works:</div>
+            <ul className="list-disc list-inside space-y-1">
+              <li>Polls for email jobs every {config.pollingInterval / 1000} seconds</li>
+              <li>Processes up to {config.maxConcurrency} emails concurrently</li>
+              <li>Uses Apps Script for actual email delivery</li>
+              <li>Provides real-time pause/resume control via PowerMTA dashboard</li>
+              <li>Tracks delivery status and handles retries automatically</li>
+            </ul>
           </div>
         </CardContent>
       </Card>

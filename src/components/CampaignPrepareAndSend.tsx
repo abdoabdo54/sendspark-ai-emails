@@ -46,7 +46,7 @@ const CampaignPrepareAndSend: React.FC<CampaignPrepareAndSendProps> = ({ campaig
         toast.error(`Error loading campaign: ${error.message}`);
       } else {
         setCampaign(data);
-        setPreparationDone(data.status === "prepared" || data.status === "sent");
+        setPreparationDone(data.status === "prepared" || data.status === "sent" || data.status === "sending");
         
         // Load previous send method from campaign config if available
         const config = data.config as CampaignConfig;
@@ -68,7 +68,7 @@ const CampaignPrepareAndSend: React.FC<CampaignPrepareAndSendProps> = ({ campaig
       .single();
     if (!error) {
       setCampaign(data);
-      setPreparationDone(data.status === "prepared" || data.status === "sent");
+      setPreparationDone(data.status === "prepared" || data.status === "sent" || data.status === "sending");
     }
   };
 
@@ -113,7 +113,7 @@ const CampaignPrepareAndSend: React.FC<CampaignPrepareAndSendProps> = ({ campaig
     setSendResults(null);
     
     try {
-      console.log('🔄 Creating email jobs for middleware processing');
+      console.log('🔄 Creating email jobs for PowerMTA middleware processing');
       
       if (!campaign.prepared_emails || !Array.isArray(campaign.prepared_emails) || campaign.prepared_emails.length === 0) {
         throw new Error('No prepared emails found. Please prepare the campaign first.');
@@ -135,7 +135,7 @@ const CampaignPrepareAndSend: React.FC<CampaignPrepareAndSendProps> = ({ campaig
         updated_at: new Date().toISOString()
       }));
 
-      console.log(`📤 Creating ${emailJobs.length} email jobs for middleware`);
+      console.log(`📤 Creating ${emailJobs.length} email jobs for PowerMTA middleware`);
 
       const { error: jobsError } = await supabase
         .from('email_jobs')
@@ -162,17 +162,17 @@ const CampaignPrepareAndSend: React.FC<CampaignPrepareAndSendProps> = ({ campaig
         success: true,
         totalEmails: campaign.total_recipients,
         method: 'middleware',
-        message: `${emailJobs.length} email jobs created and queued for middleware processing`
+        message: `${emailJobs.length} email jobs created and queued for PowerMTA middleware processing`
       });
       
-      toast.success(`🔄 ${emailJobs.length} email jobs created for middleware processing!`);
+      toast.success(`🔄 ${emailJobs.length} email jobs created for PowerMTA middleware processing!`);
       await refresh();
     } catch (e: any) {
-      console.error('❌ Middleware setup error:', e);
-      toast.error(e?.message || "Failed to setup middleware sending.");
+      console.error('❌ PowerMTA middleware setup error:', e);
+      toast.error(e?.message || "Failed to setup PowerMTA middleware sending.");
       setSendResults({
         success: false,
-        error: e?.message || "Failed to setup middleware"
+        error: e?.message || "Failed to setup PowerMTA middleware"
       });
     } finally {
       setSending(false);
@@ -194,7 +194,7 @@ const CampaignPrepareAndSend: React.FC<CampaignPrepareAndSendProps> = ({ campaig
   }
 
   return (
-    <div className="max-w-2xl mx-auto my-6 p-4">
+    <div className="max-w-4xl mx-auto my-6 p-4">
       <Card>
         <CardHeader>
           <CardTitle>
@@ -215,37 +215,48 @@ const CampaignPrepareAndSend: React.FC<CampaignPrepareAndSendProps> = ({ campaig
         <CardContent className="space-y-6">
           <Alert>
             <AlertDescription>
-              <strong>Ultra-Fast 3-Step Process:</strong><br/>
+              <strong>Professional 3-Step Campaign Process:</strong><br/>
               1. <strong>Prepare</strong>: Process emails in browser and push to Supabase<br/>
               2. <strong>Choose Method</strong>: Cloud Functions or PowerMTA Middleware<br/>
-              3. <strong>Send</strong>: Fire all emails via selected method<br/>
+              3. <strong>Send</strong>: Execute campaign with selected method<br/>
             </AlertDescription>
           </Alert>
 
           {!preparationDone ? (
             <div>
-              <Button
-                size="lg"
-                onClick={handlePrepare}
-                disabled={preparing || isProcessing}
-                className="w-full bg-blue-600 hover:bg-blue-700"
-              >
-                {preparing || isProcessing ? (
-                  <>
-                    <Loader2 className="animate-spin w-4 h-4 mr-1" /> Preparing & Pushing to Supabase...
-                  </>
-                ) : (
-                  <>
-                    <Eye className="w-4 h-4 mr-2" />
-                    1. Prepare Campaign (Browser Processing)
-                  </>
-                )}
-              </Button>
-              {progress > 0 && (
-                <div className="mt-2 text-xs text-blue-700">
-                  Preparation progress: {progress}%
-                </div>
-              )}
+              <Card className="border-green-200 bg-green-50">
+                <CardContent className="p-4">
+                  <h3 className="font-semibold mb-2 flex items-center gap-2">
+                    <Eye className="w-4 h-4" />
+                    1. Prepare Campaign
+                  </h3>
+                  <p className="text-sm text-gray-600 mb-3">
+                    Process and validate all recipient emails, then push to Supabase for sending.
+                  </p>
+                  <Button
+                    size="lg"
+                    onClick={handlePrepare}
+                    disabled={preparing || isProcessing}
+                    className="w-full bg-green-600 hover:bg-green-700"
+                  >
+                    {preparing || isProcessing ? (
+                      <>
+                        <Loader2 className="animate-spin w-4 h-4 mr-1" /> Preparing & Pushing to Supabase...
+                      </>
+                    ) : (
+                      <>
+                        <Eye className="w-4 h-4 mr-2" />
+                        Prepare Campaign (Browser Processing)
+                      </>
+                    )}
+                  </Button>
+                  {progress > 0 && (
+                    <div className="mt-2 text-xs text-green-700">
+                      Preparation progress: {progress}%
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
             </div>
           ) : (
             <div className="space-y-4">
@@ -269,38 +280,52 @@ const CampaignPrepareAndSend: React.FC<CampaignPrepareAndSendProps> = ({ campaig
               )}
               
               {/* Send Button */}
-              <Button
-                size="lg"
-                variant="default"
-                onClick={() => {
-                  console.log(`🚀 Sending campaign via ${sendMethod}`);
-                  if (sendMethod === 'cloud_functions') {
-                    handleSend();
-                  } else if (sendMethod === 'middleware') {
-                    handleSendViaMiddleware();
-                  }
-                }}
-                disabled={
-                  sending || 
-                  isSending || 
-                  campaign.status === "sent"
-                }
-                className="w-full bg-red-600 hover:bg-red-700 text-white"
-              >
-                {(sending || isSending) ? (
-                  <>
-                    <Loader2 className="animate-spin w-4 h-4 mr-1" />
-                    {sendMethod === 'cloud_functions' && 'Sending Ultra-Fast...'}
-                    {sendMethod === 'middleware' && 'Setting up Middleware...'}
-                  </>
-                ) : (
-                  <>
-                    <Zap className="w-4 h-4 mr-2" />
-                    {sendMethod === 'cloud_functions' && '3. Send Now (Cloud Functions)'}
-                    {sendMethod === 'middleware' && '3. Setup Middleware Processing'}
-                  </>
-                )}
-              </Button>
+              <Card className="border-red-200 bg-red-50">
+                <CardContent className="p-4">
+                  <h3 className="font-semibold mb-2 flex items-center gap-2">
+                    <Zap className="w-4 h-4" />
+                    3. Execute Campaign
+                  </h3>
+                  <p className="text-sm text-gray-600 mb-3">
+                    {sendMethod === 'cloud_functions' 
+                      ? 'Send emails directly via Google Cloud Functions for maximum speed.'
+                      : 'Setup PowerMTA middleware for advanced monitoring and control.'
+                    }
+                  </p>
+                  <Button
+                    size="lg"
+                    variant="default"
+                    onClick={() => {
+                      console.log(`🚀 Executing campaign via ${sendMethod}`);
+                      if (sendMethod === 'cloud_functions') {
+                        handleSend();
+                      } else if (sendMethod === 'middleware') {
+                        handleSendViaMiddleware();
+                      }
+                    }}
+                    disabled={
+                      sending || 
+                      isSending || 
+                      campaign.status === "sent"
+                    }
+                    className="w-full bg-red-600 hover:bg-red-700 text-white"
+                  >
+                    {(sending || isSending) ? (
+                      <>
+                        <Loader2 className="animate-spin w-4 h-4 mr-1" />
+                        {sendMethod === 'cloud_functions' && 'Sending Ultra-Fast...'}
+                        {sendMethod === 'middleware' && 'Setting up PowerMTA Middleware...'}
+                      </>
+                    ) : (
+                      <>
+                        <Zap className="w-4 h-4 mr-2" />
+                        {sendMethod === 'cloud_functions' && 'Send Now (Cloud Functions)'}
+                        {sendMethod === 'middleware' && 'Setup PowerMTA Middleware'}
+                      </>
+                    )}
+                  </Button>
+                </CardContent>
+              </Card>
               
               {sendProgress > 0 && (
                 <div className="mt-2 text-xs text-green-700">
@@ -313,7 +338,7 @@ const CampaignPrepareAndSend: React.FC<CampaignPrepareAndSendProps> = ({ campaig
                   <AlertDescription>
                     {sendResults.success ? (
                       <>
-                        <strong>🚀 {sendResults.method === 'middleware' ? 'Middleware Setup' : 'Send'} Results:</strong><br/>
+                        <strong>🚀 {sendResults.method === 'middleware' ? 'PowerMTA Middleware Setup' : 'Campaign Send'} Results:</strong><br/>
                         • Emails {sendResults.method === 'middleware' ? 'queued for processing' : 'sent'}: {sendResults.totalEmails}<br/>
                         {sendResults.actualDuration && (
                           <>
@@ -327,7 +352,7 @@ const CampaignPrepareAndSend: React.FC<CampaignPrepareAndSendProps> = ({ campaig
                       </>
                     ) : (
                       <>
-                        <strong>❌ {sendMethod === 'cloud_functions' ? 'Send' : 'Middleware Setup'} Failed:</strong><br/>
+                        <strong>❌ {sendMethod === 'cloud_functions' ? 'Send' : 'PowerMTA Middleware Setup'} Failed:</strong><br/>
                         Error: {sendResults.error}
                       </>
                     )}

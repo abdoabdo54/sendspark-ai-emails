@@ -1,11 +1,20 @@
 
 export interface MiddlewareConfig {
   appsScriptExecUrl: string;
-  controlTableType: 'supabase' | 'google_sheets';
-  controlTableId?: string; // For Google Sheets
-  pollingInterval: number; // milliseconds
+  controlTableType: 'supabase';
+  pollingInterval: number;
   maxConcurrency: number;
   enabled: boolean;
+}
+
+export interface MiddlewareStatus {
+  isRunning: boolean;
+  activeJobs: number;
+  pausedJobs: number;
+  completedJobs: number;
+  failedJobs: number;
+  errors: string[];
+  lastProcessedAt?: string;
 }
 
 export interface EmailJob {
@@ -13,7 +22,7 @@ export interface EmailJob {
   campaign_id: string;
   recipient_email: string;
   subject: string;
-  html_content: string;
+  html_content?: string;
   text_content?: string;
   from_name: string;
   from_email: string;
@@ -26,14 +35,4 @@ export interface EmailJob {
   apps_script_response?: any;
   created_at: string;
   updated_at: string;
-}
-
-export interface MiddlewareStatus {
-  isRunning: boolean;
-  activeJobs: number;
-  pausedJobs: number;
-  completedJobs: number;
-  failedJobs: number;
-  lastProcessedAt?: string;
-  errors: string[];
 }
