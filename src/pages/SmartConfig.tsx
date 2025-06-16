@@ -6,8 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
-import { Switch } from '@/components/ui/switch';
-import { Calculator, Zap, Users, Clock, CheckCircle, Settings2 } from 'lucide-react';
+import { Calculator, Zap, Users, Clock, CheckCircle } from 'lucide-react';
 import { useGcfFunctions } from '@/hooks/useGcfFunctions';
 import { useEmailAccounts } from '@/hooks/useEmailAccounts';
 import { useSimpleOrganizations } from '@/contexts/SimpleOrganizationContext';
@@ -21,9 +20,6 @@ const SmartConfig = () => {
   const { accounts } = useEmailAccounts(currentOrganization?.id);
   
   const [emailVolume, setEmailVolume] = useState(10000);
-  const [isManualMode, setIsManualMode] = useState(false);
-  const [manualFunctions, setManualFunctions] = useState(2);
-  const [manualAccounts, setManualAccounts] = useState(5);
   const [smartConfig, setSmartConfig] = useState({
     recommendedFunctions: 0,
     recommendedAccounts: 0,
@@ -45,24 +41,16 @@ const SmartConfig = () => {
       return;
     }
 
-    let recommendedFunctions, recommendedAccounts;
+    // Smart recommendations based on volume
+    let recommendedFunctions = Math.min(
+      Math.max(1, Math.ceil(emailVolume / 5000)), // 5k emails per function
+      Math.max(1, activeFunctions.length) // Use available functions
+    );
 
-    if (isManualMode) {
-      // Use manual settings
-      recommendedFunctions = Math.min(manualFunctions, Math.max(1, activeFunctions.length));
-      recommendedAccounts = Math.min(manualAccounts, Math.max(1, activeAccounts.length));
-    } else {
-      // Auto calculation
-      recommendedFunctions = Math.min(
-        Math.max(1, Math.ceil(emailVolume / 5000)), // 5k emails per function
-        Math.max(1, activeFunctions.length) // Use available functions
-      );
-
-      recommendedAccounts = Math.min(
-        Math.max(2, Math.ceil(emailVolume / 2000)), // 2k emails per account
-        Math.max(1, activeAccounts.length) // Use available accounts
-      );
-    }
+    let recommendedAccounts = Math.min(
+      Math.max(2, Math.ceil(emailVolume / 2000)), // 2k emails per account
+      Math.max(1, activeAccounts.length) // Use available accounts
+    );
 
     const emailsPerFunction = Math.ceil(emailVolume / recommendedFunctions);
     const emailsPerAccount = Math.ceil(emailVolume / recommendedAccounts);
@@ -86,8 +74,7 @@ const SmartConfig = () => {
       emailVolume,
       recommendedFunctions,
       recommendedAccounts,
-      estimatedTime,
-      isManualMode
+      estimatedTime
     }));
 
     toast({
@@ -97,11 +84,7 @@ const SmartConfig = () => {
   };
 
   const applyConfiguration = () => {
-    localStorage.setItem('smartConfig', JSON.stringify({
-      ...smartConfig,
-      emailVolume,
-      isManualMode
-    }));
+    localStorage.setItem('smartConfig', JSON.stringify(smartConfig));
     toast({
       title: "✅ Configuration Applied",
       description: "Smart config will be used in campaign composer"
@@ -115,10 +98,10 @@ const SmartConfig = () => {
         <div className="text-center">
           <h1 className="text-3xl font-bold text-gray-900 flex items-center justify-center gap-2">
             <Calculator className="w-8 h-8 text-blue-600" />
-            SmartConfig Engine - FULLY UPGRADED
+            SmartConfig Engine
           </h1>
           <p className="text-gray-600 mt-2">
-            Get optimal recommendations for your email campaign with manual override
+            Get optimal recommendations for your email campaign
           </p>
         </div>
 
@@ -142,61 +125,6 @@ const SmartConfig = () => {
                   placeholder="10000"
                   className="text-lg"
                 />
-              </div>
-
-              <Separator />
-
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <Label className="text-base font-medium flex items-center gap-2">
-                    <Settings2 className="w-4 h-4" />
-                    Configuration Mode
-                  </Label>
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm text-gray-500">Auto</span>
-                    <Switch
-                      checked={isManualMode}
-                      onCheckedChange={setIsManualMode}
-                    />
-                    <span className="text-sm text-gray-500">Manual</span>
-                  </div>
-                </div>
-
-                {isManualMode && (
-                  <div className="space-y-4 p-4 border rounded-lg bg-blue-50">
-                    <h4 className="font-semibold text-blue-900">Manual Settings</h4>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <Label htmlFor="manualFunctions">Functions to Use</Label>
-                        <Input
-                          id="manualFunctions"
-                          type="number"
-                          value={manualFunctions}
-                          onChange={(e) => setManualFunctions(Number(e.target.value))}
-                          min="1"
-                          max={activeFunctions.length}
-                        />
-                        <p className="text-xs text-gray-600 mt-1">
-                          Max: {activeFunctions.length} available
-                        </p>
-                      </div>
-                      <div>
-                        <Label htmlFor="manualAccounts">Accounts to Use</Label>
-                        <Input
-                          id="manualAccounts"
-                          type="number"
-                          value={manualAccounts}
-                          onChange={(e) => setManualAccounts(Number(e.target.value))}
-                          min="1"
-                          max={activeAccounts.length}
-                        />
-                        <p className="text-xs text-gray-600 mt-1">
-                          Max: {activeAccounts.length} available
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                )}
               </div>
 
               <Separator />
@@ -225,7 +153,7 @@ const SmartConfig = () => {
                 size="lg"
               >
                 <Calculator className="w-4 h-4 mr-2" />
-                {isManualMode ? 'Apply Manual Config' : 'Calculate Optimal Config'}
+                Calculate Optimal Config
               </Button>
             </CardContent>
           </Card>
@@ -235,7 +163,7 @@ const SmartConfig = () => {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Zap className="w-5 h-5" />
-                {isManualMode ? 'Manual Configuration' : 'Smart Recommendations'}
+                Smart Recommendations
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-6">
@@ -246,7 +174,7 @@ const SmartConfig = () => {
                       <div className="text-3xl font-bold text-purple-600">
                         {smartConfig.recommendedFunctions}
                       </div>
-                      <div className="text-sm text-gray-600">Functions Used</div>
+                      <div className="text-sm text-gray-600">Functions Needed</div>
                       <div className="text-xs text-gray-500 mt-1">
                         {smartConfig.emailsPerFunction.toLocaleString()} emails each
                       </div>
@@ -255,7 +183,7 @@ const SmartConfig = () => {
                       <div className="text-3xl font-bold text-orange-600">
                         {smartConfig.recommendedAccounts}
                       </div>
-                      <div className="text-sm text-gray-600">Accounts Used</div>
+                      <div className="text-sm text-gray-600">Accounts Needed</div>
                       <div className="text-xs text-gray-500 mt-1">
                         {smartConfig.emailsPerAccount.toLocaleString()} emails each
                       </div>
@@ -273,9 +201,7 @@ const SmartConfig = () => {
                   </div>
 
                   <div className="space-y-3">
-                    <h4 className="font-semibold">
-                      {isManualMode ? 'Manual Configuration Benefits:' : 'Strategy Benefits:'}
-                    </h4>
+                    <h4 className="font-semibold">Strategy Benefits:</h4>
                     <div className="space-y-2 text-sm">
                       <div className="flex items-center gap-2">
                         <CheckCircle className="w-4 h-4 text-green-600" />
@@ -287,7 +213,7 @@ const SmartConfig = () => {
                       </div>
                       <div className="flex items-center gap-2">
                         <CheckCircle className="w-4 h-4 text-green-600" />
-                        <span>{isManualMode ? 'Custom resource allocation' : 'No serial bottlenecks'}</span>
+                        <span>No serial bottlenecks</span>
                       </div>
                     </div>
                   </div>
@@ -304,7 +230,7 @@ const SmartConfig = () => {
               ) : (
                 <div className="text-center py-8 text-gray-500">
                   <Calculator className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                  <p>Enter email volume and click "{isManualMode ? 'Apply Manual Config' : 'Calculate Optimal Config'}"</p>
+                  <p>Enter email volume and click "Calculate Optimal Config"</p>
                 </div>
               )}
             </CardContent>
@@ -329,12 +255,6 @@ const SmartConfig = () => {
                 onClick={() => navigate('/settings')}
               >
                 Manage Accounts
-              </Button>
-              <Button 
-                variant="outline" 
-                onClick={() => navigate('/powermta-servers')}
-              >
-                PowerMTA Servers
               </Button>
               <Button 
                 onClick={() => navigate('/')}

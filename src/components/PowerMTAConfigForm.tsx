@@ -5,13 +5,12 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
-import { Switch } from "@/components/ui/switch";
 import { toast } from '@/hooks/use-toast';
 import { testPowerMTAConnection } from '@/utils/powerMTASender';
 import { Loader2, TestTube, Globe, Terminal, Plus, Trash2, Shield } from 'lucide-react';
 
 interface PowerMTAConfigFormProps {
-  onSubmit: (name: string, config: any) => Promise<void>;
+  onSubmit: (name: string, email: string, config: any) => Promise<void>;
   onCancel: () => void;
   initialData?: any;
 }
@@ -35,8 +34,7 @@ const PowerMTAConfigForm: React.FC<PowerMTAConfigFormProps> = ({
     proxy_port: 8080,
     proxy_username: '',
     proxy_password: '',
-    manual_overrides: {} as Record<string, string>,
-    is_active: true
+    manual_overrides: {} as Record<string, string>
   });
 
   const [testing, setTesting] = useState(false);
@@ -50,20 +48,19 @@ const PowerMTAConfigForm: React.FC<PowerMTAConfigFormProps> = ({
       console.log('Loading PowerMTA initial data:', initialData);
       setFormData({
         name: initialData.name || '',
-        server_host: initialData.config?.server_host || initialData.server_host || '',
-        ssh_port: initialData.config?.ssh_port || initialData.ssh_port || 22,
-        username: initialData.config?.username || initialData.username || '',
-        password: initialData.config?.password || initialData.password || '',
-        api_port: initialData.config?.api_port || initialData.api_port || 8080,
-        virtual_mta: initialData.config?.virtual_mta || initialData.virtual_mta || '',
-        job_pool: initialData.config?.job_pool || initialData.job_pool || '',
-        proxy_enabled: initialData.config?.proxy_enabled || initialData.proxy_enabled || false,
-        proxy_host: initialData.config?.proxy_host || initialData.proxy_host || '',
-        proxy_port: initialData.config?.proxy_port || initialData.proxy_port || 8080,
-        proxy_username: initialData.config?.proxy_username || initialData.proxy_username || '',
-        proxy_password: initialData.config?.proxy_password || initialData.proxy_password || '',
-        manual_overrides: initialData.config?.manual_overrides || initialData.manual_overrides || {},
-        is_active: initialData.config?.is_active !== undefined ? initialData.config.is_active : (initialData.is_active !== undefined ? initialData.is_active : true)
+        server_host: initialData.config?.server_host || '',
+        ssh_port: initialData.config?.ssh_port || 22,
+        username: initialData.config?.username || '',
+        password: initialData.config?.password || '',
+        api_port: initialData.config?.api_port || 8080,
+        virtual_mta: initialData.config?.virtual_mta || '',
+        job_pool: initialData.config?.job_pool || '',
+        proxy_enabled: initialData.config?.proxy_enabled || false,
+        proxy_host: initialData.config?.proxy_host || '',
+        proxy_port: initialData.config?.proxy_port || 8080,
+        proxy_username: initialData.config?.proxy_username || '',
+        proxy_password: initialData.config?.proxy_password || '',
+        manual_overrides: initialData.config?.manual_overrides || {}
       });
     }
   }, [initialData]);
@@ -108,11 +105,11 @@ const PowerMTAConfigForm: React.FC<PowerMTAConfigFormProps> = ({
       proxy_port: formData.proxy_port,
       proxy_username: formData.proxy_username,
       proxy_password: formData.proxy_password,
-      manual_overrides: formData.manual_overrides,
-      is_active: formData.is_active
+      manual_overrides: formData.manual_overrides
     };
 
-    await onSubmit(formData.name, config);
+    // Use empty email since PowerMTA handles SMTP directly
+    await onSubmit(formData.name, '', config);
   };
 
   const handleTestConnection = async () => {
@@ -169,6 +166,72 @@ const PowerMTAConfigForm: React.FC<PowerMTAConfigFormProps> = ({
       });
     } finally {
       setTesting(false);
+    }
+  };
+
+  const handlePushConfiguration = async () => {
+    if (!formData.server_host || !formData.username || !formData.password) {
+      toast({
+        title: "Error",
+        description: "Please fill in server host, username and password before pushing configuration",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    setPushingConfig(true);
+    console.log('📤 Pushing configuration to PowerMTA server:', {
+      host: formData.server_host,
+      port: formData.ssh_port,
+      username: formData.username,
+      proxy: formData.proxy_enabled ? `${formData.proxy_host}:${formData.proxy_port}` : 'disabled'
+    });
+
+    try {
+      const { pushSenderAccountsToServer } = await import('@/utils/powerMTASender');
+      
+      // Get current sender accounts from the parent component
+      // This would need to be passed as a prop or fetched here
+      const senderAccounts: any[] = []; // This should come from props or context
+      
+      const result = await pushSenderAccountsToServer({
+        name: formData.name,
+        server_host: formData.server_host,
+        ssh_port: formData.ssh_port,
+        username: formData.username,
+        password: formData.password,
+        api_port: formData.api_port,
+        virtual_mta: formData.virtual_mta,
+        job_pool: formData.job_pool,
+        proxy_enabled: formData.proxy_enabled,
+        proxy_host: formData.proxy_host,
+        proxy_port: formData.proxy_port,
+        proxy_username: formData.proxy_username,
+        proxy_password: formData.proxy_password,
+        manual_overrides: formData.manual_overrides
+      }, senderAccounts);
+
+      if (result.success) {
+        toast({
+          title: "Configuration Pushed",
+          description: `PowerMTA server configuration updated successfully. Files: ${result.configFiles?.join(', ')}`
+        });
+      } else {
+        toast({
+          title: "Push Failed",
+          description: result.error || "Failed to push configuration to PowerMTA server",
+          variant: "destructive"
+        });
+      }
+    } catch (error) {
+      console.error('❌ PowerMTA config push error:', error);
+      toast({
+        title: "Push Error",
+        description: error instanceof Error ? error.message : "Unknown error occurred",
+        variant: "destructive"
+      });
+    } finally {
+      setPushingConfig(false);
     }
   };
 
@@ -235,29 +298,15 @@ const PowerMTAConfigForm: React.FC<PowerMTAConfigFormProps> = ({
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <Label htmlFor="name">Server Name *</Label>
-                <Input
-                  id="name"
-                  value={formData.name}
-                  onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
-                  placeholder="e.g., PowerMTA Production"
-                  required
-                />
-              </div>
-
-              <div className="flex items-center justify-between">
-                <Label className="text-base font-medium">Server Status</Label>
-                <div className="flex items-center gap-2">
-                  <span className="text-sm text-gray-500">Inactive</span>
-                  <Switch
-                    checked={formData.is_active}
-                    onCheckedChange={(checked) => setFormData(prev => ({ ...prev, is_active: checked }))}
-                  />
-                  <span className="text-sm text-gray-500">Active</span>
-                </div>
-              </div>
+            <div>
+              <Label htmlFor="name">Server Name *</Label>
+              <Input
+                id="name"
+                value={formData.name}
+                onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+                placeholder="e.g., PowerMTA Production"
+                required
+              />
             </div>
 
             <Separator />
@@ -352,35 +401,34 @@ const PowerMTAConfigForm: React.FC<PowerMTAConfigFormProps> = ({
 
             <div className="space-y-4">
               <div className="flex items-center justify-between">
-                <Label className="text-base font-medium flex items-center gap-2">
-                  <Shield className="w-4 h-4" />
-                  Proxy Configuration
-                </Label>
+                <Label className="text-base font-medium">Proxy Configuration</Label>
                 <div className="flex items-center gap-2">
-                  <span className="text-sm text-gray-500">Disabled</span>
-                  <Switch
+                  <Shield className="w-4 h-4" />
+                  <input
+                    type="checkbox"
+                    id="proxy_enabled"
                     checked={formData.proxy_enabled}
-                    onCheckedChange={(checked) => setFormData(prev => ({ ...prev, proxy_enabled: checked }))}
+                    onChange={(e) => setFormData(prev => ({ ...prev, proxy_enabled: e.target.checked }))}
+                    className="rounded"
                   />
-                  <span className="text-sm text-gray-500">Enabled</span>
+                  <Label htmlFor="proxy_enabled" className="text-sm">Enable Proxy</Label>
                 </div>
               </div>
 
               {formData.proxy_enabled && (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 border rounded-lg bg-gray-50">
                   <div>
-                    <Label htmlFor="proxy_host">Proxy Host/IP *</Label>
+                    <Label htmlFor="proxy_host">Proxy Host/IP</Label>
                     <Input
                       id="proxy_host"
                       value={formData.proxy_host}
                       onChange={(e) => setFormData(prev => ({ ...prev, proxy_host: e.target.value }))}
                       placeholder="proxy.example.com"
-                      required={formData.proxy_enabled}
                     />
                   </div>
 
                   <div>
-                    <Label htmlFor="proxy_port">Proxy Port *</Label>
+                    <Label htmlFor="proxy_port">Proxy Port</Label>
                     <Input
                       id="proxy_port"
                       type="number"
@@ -389,7 +437,6 @@ const PowerMTAConfigForm: React.FC<PowerMTAConfigFormProps> = ({
                       placeholder="8080"
                       min="1"
                       max="65535"
-                      required={formData.proxy_enabled}
                     />
                   </div>
 
@@ -399,7 +446,7 @@ const PowerMTAConfigForm: React.FC<PowerMTAConfigFormProps> = ({
                       id="proxy_username"
                       value={formData.proxy_username}
                       onChange={(e) => setFormData(prev => ({ ...prev, proxy_username: e.target.value }))}
-                      placeholder="proxy_user (optional)"
+                      placeholder="proxy_user"
                     />
                   </div>
 
@@ -410,7 +457,7 @@ const PowerMTAConfigForm: React.FC<PowerMTAConfigFormProps> = ({
                       type="password"
                       value={formData.proxy_password}
                       onChange={(e) => setFormData(prev => ({ ...prev, proxy_password: e.target.value }))}
-                      placeholder="••••••••••• (optional)"
+                      placeholder="••••••••"
                     />
                   </div>
                 </div>
@@ -431,6 +478,21 @@ const PowerMTAConfigForm: React.FC<PowerMTAConfigFormProps> = ({
                   <Terminal className="w-4 h-4" />
                 )}
                 {testing ? 'Testing SSH...' : 'Test SSH Connection'}
+              </Button>
+
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handlePushConfiguration}
+                disabled={pushingConfig}
+                className="flex items-center gap-2"
+              >
+                {pushingConfig ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <TestTube className="w-4 h-4" />
+                )}
+                {pushingConfig ? 'Pushing Config...' : 'Push Configuration'}
               </Button>
 
               <Button
