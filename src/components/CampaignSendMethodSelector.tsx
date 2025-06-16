@@ -3,14 +3,14 @@ import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Cloud, Server, TestTube, ExternalLink } from 'lucide-react';
+import { Cloud, Server, TestTube, ExternalLink, Zap } from 'lucide-react';
 import { useSimpleOrganizations } from '@/contexts/SimpleOrganizationContext';
 import { usePowerMTAServers } from '@/hooks/usePowerMTAServers';
 import { toast } from 'sonner';
 
 interface CampaignSendMethodSelectorProps {
-  selectedMethod: 'cloud_functions' | 'powermta';
-  onMethodChange: (method: 'cloud_functions' | 'powermta') => void;
+  selectedMethod: 'cloud_functions' | 'powermta' | 'middleware';
+  onMethodChange: (method: 'cloud_functions' | 'powermta' | 'middleware') => void;
   selectedPowerMTAServer?: string;
   onPowerMTAServerChange?: (serverId: string) => void;
 }
@@ -51,7 +51,7 @@ const CampaignSendMethodSelector: React.FC<CampaignSendMethodSelectorProps> = ({
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <Button
             variant={selectedMethod === 'cloud_functions' ? 'default' : 'outline'}
             onClick={() => onMethodChange('cloud_functions')}
@@ -80,6 +80,21 @@ const CampaignSendMethodSelector: React.FC<CampaignSendMethodSelectorProps> = ({
               <div className="text-xs opacity-70">SMTP Bridge Server</div>
             </div>
           </Button>
+
+          <Button
+            variant={selectedMethod === 'middleware' ? 'default' : 'outline'}
+            onClick={() => onMethodChange('middleware')}
+            className="h-auto p-4 flex flex-col items-center space-y-2"
+          >
+            <Zap className="w-8 h-8" />
+            <div className="text-center">
+              <div className="font-semibold flex items-center gap-1">
+                PowerMTA Middleware
+                <Badge variant="outline" className="text-xs">New</Badge>
+              </div>
+              <div className="text-xs opacity-70">Apps Script + PowerMTA Control</div>
+            </div>
+          </Button>
         </div>
 
         {selectedMethod === 'powermta' && powerMTAAvailable && onPowerMTAServerChange && (
@@ -105,8 +120,8 @@ const CampaignSendMethodSelector: React.FC<CampaignSendMethodSelectorProps> = ({
                     variant="outline"
                     size="sm"
                     onClick={() => handleTestPowerMTA(server)}
-                    className="flex items-center gap-1"
                     disabled={!server.api_port}
+                    className="flex items-center gap-1"
                   >
                     <TestTube className="w-3 h-3" />
                     <ExternalLink className="w-3 h-3" />
@@ -126,6 +141,9 @@ const CampaignSendMethodSelector: React.FC<CampaignSendMethodSelectorProps> = ({
             powerMTAAvailable 
               ? `🚀 Campaigns will be pushed to PowerMTA server for high-volume distributed sending using SMTP and Apps Script accounts (${activeServers.length} servers available)`
               : "⚠️ Please add and configure PowerMTA servers in PowerMTA Servers section"
+          )}
+          {selectedMethod === 'middleware' && (
+            "⚡ Advanced middleware that uses PowerMTA for monitoring, pausing, and resuming while sending emails via Google Apps Script. Best of both worlds!"
           )}
         </div>
       </CardContent>
