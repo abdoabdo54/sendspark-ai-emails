@@ -355,6 +355,66 @@ export type Database = {
           },
         ]
       }
+      email_jobs: {
+        Row: {
+          apps_script_response: Json | null
+          campaign_id: string
+          created_at: string
+          error_message: string | null
+          from_email: string
+          from_name: string
+          html_content: string | null
+          id: string
+          max_retries: number
+          recipient_email: string
+          retry_count: number
+          scheduled_at: string | null
+          sent_at: string | null
+          status: string
+          subject: string
+          text_content: string | null
+          updated_at: string
+        }
+        Insert: {
+          apps_script_response?: Json | null
+          campaign_id: string
+          created_at?: string
+          error_message?: string | null
+          from_email: string
+          from_name: string
+          html_content?: string | null
+          id?: string
+          max_retries?: number
+          recipient_email: string
+          retry_count?: number
+          scheduled_at?: string | null
+          sent_at?: string | null
+          status?: string
+          subject: string
+          text_content?: string | null
+          updated_at?: string
+        }
+        Update: {
+          apps_script_response?: Json | null
+          campaign_id?: string
+          created_at?: string
+          error_message?: string | null
+          from_email?: string
+          from_name?: string
+          html_content?: string | null
+          id?: string
+          max_retries?: number
+          recipient_email?: string
+          retry_count?: number
+          scheduled_at?: string | null
+          sent_at?: string | null
+          status?: string
+          subject?: string
+          text_content?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       email_lists: {
         Row: {
           created_at: string

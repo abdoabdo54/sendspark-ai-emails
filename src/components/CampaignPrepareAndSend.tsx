@@ -115,6 +115,10 @@ const CampaignPrepareAndSend: React.FC<CampaignPrepareAndSendProps> = ({ campaig
     try {
       console.log('🔄 Creating email jobs for middleware processing');
       
+      if (!campaign.prepared_emails || !Array.isArray(campaign.prepared_emails) || campaign.prepared_emails.length === 0) {
+        throw new Error('No prepared emails found. Please prepare the campaign first.');
+      }
+      
       // Create email jobs in the control table
       const emailJobs = campaign.prepared_emails.map((email: any) => ({
         campaign_id: campaignId,
@@ -131,13 +135,18 @@ const CampaignPrepareAndSend: React.FC<CampaignPrepareAndSendProps> = ({ campaig
         updated_at: new Date().toISOString()
       }));
 
+      console.log(`📤 Creating ${emailJobs.length} email jobs for middleware`);
+
       const { error: jobsError } = await supabase
-        .from('email_jobs' as any)
+        .from('email_jobs')
         .insert(emailJobs);
 
-      if (jobsError) throw jobsError;
+      if (jobsError) {
+        console.error('❌ Error creating email jobs:', jobsError);
+        throw jobsError;
+      }
 
-      // Update campaign status
+      // Update campaign status and config
       await supabase
         .from('email_campaigns')
         .update({
@@ -264,6 +273,7 @@ const CampaignPrepareAndSend: React.FC<CampaignPrepareAndSendProps> = ({ campaig
                 size="lg"
                 variant="default"
                 onClick={() => {
+                  console.log(`🚀 Sending campaign via ${sendMethod}`);
                   if (sendMethod === 'cloud_functions') {
                     handleSend();
                   } else if (sendMethod === 'middleware') {
@@ -286,8 +296,8 @@ const CampaignPrepareAndSend: React.FC<CampaignPrepareAndSendProps> = ({ campaig
                 ) : (
                   <>
                     <Zap className="w-4 h-4 mr-2" />
-                    {sendMethod === 'cloud_functions' && '2. Send Now (Cloud Functions)'}
-                    {sendMethod === 'middleware' && '2. Setup Middleware Processing'}
+                    {sendMethod === 'cloud_functions' && '3. Send Now (Cloud Functions)'}
+                    {sendMethod === 'middleware' && '3. Setup Middleware Processing'}
                   </>
                 )}
               </Button>

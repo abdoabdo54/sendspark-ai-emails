@@ -26,7 +26,7 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
   const [recipients, setRecipients] = useState('');
   const [htmlContent, setHtmlContent] = useState('');
   const [textContent, setTextContent] = useState('');
-  const [sendMethod, setSendMethod] = useState<'cloud_functions' | 'powermta' | 'middleware'>('cloud_functions');
+  const [sendMethod, setSendMethod] = useState<'cloud_functions' | 'middleware'>('cloud_functions');
   const [selectedAccount, setSelectedAccount] = useState('');
   const [sending, setSending] = useState(false);
 
@@ -89,6 +89,7 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
         }
       };
 
+      console.log(`🚀 Creating campaign with send method: ${sendMethod}`);
       await onSend(campaignData);
       
       // Reset form after successful send
@@ -138,7 +139,7 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
             
             <div className="space-y-2">
               <Label htmlFor="sendMethod">Send Method</Label>
-              <Select value={sendMethod} onValueChange={(value: 'cloud_functions' | 'powermta' | 'middleware') => setSendMethod(value)}>
+              <Select value={sendMethod} onValueChange={(value: 'cloud_functions' | 'middleware') => setSendMethod(value)}>
                 <SelectTrigger>
                   <SelectValue placeholder="Select send method" />
                 </SelectTrigger>
@@ -260,7 +261,7 @@ const BulkEmailComposer = ({ onSend }: BulkEmailComposerProps) => {
             ) : (
               <>
                 <Send className="w-4 h-4 mr-2" />
-                Create Campaign ({getRecipientCount()} recipients)
+                Create Campaign ({getRecipientCount()} recipients) - {sendMethod === 'cloud_functions' ? 'Cloud Functions' : 'PowerMTA Middleware'}
               </>
             )}
           </Button>
