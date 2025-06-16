@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
@@ -12,8 +11,8 @@ export interface Campaign {
   html_content: string;
   text_content: string;
   send_method: string;
-  selected_accounts: string[]; // Added this property
-  selected_powermta_server?: string; // Added this property
+  selected_accounts?: string[]; // Made optional since it's stored in config
+  selected_powermta_server?: string; // Made optional since it's stored in config
   status: string;
   sent_count: number;
   total_recipients: number;
@@ -132,11 +131,16 @@ export const useCampaigns = (organizationId?: string) => {
         // FIXED: Ensure total_recipients is calculated correctly
         const recipientCount = campaign.total_recipients || countRecipients(campaign.recipients || '');
         
+        // Extract selected_accounts and selected_powermta_server from config
+        const config = campaign.config || {};
+        
         return {
           ...campaign,
           total_recipients: recipientCount,
-          config: campaign.config || {},
-          prepared_emails: Array.isArray(campaign.prepared_emails) ? campaign.prepared_emails : []
+          config: config,
+          prepared_emails: Array.isArray(campaign.prepared_emails) ? campaign.prepared_emails : [],
+          selected_accounts: config.selected_accounts || [], // Extract from config
+          selected_powermta_server: config.selected_powermta_server || undefined // Extract from config
         };
       });
       
@@ -172,15 +176,31 @@ export const useCampaigns = (organizationId?: string) => {
         // FIXED: Calculate recipient count before saving
         const recipientCount = countRecipients(campaignData.recipients);
         
-        console.log('🔧 Creating campaign with config:', campaignData.config);
+        // Store selected_accounts and selected_powermta_server in config
+        const config = {
+          ...campaignData.config,
+          selected_accounts: campaignData.selected_accounts || [],
+          selected_powermta_server: campaignData.selected_powermta_server
+        };
+        
+        console.log('🔧 Creating campaign with config:', config);
         console.log('📧 Recipients count:', recipientCount);
 
         const { data, error } = await supabase
           .from('email_campaigns')
           .insert([{
-            ...campaignData,
             organization_id: organizationId,
-            total_recipients: recipientCount // FIXED: Set correct count
+            from_name: campaignData.from_name,
+            subject: campaignData.subject,
+            recipients: campaignData.recipients,
+            html_content: campaignData.html_content,
+            text_content: campaignData.text_content,
+            send_method: campaignData.send_method,
+            status: campaignData.status,
+            sent_count: campaignData.sent_count,
+            total_recipients: recipientCount, // FIXED: Set correct count
+            config: config,
+            prepared_emails: campaignData.prepared_emails || []
           }])
           .select()
           .single();
@@ -191,7 +211,9 @@ export const useCampaigns = (organizationId?: string) => {
           ...data,
           total_recipients: recipientCount,
           config: data.config || {},
-          prepared_emails: Array.isArray(data.prepared_emails) ? data.prepared_emails : []
+          prepared_emails: Array.isArray(data.prepared_emails) ? data.prepared_emails : [],
+          selected_accounts: config.selected_accounts || [],
+          selected_powermta_server: config.selected_powermta_server
         };
 
         setCampaigns(prev => [typedCampaign, ...prev.slice(0, CAMPAIGNS_PER_PAGE - 1)]);
@@ -221,11 +243,31 @@ export const useCampaigns = (organizationId?: string) => {
           updates.total_recipients = countRecipients(updates.recipients);
         }
 
-        console.log('🔧 Updating campaign with:', updates);
+        // Update config if selected_accounts or selected_powermta_server changed
+        let configUpdates = {};
+        if (updates.selected_accounts !== undefined || updates.selected_powermta_server !== undefined) {
+          const existingCampaign = campaigns.find(c => c.id === campaignId);
+          configUpdates = {
+            ...existingCampaign?.config,
+            selected_accounts: updates.selected_accounts || existingCampaign?.selected_accounts || [],
+            selected_powermta_server: updates.selected_powermta_server ?? existingCampaign?.selected_powermta_server
+          };
+        }
+
+        const dbUpdates = {
+          ...updates,
+          config: Object.keys(configUpdates).length > 0 ? configUpdates : updates.config
+        };
+        
+        // Remove frontend-only properties before sending to database
+        delete dbUpdates.selected_accounts;
+        delete dbUpdates.selected_powermta_server;
+
+        console.log('🔧 Updating campaign with:', dbUpdates);
 
         const { data, error } = await supabase
           .from('email_campaigns')
-          .update(updates)
+          .update(dbUpdates)
           .eq('id', campaignId)
           .select()
           .single();
@@ -235,7 +277,9 @@ export const useCampaigns = (organizationId?: string) => {
         const typedCampaign: Campaign = {
           ...data,
           config: data.config || {},
-          prepared_emails: Array.isArray(data.prepared_emails) ? data.prepared_emails : []
+          prepared_emails: Array.isArray(data.prepared_emails) ? data.prepared_emails : [],
+          selected_accounts: data.config?.selected_accounts || [],
+          selected_powermta_server: data.config?.selected_powermta_server
         };
 
         setCampaigns(prev => prev.map(campaign => 
@@ -300,6 +344,8 @@ export const useCampaigns = (organizationId?: string) => {
           total_recipients: campaign.total_recipients,
           config: campaign.config,
           prepared_emails: [],
+          selected_accounts: campaign.selected_accounts,
+          selected_powermta_server: campaign.selected_powermta_server,
           sent_at: undefined,
           error_message: undefined,
           completed_at: undefined
