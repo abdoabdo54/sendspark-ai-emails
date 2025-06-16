@@ -12,6 +12,11 @@ interface PowerMTATestConfig {
   username: string;
   password: string;
   api_port: number;
+  proxy_enabled: boolean;
+  proxy_host: string;
+  proxy_port: number;
+  proxy_username: string;
+  proxy_password: string;
 }
 
 serve(async (req) => {
@@ -25,7 +30,8 @@ serve(async (req) => {
     console.log('🔍 PowerMTA SSH Connection Test:', {
       host: config.server_host,
       port: config.ssh_port,
-      username: config.username
+      username: config.username,
+      proxy: config.proxy_enabled ? `${config.proxy_host}:${config.proxy_port}` : 'disabled'
     })
 
     if (!config.server_host || !config.username || !config.password) {
@@ -85,68 +91,68 @@ async function testRealSSHConnection(config: PowerMTATestConfig): Promise<{
   powerMTAStatus?: string;
 }> {
   try {
-    console.log(`🔐 Attempting real SSH connection to: ${config.server_host}:${config.ssh_port}`);
+    console.log(`🔐 Attempting SSH connection to: ${config.server_host}:${config.ssh_port}`);
     
-    // Use a more realistic SSH test approach
-    // Since Deno doesn't have native SSH, we'll use a basic TCP connection test
-    // and simulate SSH handshake validation
-    
-    try {
-      const conn = await Deno.connect({
-        hostname: config.server_host,
-        port: config.ssh_port,
-      });
+    let connectionOptions: any = {
+      hostname: config.server_host,
+      port: config.ssh_port,
+    };
+
+    // Handle proxy connection if enabled
+    if (config.proxy_enabled && config.proxy_host) {
+      console.log(`🌐 Using proxy: ${config.proxy_host}:${config.proxy_port}`);
       
-      // Read the SSH banner
-      const buffer = new Uint8Array(1024);
-      const bytesRead = await conn.read(buffer);
-      
-      if (bytesRead && bytesRead > 0) {
-        const banner = new TextDecoder().decode(buffer.slice(0, bytesRead));
-        console.log('📡 SSH Banner received:', banner);
+      try {
+        // First connect to the proxy
+        const proxyConn = await Deno.connect({
+          hostname: config.proxy_host,
+          port: config.proxy_port,
+        });
         
-        conn.close();
+        // Send CONNECT command for HTTP proxy
+        const connectCommand = `CONNECT ${config.server_host}:${config.ssh_port} HTTP/1.1\r\n`;
+        const authHeader = config.proxy_username && config.proxy_password 
+          ? `Proxy-Authorization: Basic ${btoa(config.proxy_username + ':' + config.proxy_password)}\r\n`
+          : '';
+        const proxyRequest = connectCommand + authHeader + '\r\n';
         
-        // Check if it's actually an SSH server
-        if (banner.includes('SSH')) {
-          // Now test PowerMTA status using a simulated command execution
-          const powerMTACheck = await checkPowerMTAStatus(config);
+        await proxyConn.write(new TextEncoder().encode(proxyRequest));
+        
+        // Read proxy response
+        const proxyBuffer = new Uint8Array(1024);
+        const proxyBytesRead = await proxyConn.read(proxyBuffer);
+        
+        if (proxyBytesRead && proxyBytesRead > 0) {
+          const proxyResponse = new TextDecoder().decode(proxyBuffer.slice(0, proxyBytesRead));
+          console.log('🌐 Proxy response:', proxyResponse);
           
-          return {
-            success: true,
-            serverInfo: `SSH connection successful. Server: ${banner.trim()}`,
-            powerMTAStatus: powerMTACheck
-          };
-        } else {
-          return {
-            success: false,
-            error: `Port ${config.ssh_port} is open but not running SSH service`
-          };
+          if (!proxyResponse.includes('200 Connection established')) {
+            proxyConn.close();
+            return {
+              success: false,
+              error: `Proxy connection failed: ${proxyResponse}`
+            };
+          }
         }
-      } else {
+        
+        // Now test SSH through the proxy tunnel
+        return await testSSHBanner(proxyConn, config);
+        
+      } catch (proxyError) {
+        console.error('❌ Proxy connection failed:', proxyError);
         return {
           success: false,
-          error: `No response from SSH service on port ${config.ssh_port}`
+          error: `Proxy connection failed: ${proxyError.message}`
         };
       }
-    } catch (connError) {
-      console.error('❌ TCP connection failed:', connError);
-      
-      if (connError.name === 'ConnectionRefused') {
-        return {
-          success: false,
-          error: `Connection refused - SSH service not running on ${config.server_host}:${config.ssh_port}`
-        };
-      } else if (connError.name === 'TimedOut') {
-        return {
-          success: false,
-          error: `Connection timeout - Host ${config.server_host} is unreachable`
-        };
-      } else {
-        return {
-          success: false,
-          error: `SSH connection failed: ${connError.message}`
-        };
+    } else {
+      // Direct connection (no proxy)
+      try {
+        const conn = await Deno.connect(connectionOptions);
+        return await testSSHBanner(conn, config);
+      } catch (connError) {
+        console.error('❌ Direct SSH connection failed:', connError);
+        return await handleConnectionError(connError, config);
       }
     }
 
@@ -155,6 +161,74 @@ async function testRealSSHConnection(config: PowerMTATestConfig): Promise<{
     return {
       success: false,
       error: `SSH connection failed: ${error.message}`
+    };
+  }
+}
+
+async function testSSHBanner(conn: Deno.Conn, config: PowerMTATestConfig): Promise<{ 
+  success: boolean; 
+  error?: string; 
+  serverInfo?: string;
+  powerMTAStatus?: string;
+}> {
+  try {
+    // Read the SSH banner
+    const buffer = new Uint8Array(1024);
+    const bytesRead = await conn.read(buffer);
+    
+    if (bytesRead && bytesRead > 0) {
+      const banner = new TextDecoder().decode(buffer.slice(0, bytesRead));
+      console.log('📡 SSH Banner received:', banner);
+      
+      conn.close();
+      
+      // Check if it's actually an SSH server
+      if (banner.includes('SSH')) {
+        // Now test PowerMTA status using a simulated command execution
+        const powerMTACheck = await checkPowerMTAStatus(config);
+        
+        return {
+          success: true,
+          serverInfo: `SSH connection successful. Server: ${banner.trim()}`,
+          powerMTAStatus: powerMTACheck
+        };
+      } else {
+        return {
+          success: false,
+          error: `Port ${config.ssh_port} is open but not running SSH service`
+        };
+      }
+    } else {
+      conn.close();
+      return {
+        success: false,
+        error: `No response from SSH service on port ${config.ssh_port}`
+      };
+    }
+  } catch (error) {
+    conn.close();
+    throw error;
+  }
+}
+
+async function handleConnectionError(connError: any, config: PowerMTATestConfig): Promise<{ 
+  success: boolean; 
+  error: string;
+}> {
+  if (connError.name === 'ConnectionRefused') {
+    return {
+      success: false,
+      error: `Connection refused - SSH service not running on ${config.server_host}:${config.ssh_port}`
+    };
+  } else if (connError.name === 'TimedOut') {
+    return {
+      success: false,
+      error: `Connection timeout - Host ${config.server_host} is unreachable`
+    };
+  } else {
+    return {
+      success: false,
+      error: `SSH connection failed: ${connError.message}`
     };
   }
 }

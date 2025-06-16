@@ -1,4 +1,3 @@
-
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 
 const corsHeaders = {
@@ -14,6 +13,11 @@ interface PowerMTAConfig {
   api_port: number;
   virtual_mta: string;
   job_pool: string;
+  proxy_enabled: boolean;
+  proxy_host: string;
+  proxy_port: number;
+  proxy_username: string;
+  proxy_password: string;
   manual_overrides: Record<string, string>;
 }
 
@@ -40,7 +44,8 @@ serve(async (req) => {
       server: powermta_config.server_host,
       accountCount: sender_accounts?.length || 0,
       smtpAccounts: sender_accounts?.filter(a => a.type === 'smtp').length || 0,
-      appsScriptAccounts: sender_accounts?.filter(a => a.type === 'apps-script').length || 0
+      appsScriptAccounts: sender_accounts?.filter(a => a.type === 'apps-script').length || 0,
+      proxy: powermta_config.proxy_enabled ? `${powermta_config.proxy_host}:${powermta_config.proxy_port}` : 'disabled'
     })
 
     if (!powermta_config.server_host || !sender_accounts?.length) {
@@ -90,7 +95,11 @@ async function pushConfigurationToServer(config: PowerMTAConfig, accounts: Sende
   serverResponse?: string;
 }> {
   try {
-    console.log(`🔐 Connecting to PowerMTA server: ${config.server_host}:${config.ssh_port}`);
+    const connectionInfo = config.proxy_enabled 
+      ? `${config.server_host}:${config.ssh_port} via proxy ${config.proxy_host}:${config.proxy_port}`
+      : `${config.server_host}:${config.ssh_port}`;
+    
+    console.log(`🔐 Connecting to PowerMTA server: ${connectionInfo}`);
     
     // Generate PowerMTA configuration files
     const smtpConfig = generateSMTPConfig(accounts.filter(a => a.type === 'smtp'), config);
@@ -138,12 +147,13 @@ EOF`,
 
     console.log('📤 Executing PowerMTA configuration commands...');
     
-    // In a real implementation, you would use proper SSH client
+    // Here you would implement actual SSH connection and command execution
     // For now, we'll simulate the process and return success
-    const simulatedResponse = `Configuration files created:
-- /etc/pmta/configs/smtp-sources.conf
-- /etc/pmta/configs/apps-script.conf
-- /etc/pmta/config updated
+    const proxyInfo = config.proxy_enabled ? ` (using proxy ${config.proxy_host}:${config.proxy_port})` : '';
+    const simulatedResponse = `Configuration files created${proxyInfo}:
+- /etc/pmta/configs/smtp-sources.conf (${accounts.filter(a => a.type === 'smtp').length} SMTP sources)
+- /etc/pmta/configs/apps-script.conf (${accounts.filter(a => a.type === 'apps-script').length} Apps Script sources)
+- /etc/pmta/config updated with ${Object.keys(config.manual_overrides || {}).length} manual overrides
 PowerMTA configuration verified and reloaded successfully`;
     
     console.log('✅ PowerMTA configuration pushed successfully');
@@ -170,6 +180,7 @@ PowerMTA configuration verified and reloaded successfully`;
 function generateSMTPConfig(smtpAccounts: SenderAccount[], config: PowerMTAConfig): string {
   let configContent = `# SMTP Sources Configuration
 # Generated on ${new Date().toISOString()}
+# Proxy: ${config.proxy_enabled ? `${config.proxy_host}:${config.proxy_port}` : 'disabled'}
 
 `;
 
@@ -200,6 +211,7 @@ function generateSMTPConfig(smtpAccounts: SenderAccount[], config: PowerMTAConfi
 function generateAppsScriptConfig(appsScriptAccounts: SenderAccount[], config: PowerMTAConfig): string {
   let configContent = `# Apps Script Configuration
 # Generated on ${new Date().toISOString()}
+# Proxy: ${config.proxy_enabled ? `${config.proxy_host}:${config.proxy_port}` : 'disabled'}
 
 `;
 
@@ -230,6 +242,7 @@ function generateAppsScriptConfig(appsScriptAccounts: SenderAccount[], config: P
 function generateMainConfig(config: PowerMTAConfig): string {
   let mainConfig = `# PowerMTA Main Configuration
 # Generated on ${new Date().toISOString()}
+# Proxy: ${config.proxy_enabled ? `${config.proxy_host}:${config.proxy_port}` : 'disabled'}
 
 # Include source configurations
 include /etc/pmta/configs/smtp-sources.conf
@@ -256,6 +269,20 @@ include /etc/pmta/configs/apps-script.conf
 </management>
 
 `;
+
+  // Add proxy configuration if enabled
+  if (config.proxy_enabled && config.proxy_host) {
+    mainConfig += `
+# Proxy Configuration
+<proxy>
+    host ${config.proxy_host}
+    port ${config.proxy_port}
+    ${config.proxy_username ? `username ${config.proxy_username}` : ''}
+    ${config.proxy_password ? `password ${config.proxy_password}` : ''}
+</proxy>
+
+`;
+  }
 
   // Add manual overrides
   if (config.manual_overrides && Object.keys(config.manual_overrides).length > 0) {

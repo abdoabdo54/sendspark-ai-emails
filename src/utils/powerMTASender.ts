@@ -8,6 +8,11 @@ interface PowerMTAConfig {
   api_port?: number;
   virtual_mta?: string;
   job_pool?: string;
+  proxy_enabled?: boolean;
+  proxy_host?: string;
+  proxy_port?: number;
+  proxy_username?: string;
+  proxy_password?: string;
   manual_overrides?: Record<string, string>;
 }
 
@@ -24,7 +29,8 @@ export async function testPowerMTAConnection(config: PowerMTAConfig): Promise<{ 
     console.log('🔍 Testing PowerMTA SSH connection:', { 
       host: config.server_host, 
       port: config.ssh_port,
-      username: config.username
+      username: config.username,
+      proxy: config.proxy_enabled ? `${config.proxy_host}:${config.proxy_port}` : 'disabled'
     });
     
     // Validate configuration first
@@ -45,7 +51,12 @@ export async function testPowerMTAConnection(config: PowerMTAConfig): Promise<{ 
           ssh_port: config.ssh_port,
           username: config.username,
           password: config.password,
-          api_port: config.api_port || 8080
+          api_port: config.api_port || 8080,
+          proxy_enabled: config.proxy_enabled || false,
+          proxy_host: config.proxy_host || '',
+          proxy_port: config.proxy_port || 8080,
+          proxy_username: config.proxy_username || '',
+          proxy_password: config.proxy_password || ''
         }
       }
     });
@@ -89,7 +100,8 @@ export async function pushSenderAccountsToServer(
       server: powerMTAConfig.server_host,
       accountCount: senderAccounts.length,
       smtpAccounts: senderAccounts.filter(a => a.type === 'smtp').length,
-      appsScriptAccounts: senderAccounts.filter(a => a.type === 'apps-script').length
+      appsScriptAccounts: senderAccounts.filter(a => a.type === 'apps-script').length,
+      proxy: powerMTAConfig.proxy_enabled ? `${powerMTAConfig.proxy_host}:${powerMTAConfig.proxy_port}` : 'disabled'
     });
     
     const { supabase } = await import('@/integrations/supabase/client');
@@ -103,6 +115,11 @@ export async function pushSenderAccountsToServer(
         api_port: powerMTAConfig.api_port || 8080,
         virtual_mta: powerMTAConfig.virtual_mta || 'default',
         job_pool: powerMTAConfig.job_pool || 'default',
+        proxy_enabled: powerMTAConfig.proxy_enabled || false,
+        proxy_host: powerMTAConfig.proxy_host || '',
+        proxy_port: powerMTAConfig.proxy_port || 8080,
+        proxy_username: powerMTAConfig.proxy_username || '',
+        proxy_password: powerMTAConfig.proxy_password || '',
         manual_overrides: powerMTAConfig.manual_overrides || {}
       },
       sender_accounts: senderAccounts
@@ -175,6 +192,17 @@ export function validatePowerMTAConfig(config: PowerMTAConfig): { valid: boolean
 
   if (config.api_port && (config.api_port < 1 || config.api_port > 65535)) {
     errors.push('Valid API port is required (1-65535)');
+  }
+
+  // Validate proxy settings if enabled
+  if (config.proxy_enabled) {
+    if (!config.proxy_host || config.proxy_host.trim() === '') {
+      errors.push('Proxy host is required when proxy is enabled');
+    }
+    
+    if (!config.proxy_port || config.proxy_port < 1 || config.proxy_port > 65535) {
+      errors.push('Valid proxy port is required when proxy is enabled (1-65535)');
+    }
   }
 
   return {
