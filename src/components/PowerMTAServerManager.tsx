@@ -24,7 +24,7 @@ const PowerMTAServerManager: React.FC = () => {
     );
   }
 
-  const handleAddServer = async (name: string, email: string, config: any) => {
+  const handleAddServer = async (name: string, config: any) => {
     try {
       await addServer({ 
         name, 
@@ -36,7 +36,7 @@ const PowerMTAServerManager: React.FC = () => {
     }
   };
 
-  const handleUpdateServer = async (name: string, email: string, config: any) => {
+  const handleUpdateServer = async (name: string, config: any) => {
     if (!editingServer) return;
     
     try {
@@ -101,7 +101,6 @@ const PowerMTAServerManager: React.FC = () => {
           onCancel={handleCancel}
           initialData={editingServer ? {
             name: editingServer.name,
-            email: '',
             config: {
               server_host: editingServer.server_host,
               ssh_port: editingServer.ssh_port,

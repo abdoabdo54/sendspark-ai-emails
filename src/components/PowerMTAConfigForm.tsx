@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Eye, EyeOff, Server, TestTube, ExternalLink } from 'lucide-react';
+import { Eye, EyeOff, Server, TestTube, ExternalLink, Globe } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { testPowerMTAConnection } from '@/utils/powerMTASender';
 
@@ -32,12 +32,13 @@ const PowerMTAConfigForm = ({ onSubmit, onCancel, initialData }: PowerMTAConfigF
   const [name, setName] = useState(initialData?.name || '');
   const [showPassword, setShowPassword] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
+  const [showWebTest, setShowWebTest] = useState(false);
   const [config, setConfig] = useState<PowerMTAConfig>(initialData?.config || {
     server_host: '',
     ssh_port: 22,
     username: '',
     password: '',
-    api_port: 25,
+    api_port: 8080,
     virtual_mta: 'default',
     job_pool: 'default'
   });
@@ -80,20 +81,20 @@ const PowerMTAConfigForm = ({ onSubmit, onCancel, initialData }: PowerMTAConfigF
       
       if (result.success) {
         toast({
-          title: "Connection Successful!",
-          description: result.serverInfo || "PowerMTA server configuration is working correctly"
+          title: "SSH Connection Successful!",
+          description: result.serverInfo || "PowerMTA server SSH connection is working correctly"
         });
       } else {
         toast({
-          title: "Connection Failed",
-          description: result.error || "Unable to connect to PowerMTA server",
+          title: "SSH Connection Failed",
+          description: result.error || "Unable to connect to PowerMTA server via SSH",
           variant: "destructive"
         });
       }
     } catch (error) {
       toast({
-        title: "Connection Failed",
-        description: "Unable to connect to PowerMTA server",
+        title: "SSH Connection Failed",
+        description: "Unable to connect to PowerMTA server via SSH",
         variant: "destructive"
       });
     } finally {
@@ -101,144 +102,12 @@ const PowerMTAConfigForm = ({ onSubmit, onCancel, initialData }: PowerMTAConfigF
     }
   };
 
-  const handleOpenPowerMTAInterface = () => {
-    if (!config.server_host) {
-      toast({
-        title: "Missing Server Host",
-        description: "Please enter the server host first",
-        variant: "destructive"
-      });
-      return;
-    }
+  const handleToggleWebTest = () => {
+    setShowWebTest(!showWebTest);
+  };
 
-    const testUrl = `http://${config.server_host}:${config.api_port || 25}`;
-    
-    // Open PowerMTA web interface in a new window
-    const testWindow = window.open('', '_blank', 'width=800,height=600,scrollbars=yes,resizable=yes');
-    
-    if (testWindow) {
-      testWindow.document.write(`
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <title>PowerMTA Interface - ${config.server_host}</title>
-          <style>
-            body { 
-              font-family: Arial, sans-serif; 
-              margin: 20px; 
-              background: #f5f5f5;
-            }
-            .container {
-              max-width: 600px;
-              margin: 0 auto;
-              background: white;
-              padding: 20px;
-              border-radius: 8px;
-              box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            }
-            .header {
-              text-align: center;
-              border-bottom: 1px solid #eee;
-              padding-bottom: 20px;
-              margin-bottom: 20px;
-            }
-            .info {
-              background: #f8f9fa;
-              padding: 15px;
-              border-radius: 5px;
-              margin: 10px 0;
-            }
-            .test-link {
-              display: inline-block;
-              background: #007bff;
-              color: white;
-              padding: 10px 20px;
-              text-decoration: none;
-              border-radius: 5px;
-              margin: 10px 0;
-              text-align: center;
-              width: 100%;
-              box-sizing: border-box;
-            }
-            .test-link:hover {
-              background: #0056b3;
-            }
-            .status {
-              padding: 10px;
-              border-radius: 5px;
-              margin: 10px 0;
-              text-align: center;
-            }
-            .loading { background: #fff3cd; color: #856404; }
-            .success { background: #d4edda; color: #155724; }
-            .error { background: #f8d7da; color: #721c24; }
-            .close-btn {
-              padding: 8px 16px;
-              background: #6c757d;
-              color: white;
-              border: none;
-              border-radius: 4px;
-              cursor: pointer;
-              margin-top: 20px;
-            }
-          </style>
-        </head>
-        <body>
-          <div class="container">
-            <div class="header">
-              <h1>PowerMTA Web Interface Test</h1>
-              <h2>${config.server_host}</h2>
-            </div>
-            
-            <div class="info">
-              <strong>Server:</strong> ${config.server_host}<br>
-              <strong>Port:</strong> ${config.api_port || 25}<br>
-              <strong>Interface URL:</strong> ${testUrl}
-            </div>
-            
-            <div id="status" class="status loading">
-              🔍 Preparing to test PowerMTA interface...
-            </div>
-            
-            <a href="${testUrl}" target="_blank" class="test-link">
-              🌐 Open PowerMTA Web Interface
-            </a>
-            
-            <div style="margin-top: 20px;">
-              <h3>How to verify connection:</h3>
-              <ul>
-                <li>Click the link above to open PowerMTA web interface</li>
-                <li>If you see the PowerMTA login page or dashboard, the server is accessible</li>
-                <li>If the page doesn't load, check your server configuration and firewall</li>
-                <li>Default PowerMTA web interface runs on port 8080 or 25</li>
-              </ul>
-            </div>
-            
-            <div style="text-align: center;">
-              <button onclick="window.close()" class="close-btn">
-                Close Window
-              </button>
-            </div>
-          </div>
-          
-          <script>
-            setTimeout(() => {
-              const statusDiv = document.getElementById('status');
-              statusDiv.className = 'status success';
-              statusDiv.innerHTML = '✅ Ready to test - click the link above to verify PowerMTA accessibility';
-            }, 1000);
-          </script>
-        </body>
-        </html>
-      `);
-      testWindow.document.close();
-    } else {
-      toast({
-        title: "Popup Blocked",
-        description: "Unable to open test window. Please check your popup blocker.",
-        variant: "destructive"
-      });
-    }
+  const getWebInterfaceUrl = () => {
+    return `http://${config.server_host}:${config.api_port || 8080}`;
   };
 
   return (
@@ -381,13 +250,62 @@ const PowerMTAConfigForm = ({ onSubmit, onCancel, initialData }: PowerMTAConfigF
             <Button 
               type="button" 
               variant="outline" 
-              onClick={handleOpenPowerMTAInterface}
+              onClick={handleToggleWebTest}
               disabled={!config.server_host}
             >
-              <ExternalLink className="w-4 h-4 mr-2" />
-              Test Web Interface
+              <Globe className="w-4 h-4 mr-2" />
+              {showWebTest ? 'Hide' : 'Test'} Web Interface
             </Button>
           </div>
+
+          {/* Web Interface Test Display */}
+          {showWebTest && config.server_host && (
+            <Card className="border-blue-200 bg-blue-50">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <Globe className="w-4 h-4" />
+                  PowerMTA Web Interface Test
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="text-sm">
+                  <p><strong>URL:</strong> {getWebInterfaceUrl()}</p>
+                  <p className="text-blue-700 text-xs mt-1">
+                    If the interface loads properly, your PowerMTA server is accessible via web.
+                  </p>
+                </div>
+                <div className="border rounded-lg bg-white" style={{ height: '300px' }}>
+                  <iframe
+                    src={getWebInterfaceUrl()}
+                    className="w-full h-full rounded-lg"
+                    title="PowerMTA Web Interface"
+                    onLoad={() => {
+                      toast({
+                        title: "Web Interface Loaded",
+                        description: "PowerMTA web interface is accessible"
+                      });
+                    }}
+                    onError={() => {
+                      toast({
+                        title: "Web Interface Failed",
+                        description: "Unable to load PowerMTA web interface",
+                        variant: "destructive"
+                      });
+                    }}
+                  />
+                </div>
+                <Button 
+                  type="button" 
+                  variant="outline" 
+                  size="sm"
+                  onClick={() => window.open(getWebInterfaceUrl(), '_blank')}
+                >
+                  <ExternalLink className="w-3 h-3 mr-1" />
+                  Open in New Tab
+                </Button>
+              </CardContent>
+            </Card>
+          )}
           
           <div className="flex justify-between space-x-3 pt-4 border-t">
             <Button type="button" variant="outline" onClick={onCancel}>
