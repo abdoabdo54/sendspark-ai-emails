@@ -697,7 +697,7 @@ ${textContent || 'Your text content here...'}`;
                     className="text-xs"
                   />
                   <p className="text-xs text-gray-500">
-                    Use {{name}}, {{email}}, etc. in your content
+                    Use {'{{'} name {'}}'}, {'{{'} email {'}}'}, etc. in your content
                   </p>
                 </div>
               )}

@@ -1,4 +1,3 @@
-
 import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -38,8 +37,11 @@ const PowerMTAServers = () => {
     server.server_host.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const handleAddServer = async (name: string, email: string, config: any) => {
+  const handleAddServer = async (name: string, config: any) => {
     try {
+      // For PowerMTA, we construct a dummy email based on the server host
+      const email = `powermta@${config.server_host || 'server.com'}`;
+      
       await addServer({
         name,
         server_host: config.server_host,
@@ -75,7 +77,7 @@ const PowerMTAServers = () => {
     }
   };
 
-  const handleUpdateServer = async (name: string, email: string, config: any) => {
+  const handleUpdateServer = async (name: string, config: any) => {
     if (!editingServer) return;
     
     try {
@@ -388,7 +390,10 @@ const PowerMTAServers = () => {
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => handleWebInterface(server)}
+                      onClick={() => {
+                        const url = `http://${server.server_host}:${server.api_port || 8080}`;
+                        setWebInterfaceUrl(url);
+                      }}
                       disabled={!server.api_port}
                       title="Show Web Interface"
                     >
