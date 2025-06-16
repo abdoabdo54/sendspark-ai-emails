@@ -478,7 +478,7 @@ const BulkEmailComposer: React.FC<BulkEmailComposerProps> = ({ onSend }) => {
                 <div className="flex items-center justify-between">
                   <div>
                     <Label>Personalization</Label>
-                    <p className="text-sm text-gray-600">Use dynamic tags like {{name}}</p>
+                    <p className="text-sm text-gray-600">Use dynamic tags like {"{"}{"{"}{"}"}name{"}"}{"}"}</p>
                   </div>
                   <Switch checked={usePersonalization} onCheckedChange={setUsePersonalization} />
                 </div>
