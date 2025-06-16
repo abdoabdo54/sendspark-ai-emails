@@ -22,148 +22,25 @@ const CampaignSendMethodSelector: React.FC<CampaignSendMethodSelectorProps> = ({
   onPowerMTAServerChange
 }) => {
   const { currentOrganization } = useSimpleOrganizations();
-  const { servers } = usePowerMTAServers(currentOrganization?.id);
+  const { servers, loading } = usePowerMTAServers(currentOrganization?.id);
   
   const activeServers = servers.filter(server => server.is_active);
   const powerMTAAvailable = activeServers.length > 0;
 
   const handleTestPowerMTA = (server: any) => {
-    const testUrl = `http://${server.server_host}:${server.api_port || 25}`;
-    
-    // Open PowerMTA web interface in a new window
-    const testWindow = window.open('', '_blank', 'width=800,height=600,scrollbars=yes,resizable=yes');
-    
-    if (testWindow) {
-      testWindow.document.write(`
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <title>PowerMTA Test - ${server.name}</title>
-          <style>
-            body { 
-              font-family: Arial, sans-serif; 
-              margin: 20px; 
-              background: #f5f5f5;
-            }
-            .container {
-              max-width: 600px;
-              margin: 0 auto;
-              background: white;
-              padding: 20px;
-              border-radius: 8px;
-              box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            }
-            .header {
-              text-align: center;
-              border-bottom: 1px solid #eee;
-              padding-bottom: 20px;
-              margin-bottom: 20px;
-            }
-            .info {
-              background: #f8f9fa;
-              padding: 15px;
-              border-radius: 5px;
-              margin: 10px 0;
-            }
-            .test-link {
-              display: inline-block;
-              background: #007bff;
-              color: white;
-              padding: 10px 20px;
-              text-decoration: none;
-              border-radius: 5px;
-              margin: 10px 0;
-            }
-            .test-link:hover {
-              background: #0056b3;
-            }
-            .status {
-              padding: 10px;
-              border-radius: 5px;
-              margin: 10px 0;
-            }
-            .loading { background: #fff3cd; color: #856404; }
-            .success { background: #d4edda; color: #155724; }
-            .error { background: #f8d7da; color: #721c24; }
-          </style>
-        </head>
-        <body>
-          <div class="container">
-            <div class="header">
-              <h1>PowerMTA Connection Test</h1>
-              <h2>${server.name}</h2>
-            </div>
-            
-            <div class="info">
-              <strong>Server:</strong> ${server.server_host}<br>
-              <strong>Port:</strong> ${server.api_port || 25}<br>
-              <strong>Test URL:</strong> ${testUrl}
-            </div>
-            
-            <div id="status" class="status loading">
-              🔍 Testing PowerMTA connection...
-            </div>
-            
-            <a href="${testUrl}" target="_blank" class="test-link">
-              🌐 Open PowerMTA Web Interface
-            </a>
-            
-            <div style="margin-top: 20px;">
-              <h3>How to verify:</h3>
-              <ul>
-                <li>Click the link above to open PowerMTA web interface</li>
-                <li>If you see the PowerMTA login/dashboard, the server is working</li>
-                <li>If the page doesn't load, check server configuration</li>
-              </ul>
-            </div>
-            
-            <div style="margin-top: 20px; text-align: center;">
-              <button onclick="window.close()" style="padding: 8px 16px; background: #6c757d; color: white; border: none; border-radius: 4px; cursor: pointer;">
-                Close Window
-              </button>
-            </div>
-          </div>
-          
-          <script>
-            // Simulate connection test
-            setTimeout(() => {
-              const statusDiv = document.getElementById('status');
-              
-              // Try to load the PowerMTA interface
-              const testFrame = document.createElement('iframe');
-              testFrame.style.display = 'none';
-              testFrame.src = '${testUrl}';
-              
-              testFrame.onload = () => {
-                statusDiv.className = 'status success';
-                statusDiv.innerHTML = '✅ PowerMTA server appears to be accessible';
-              };
-              
-              testFrame.onerror = () => {
-                statusDiv.className = 'status error';
-                statusDiv.innerHTML = '❌ Unable to connect to PowerMTA server';
-              };
-              
-              document.body.appendChild(testFrame);
-              
-              // Fallback timeout
-              setTimeout(() => {
-                if (statusDiv.innerHTML.includes('Testing')) {
-                  statusDiv.className = 'status error';
-                  statusDiv.innerHTML = '⚠️ Connection test timed out - please check manually';
-                }
-              }, 5000);
-              
-            }, 1000);
-          </script>
-        </body>
-        </html>
-      `);
-      testWindow.document.close();
-    } else {
-      toast.error('Unable to open test window. Please check your popup blocker.');
-    }
+    const testUrl = `http://${server.server_host}:${server.api_port || 8080}`;
+    window.open(testUrl, '_blank', 'width=1200,height=800,scrollbars=yes,resizable=yes');
   };
+
+  if (loading) {
+    return (
+      <Card className="border-2 border-blue-200 bg-gradient-to-r from-blue-50 to-indigo-50">
+        <CardContent className="p-4">
+          <div className="text-center">Loading PowerMTA servers...</div>
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <Card className="border-2 border-blue-200 bg-gradient-to-r from-blue-50 to-indigo-50">
@@ -198,6 +75,7 @@ const CampaignSendMethodSelector: React.FC<CampaignSendMethodSelectorProps> = ({
               <div className="font-semibold flex items-center gap-1">
                 PowerMTA Server
                 {!powerMTAAvailable && <Badge variant="secondary" className="text-xs">Setup Required</Badge>}
+                {powerMTAAvailable && <Badge variant="default" className="text-xs">{activeServers.length} Available</Badge>}
               </div>
               <div className="text-xs opacity-70">SMTP Bridge Server</div>
             </div>
@@ -218,6 +96,9 @@ const CampaignSendMethodSelector: React.FC<CampaignSendMethodSelectorProps> = ({
                   >
                     <Server className="w-4 h-4 mr-2" />
                     {server.name} ({server.server_host})
+                    {server.proxy_enabled && (
+                      <Badge variant="outline" className="ml-2 text-xs">Proxy</Badge>
+                    )}
                   </Button>
                   
                   <Button
@@ -225,6 +106,7 @@ const CampaignSendMethodSelector: React.FC<CampaignSendMethodSelectorProps> = ({
                     size="sm"
                     onClick={() => handleTestPowerMTA(server)}
                     className="flex items-center gap-1"
+                    disabled={!server.api_port}
                   >
                     <TestTube className="w-3 h-3" />
                     <ExternalLink className="w-3 h-3" />
@@ -242,8 +124,8 @@ const CampaignSendMethodSelector: React.FC<CampaignSendMethodSelectorProps> = ({
           )}
           {selectedMethod === 'powermta' && (
             powerMTAAvailable 
-              ? "🚀 Campaigns will be pushed to PowerMTA server for high-volume distributed sending using SMTP and Apps Script accounts"
-              : "⚠️ Please add and configure PowerMTA servers in Settings → PowerMTA Servers"
+              ? `🚀 Campaigns will be pushed to PowerMTA server for high-volume distributed sending using SMTP and Apps Script accounts (${activeServers.length} servers available)`
+              : "⚠️ Please add and configure PowerMTA servers in PowerMTA Servers section"
           )}
         </div>
       </CardContent>

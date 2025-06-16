@@ -18,7 +18,8 @@ import {
   Globe,
   Shield,
   CheckCircle,
-  XCircle
+  XCircle,
+  ExternalLink
 } from 'lucide-react';
 
 const PowerMTAServers = () => {
@@ -27,6 +28,7 @@ const PowerMTAServers = () => {
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingServer, setEditingServer] = useState<any>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [webInterfaceUrl, setWebInterfaceUrl] = useState<string | null>(null);
 
   const filteredServers = servers.filter(server => 
     server.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -44,12 +46,12 @@ const PowerMTAServers = () => {
         api_port: config.api_port,
         virtual_mta: config.virtual_mta,
         job_pool: config.job_pool,
-        proxy_enabled: config.proxy_enabled,
+        proxy_enabled: config.proxy_enabled || false,
         proxy_host: config.proxy_host,
         proxy_port: config.proxy_port,
         proxy_username: config.proxy_username,
         proxy_password: config.proxy_password,
-        manual_overrides: config.manual_overrides
+        manual_overrides: config.manual_overrides || {}
       });
       
       toast({
@@ -82,12 +84,12 @@ const PowerMTAServers = () => {
         api_port: config.api_port,
         virtual_mta: config.virtual_mta,
         job_pool: config.job_pool,
-        proxy_enabled: config.proxy_enabled,
+        proxy_enabled: config.proxy_enabled || false,
         proxy_host: config.proxy_host,
         proxy_port: config.proxy_port,
         proxy_username: config.proxy_username,
         proxy_password: config.proxy_password,
-        manual_overrides: config.manual_overrides
+        manual_overrides: config.manual_overrides || {}
       });
       
       toast({
@@ -133,6 +135,11 @@ const PowerMTAServers = () => {
       title: "Refreshed",
       description: "PowerMTA servers list has been refreshed"
     });
+  };
+
+  const handleWebInterface = (server: any) => {
+    const url = `http://${server.server_host}:${server.api_port || 8080}`;
+    setWebInterfaceUrl(url);
   };
 
   if (showAddForm || editingServer) {
@@ -210,6 +217,47 @@ const PowerMTAServers = () => {
             <div className="text-sm text-gray-600">Active Servers</div>
           </div>
         </div>
+
+        {/* Web Interface Preview */}
+        {webInterfaceUrl && (
+          <Card className="border-2 border-blue-200">
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle className="flex items-center gap-2">
+                  <Globe className="w-5 h-5" />
+                  PowerMTA Web Interface
+                </CardTitle>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => window.open(webInterfaceUrl, '_blank')}
+                  >
+                    <ExternalLink className="w-4 h-4 mr-1" />
+                    Open in New Tab
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setWebInterfaceUrl(null)}
+                  >
+                    Close
+                  </Button>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="border rounded-lg overflow-hidden" style={{ height: '500px' }}>
+                <iframe
+                  src={webInterfaceUrl}
+                  className="w-full h-full"
+                  title="PowerMTA Web Interface"
+                  sandbox="allow-same-origin allow-scripts allow-popups allow-forms"
+                />
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Servers List */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -295,6 +343,11 @@ const PowerMTAServers = () => {
                     <Badge variant="outline" className="text-xs">
                       {server.proxy_enabled ? 'Enabled' : 'Disabled'}
                     </Badge>
+                    {server.proxy_enabled && server.proxy_host && (
+                      <span className="text-xs text-gray-500">
+                        {server.proxy_host}:{server.proxy_port}
+                      </span>
+                    )}
                   </div>
 
                   <div className="flex gap-2 pt-2">
@@ -311,12 +364,9 @@ const PowerMTAServers = () => {
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => {
-                        if (server.api_port) {
-                          window.open(`http://${server.server_host}:${server.api_port}`, '_blank');
-                        }
-                      }}
+                      onClick={() => handleWebInterface(server)}
                       disabled={!server.api_port}
+                      title="Open Web Interface"
                     >
                       <Globe className="w-3 h-3" />
                     </Button>

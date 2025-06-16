@@ -14,6 +14,12 @@ export interface PowerMTAServer {
   api_port?: number;
   virtual_mta?: string;
   job_pool?: string;
+  proxy_enabled: boolean;
+  proxy_host?: string;
+  proxy_port?: number;
+  proxy_username?: string;
+  proxy_password?: string;
+  manual_overrides?: Record<string, string>;
   is_active: boolean;
   created_at: string;
   updated_at: string;
