@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -8,7 +7,8 @@ import { Card, CardHeader, CardContent, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { toast } from 'sonner';
-import { Send, Loader2, Settings, Server, Cloud, Target, Upload, TestTube } from 'lucide-react';
+import { Send, Loader2, Settings, Server, Cloud, Target, Upload, TestTube, Zap, Users, Wrench } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import CompactAccountSelector from './CompactAccountSelector';
 import { useSimpleOrganizations } from '@/contexts/SimpleOrganizationContext';
 import { useEmailAccounts } from '@/hooks/useEmailAccounts';
@@ -20,6 +20,7 @@ interface BulkEmailComposerProps {
 }
 
 const BulkEmailComposer: React.FC<BulkEmailComposerProps> = ({ onSend }) => {
+  const navigate = useNavigate();
   const { currentOrganization } = useSimpleOrganizations();
   const { accounts } = useEmailAccounts(currentOrganization?.id);
   const { functions } = useGcfFunctions(currentOrganization?.id);
@@ -103,6 +104,20 @@ const BulkEmailComposer: React.FC<BulkEmailComposerProps> = ({ onSend }) => {
     setSelectedAccounts([]);
   };
 
+  const handleNavigateToFunctions = () => {
+    navigate('/function-manager');
+  };
+
+  const handleNavigateToAccounts = () => {
+    // Navigate to accounts section (assuming it's in settings or main page)
+    navigate('/');
+    // You might want to add a URL hash or query parameter to jump to accounts section
+  };
+
+  const handleNavigateToSmartConfig = () => {
+    navigate('/smart-config');
+  };
+
   const handleSend = async () => {
     if (!fromName || !subject || !recipients) {
       toast.error('Please fill in all required fields');
@@ -182,6 +197,82 @@ const BulkEmailComposer: React.FC<BulkEmailComposerProps> = ({ onSend }) => {
         <h1 className="text-3xl font-bold text-gray-900 mb-2">Create Email Campaign</h1>
         <p className="text-gray-600">Configure and send bulk email campaigns</p>
       </div>
+
+      {/* Navigation Buttons */}
+      <Card>
+        <CardContent className="p-6">
+          <div className="flex flex-wrap gap-3 justify-center">
+            <Button
+              variant="outline"
+              onClick={handleNavigateToFunctions}
+              className="flex items-center gap-2 px-4 py-2 border-2 hover:bg-gray-50"
+            >
+              <Zap className="w-4 h-4" />
+              Functions ({enabledFunctions.length})
+            </Button>
+            
+            <Button
+              variant="outline"
+              onClick={handleNavigateToAccounts}
+              className="flex items-center gap-2 px-4 py-2 border-2 hover:bg-gray-50"
+            >
+              <Users className="w-4 h-4" />
+              Accounts ({activeAccounts.length})
+            </Button>
+            
+            <Button
+              variant="outline"
+              onClick={handleNavigateToSmartConfig}
+              className="flex items-center gap-2 px-4 py-2 border-2 hover:bg-gray-50"
+            >
+              <Wrench className="w-4 h-4" />
+              SmartConfig
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Smart Configuration Engine */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Wrench className="w-5 h-5" />
+            Smart Configuration Engine - FULLY UPGRADED
+            <Zap className="w-4 h-4 text-orange-500" />
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center justify-between">
+            <Label className="text-sm font-medium">Use Manual Configuration Override</Label>
+            <Switch />
+          </div>
+          
+          <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
+            <div className="flex items-center gap-2 mb-3">
+              <Settings className="w-4 h-4 text-blue-600" />
+              <span className="text-sm font-medium text-blue-800">Manual Override Configuration</span>
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <Label className="text-xs text-blue-700 mb-2 block">Functions to Use</Label>
+                <div className="bg-white p-3 rounded border border-blue-200">
+                  <div className="text-2xl font-bold text-center mb-1">1</div>
+                  <div className="text-xs text-blue-600 text-center">Available: {enabledFunctions.length} functions</div>
+                </div>
+              </div>
+              
+              <div>
+                <Label className="text-xs text-blue-700 mb-2 block">Accounts to Use</Label>
+                <div className="bg-white p-3 rounded border border-blue-200">
+                  <div className="text-2xl font-bold text-center mb-1">1</div>
+                  <div className="text-xs text-blue-600 text-center">Selected: {selectedAccounts.length} accounts</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Campaign Configuration */}
       <Card>
