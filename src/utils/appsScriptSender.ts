@@ -8,8 +8,52 @@ export interface AppsScriptResponse {
   success: boolean;
   error?: string;
   quota_remaining?: number;
+  remainingQuota?: number;
   sent_at?: string;
 }
+
+export const testAppsScriptConnection = async (
+  account: AppsScriptAccount
+): Promise<AppsScriptResponse> => {
+  try {
+    console.log(`🔌 Testing Apps Script connection to ${account.exec_url}`);
+    
+    const response = await fetch(account.exec_url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        action: 'test'
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`Apps Script API error: ${response.status}`);
+    }
+
+    const result = await response.json();
+    
+    if (result.success) {
+      return {
+        success: true,
+        quota_remaining: result.quota_remaining,
+        remainingQuota: result.quota_remaining
+      };
+    } else {
+      return {
+        success: false,
+        error: result.error || 'Apps Script connection test failed'
+      };
+    }
+  } catch (error) {
+    console.error('Apps Script connection test error:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    };
+  }
+};
 
 export const sendEmailViaAppsScript = async (
   account: AppsScriptAccount,
@@ -49,6 +93,7 @@ export const sendEmailViaAppsScript = async (
       return {
         success: true,
         quota_remaining: result.quota_remaining,
+        remainingQuota: result.quota_remaining,
         sent_at: new Date().toISOString()
       };
     } else {
