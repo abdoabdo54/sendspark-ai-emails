@@ -1,8 +1,7 @@
 
 import { useState } from 'react';
-import BulkEmailComposer from './BulkEmailComposer';
+import CampaignComposer from './CampaignComposer';
 import SingleEmailComposer from './SingleEmailComposer';
-import CampaignAnalytics from './CampaignAnalytics';
 import CampaignTesting from './CampaignTesting';
 import AccountManager from './AccountManager';
 import { useCampaigns } from '@/hooks/useCampaigns';
@@ -13,11 +12,11 @@ interface EmailComposerProps {
   activeTab?: string;
 }
 
-const EmailComposer = ({ activeTab = 'bulk' }: EmailComposerProps) => {
+const EmailComposer = ({ activeTab = 'campaign' }: EmailComposerProps) => {
   const { currentOrganization } = useSimpleOrganizations();
   const { createCampaign } = useCampaigns(currentOrganization?.id);
 
-  const handleBulkEmailSend = async (campaignData: any) => {
+  const handleCampaignSend = async (campaignData: any) => {
     if (!currentOrganization?.id) {
       toast.error('No organization selected');
       return;
@@ -39,13 +38,13 @@ const EmailComposer = ({ activeTab = 'bulk' }: EmailComposerProps) => {
 
       // Create campaign as DRAFT (not sending immediately)
       const newCampaign = await createCampaign({
-        from_name: campaignData.from_name,
-        subject: campaignData.subject,
+        from_name: campaignData.from_rotation?.[0]?.name || '',
+        subject: campaignData.subject_rotation?.[0] || '',
         recipients: campaignData.recipients,
         html_content: campaignData.html_content || '',
         text_content: campaignData.text_content || '',
-        send_method: campaignData.send_method || 'parallel_gcf',
-        status: 'draft', // Start as draft
+        send_method: campaignData.send_method || 'smtp',
+        status: 'draft',
         sent_count: 0,
         total_recipients: recipients.length,
         config: campaignData.config || {}
@@ -53,8 +52,7 @@ const EmailComposer = ({ activeTab = 'bulk' }: EmailComposerProps) => {
 
       if (newCampaign) {
         console.log('✅ Campaign created successfully:', newCampaign.id);
-        // SINGLE SUCCESS TOAST - NO DOUBLE POPUPS
-        toast.success(`Campaign "${campaignData.subject}" created successfully! Go to Campaign History to prepare and send.`);
+        toast.success(`Campaign created successfully! Go to Campaign History to prepare and send.`);
       } else {
         throw new Error('Failed to create campaign');
       }
@@ -76,7 +74,7 @@ const EmailComposer = ({ activeTab = 'bulk' }: EmailComposerProps) => {
       toast.info('Single email functionality - creating as campaign draft');
       
       // Convert single email to campaign format
-      await handleBulkEmailSend({
+      await handleCampaignSend({
         ...emailData,
         recipients: emailData.to || '',
         send_method: 'single'
@@ -97,18 +95,16 @@ const EmailComposer = ({ activeTab = 'bulk' }: EmailComposerProps) => {
 
   const renderContent = () => {
     switch (activeTab) {
-      case 'bulk':
-        return <BulkEmailComposer onSend={handleBulkEmailSend} />;
+      case 'campaign':
+        return <CampaignComposer onSend={handleCampaignSend} />;
       case 'single':
         return <SingleEmailComposer onSend={handleSingleEmailSend} />;
       case 'testing':
         return <CampaignTesting />;
-      case 'analytics':
-        return <CampaignAnalytics />;
       case 'accounts':
         return <AccountManager />;
       default:
-        return <BulkEmailComposer onSend={handleBulkEmailSend} />;
+        return <CampaignComposer onSend={handleCampaignSend} />;
     }
   };
 

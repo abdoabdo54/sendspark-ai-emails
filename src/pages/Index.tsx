@@ -1,20 +1,15 @@
 
-import React, { useState } from 'react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { useState, useEffect } from "react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useNavigate } from "react-router-dom";
+import { Mail, Settings, BarChart3, TestTube, Users, Bot } from "lucide-react";
 import EmailComposer from "@/components/EmailComposer";
-import CampaignHistory from "@/components/CampaignHistory";
-import SettingsPanel from "@/components/SettingsPanel";
-import SubscriberManager from "@/components/SubscriberManager";
-import DashboardStats from "@/components/DashboardStats";
-import AccountManager from "@/components/AccountManager";
 import Header from "@/components/Header";
-import OrganizationEditDialog from "@/components/OrganizationEditDialog";
-import DomainServerManager from "@/components/DomainServerManager";
-import { useSimpleOrganizations } from '@/contexts/SimpleOrganizationContext';
-import { Edit, Plus, Settings, Globe } from 'lucide-react';
+import DashboardStats from "@/components/DashboardStats";
+import { useAuth } from "@/hooks/useAuth";
+import { useSimpleOrganizations } from "@/contexts/SimpleOrganizationContext";
 
 interface IndexProps {
   activeTab: string;
@@ -22,130 +17,122 @@ interface IndexProps {
 }
 
 const Index = ({ activeTab, onTabChange }: IndexProps) => {
-  const { currentOrganization, loading } = useSimpleOrganizations();
-  const [showOrgDialog, setShowOrgDialog] = useState(false);
-  const [showCreateOrgDialog, setShowCreateOrgDialog] = useState(false);
-  const [showDomainServerDialog, setShowDomainServerDialog] = useState(false);
+  const navigate = useNavigate();
+  const { user } = useAuth();
+  const { currentOrganization } = useSimpleOrganizations();
 
-  // Show loading state
-  if (loading) {
+  const handleNavigateToSettings = () => {
+    navigate('/settings');
+  };
+
+  const handleNavigateToCampaigns = () => {
+    navigate('/campaigns');
+  };
+
+  const handleNavigateToFunctions = () => {
+    navigate('/function-manager');
+  };
+
+  const handleNavigateToSmartConfig = () => {
+    navigate('/smart-config');
+  };
+
+  if (!user || !currentOrganization) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-slate-100 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-slate-600">Loading organization...</p>
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-purple-50">
+        <Header />
+        <div className="container mx-auto px-4 py-8">
+          <div className="text-center">
+            <p className="text-slate-600">Please select an organization to continue.</p>
+          </div>
         </div>
       </div>
     );
   }
 
-  const renderMainContent = () => {
-    // If activeTab is one of the header tabs, show EmailComposer
-    if (['bulk', 'single', 'testing', 'analytics', 'accounts'].includes(activeTab)) {
-      return <EmailComposer activeTab={activeTab} />;
-    }
-    
-    // Otherwise show the local tab content
-    switch (activeTab) {
-      case 'accounts-local':
-        return <AccountManager />;
-      case 'subscribers':
-        return <SubscriberManager />;
-      case 'history':
-        return <CampaignHistory />;
-      case 'settings':
-        return <SettingsPanel />;
-      default:
-        return <EmailComposer activeTab="bulk" />;
-    }
-  };
-
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-slate-100">
-      <Header activeTab={activeTab} onTabChange={onTabChange} />
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-purple-50">
+      <Header />
       
-      <div className="container mx-auto p-6">
-        {/* Organization info */}
-        {currentOrganization && (
-          <div className="mb-6 flex justify-between items-center">
-            <div>
-              <h2 className="text-2xl font-bold text-slate-800">
-                Welcome to {currentOrganization.name}
-              </h2>
-              <p className="text-slate-600">
-                Manage your email campaigns and subscribers
-              </p>
-            </div>
-            
-            <div className="flex items-center gap-4">
-              <Badge variant="outline" className="text-sm bg-green-50 text-green-700 border-green-200">
-                {currentOrganization.subscription_plan.charAt(0).toUpperCase() + currentOrganization.subscription_plan.slice(1)} Plan
-              </Badge>
-              <Badge variant="outline" className="text-sm bg-blue-50 text-blue-700 border-blue-200">
-                {currentOrganization.emails_sent_this_month.toLocaleString()} / {currentOrganization.monthly_email_limit.toLocaleString()} emails
-              </Badge>
-              
-              {/* Organization Management Dropdown */}
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="outline" size="sm">
-                    <Settings className="w-4 h-4 mr-2" />
-                    Organization
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuItem onClick={() => setShowOrgDialog(true)}>
-                    <Edit className="w-4 h-4 mr-2" />
-                    Edit Organization
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setShowCreateOrgDialog(true)}>
-                    <Plus className="w-4 h-4 mr-2" />
-                    Create New Organization
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setShowDomainServerDialog(true)}>
-                    <Globe className="w-4 h-4 mr-2" />
-                    Domain & Server Management
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
-          </div>
-        )}
-
+      <div className="container mx-auto px-4 py-8">
         {/* Dashboard Stats */}
-        <DashboardStats />
+        <div className="mb-8">
+          <DashboardStats />
+        </div>
 
-        {/* Main Content */}
-        <Card className="mt-6 shadow-lg">
-          <CardHeader className="bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-t-lg">
-            <CardTitle className="text-2xl">Campaign Management Center</CardTitle>
-            <CardDescription className="text-blue-100">
-              Create, schedule, and manage professional email campaigns with advanced features
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="p-6">
-            {renderMainContent()}
-          </CardContent>
-        </Card>
+        {/* Quick Action Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+          <Card className="cursor-pointer hover:shadow-lg transition-shadow" onClick={() => onTabChange('campaign')}>
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 text-lg">
+                <Mail className="w-5 h-5 text-blue-600" />
+                Campaign Composer
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-sm text-gray-600">Create professional email campaigns with advanced features</p>
+            </CardContent>
+          </Card>
+
+          <Card className="cursor-pointer hover:shadow-lg transition-shadow" onClick={handleNavigateToCampaigns}>
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 text-lg">
+                <BarChart3 className="w-5 h-5 text-green-600" />
+                Campaign History
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-sm text-gray-600">View and manage your email campaigns</p>
+            </CardContent>
+          </Card>
+
+          <Card className="cursor-pointer hover:shadow-lg transition-shadow" onClick={handleNavigateToFunctions}>
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 text-lg">
+                <Bot className="w-5 h-5 text-purple-600" />
+                Function Manager
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-sm text-gray-600">Manage Google Cloud Functions for email delivery</p>
+            </CardContent>
+          </Card>
+
+          <Card className="cursor-pointer hover:shadow-lg transition-shadow" onClick={handleNavigateToSettings}>
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 text-lg">
+                <Settings className="w-5 h-5 text-gray-600" />
+                Settings
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-sm text-gray-600">Configure accounts and system settings</p>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Main Tabs */}
+        <Tabs value={activeTab} onValueChange={onTabChange} className="w-full">
+          <TabsList className="grid w-full grid-cols-3">
+            <TabsTrigger value="campaign" className="flex items-center gap-2">
+              <Mail className="w-4 h-4" />
+              Campaign Composer
+            </TabsTrigger>
+            <TabsTrigger value="single" className="flex items-center gap-2">
+              <Mail className="w-4 h-4" />
+              Single Email
+            </TabsTrigger>
+            <TabsTrigger value="testing" className="flex items-center gap-2">
+              <TestTube className="w-4 h-4" />
+              Testing Tools
+            </TabsTrigger>
+          </TabsList>
+
+          <div className="mt-6">
+            <EmailComposer activeTab={activeTab} />
+          </div>
+        </Tabs>
       </div>
-
-      {/* Dialogs */}
-      <OrganizationEditDialog
-        isOpen={showOrgDialog}
-        onClose={() => setShowOrgDialog(false)}
-        organization={currentOrganization}
-      />
-      
-      <OrganizationEditDialog
-        isOpen={showCreateOrgDialog}
-        onClose={() => setShowCreateOrgDialog(false)}
-        organization={null}
-      />
-
-      <DomainServerManager
-        isOpen={showDomainServerDialog}
-        onClose={() => setShowDomainServerDialog(false)}
-      />
     </div>
   );
 };

@@ -11,6 +11,7 @@ import Campaigns from "./pages/Campaigns";
 import SmartConfig from "./pages/SmartConfig";
 import FunctionManager from "./pages/FunctionManager";
 import PowerMTAServers from "./pages/PowerMTAServers";
+import Settings from "./pages/Settings";
 import AuthForm from "./components/AuthForm";
 import { useState } from "react";
 
@@ -18,7 +19,7 @@ const queryClient = new QueryClient();
 
 const AppContent = () => {
   const { user, loading } = useAuth();
-  const [activeTab, setActiveTab] = useState("bulk");
+  const [activeTab, setActiveTab] = useState("campaign");
 
   if (loading) {
     return (
@@ -42,6 +43,7 @@ const AppContent = () => {
       <Route path="/smart-config" element={<SmartConfig />} />
       <Route path="/function-manager" element={<FunctionManager />} />
       <Route path="/powermta-servers" element={<PowerMTAServers />} />
+      <Route path="/settings" element={<Settings />} />
     </Routes>
   );
 };
