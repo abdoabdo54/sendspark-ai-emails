@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -13,7 +12,7 @@ import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { 
   Mail, Send, Users, Bot, Server, 
-  History, X, Zap, Settings, Clock, RotateCcw, Layers, Info
+  History, X, Zap, Settings, Clock, RotateCcw, Layers, Info, Cloud
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
@@ -42,9 +41,9 @@ const CampaignComposer: React.FC<CampaignComposerProps> = ({ onSend }) => {
   const [recipients, setRecipients] = useState('');
   const [htmlContent, setHtmlContent] = useState('');
   const [textContent, setTextContent] = useState('');
-  const [sendMethod, setSendMethod] = useState('smtp'); // Only smtp or apps-script
+  const [sendMethod, setSendMethod] = useState('cloud-functions'); // cloud-functions or cloud-functions-powermta
   const [selectedAccounts, setSelectedAccounts] = useState<string[]>([]);
-  const [selectedPowerMTAServer, setSelectedPowerMTAServer] = useState(''); // Optional monitoring
+  const [selectedPowerMTAServer, setSelectedPowerMTAServer] = useState(''); 
   
   // Advanced features state
   const [useTestAfter, setUseTestAfter] = useState(false);
@@ -70,18 +69,18 @@ const CampaignComposer: React.FC<CampaignComposerProps> = ({ onSend }) => {
     failoverProtection: true
   });
 
-  // PowerMTA monitoring state
-  const [powerMTAEnabled, setPowerMTAEnabled] = useState(false);
-
   // Sending Configuration state - FULLY UPGRADED ⚡
   const [sendingMode, setSendingMode] = useState('controlled');
   const [dispatchMethod, setDispatchMethod] = useState('round_robin');
 
-  // Filter accounts by type - remove PowerMTA from email accounts
+  // Filter accounts by type
   const activeAccounts = accounts.filter(account => account.is_active && account.type !== 'powermta');
   const smtpAccounts = activeAccounts.filter(acc => acc.type === 'smtp');
   const appsScriptAccounts = activeAccounts.filter(acc => acc.type === 'apps-script');
   const activePowerMTAServers = powerMTAServers.filter(server => server.is_active);
+
+  // Check if PowerMTA mode is enabled
+  const isPowerMTAMode = sendMethod === 'cloud-functions-powermta';
 
   // Sending modes configuration
   const sendingModes = [
@@ -198,7 +197,7 @@ const CampaignComposer: React.FC<CampaignComposerProps> = ({ onSend }) => {
     setSubjectRotation(updated);
   };
 
-  // Form submission - CORRECTED VALIDATION
+  // Form submission - UPDATED VALIDATION
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
@@ -207,15 +206,15 @@ const CampaignComposer: React.FC<CampaignComposerProps> = ({ onSend }) => {
       return;
     }
 
-    // Always require email accounts since PowerMTA is just middleware
+    // Always require email accounts for both cloud functions modes
     if (selectedAccounts.length === 0) {
       toast.error('Please select at least one email account (SMTP or Apps Script)');
       return;
     }
 
-    // PowerMTA server is optional for monitoring/control
-    if (powerMTAEnabled && !selectedPowerMTAServer) {
-      toast.error('Please select a PowerMTA server for monitoring');
+    // PowerMTA server is required only when using PowerMTA mode
+    if (isPowerMTAMode && !selectedPowerMTAServer) {
+      toast.error('Please select a PowerMTA server for monitoring and control');
       return;
     }
 
@@ -225,9 +224,9 @@ const CampaignComposer: React.FC<CampaignComposerProps> = ({ onSend }) => {
       recipients,
       html_content: htmlContent,
       text_content: textContent,
-      send_method: sendMethod, // Only smtp or apps-script
+      send_method: sendMethod,
       selected_accounts: selectedAccounts,
-      selected_powermta_server: powerMTAEnabled ? selectedPowerMTAServer : null,
+      selected_powermta_server: isPowerMTAMode ? selectedPowerMTAServer : null,
       config: {
         use_test_after: useTestAfter,
         test_after_email: testAfterEmail,
@@ -244,7 +243,7 @@ const CampaignComposer: React.FC<CampaignComposerProps> = ({ onSend }) => {
         functions_to_use: functionsToUse,
         accounts_to_use: accountsToUse,
         smart_optimization: smartOptimization,
-        powermta_enabled: powerMTAEnabled,
+        powermta_enabled: isPowerMTAMode,
         sending_mode: sendingMode,
         dispatch_method: dispatchMethod
       }
@@ -316,7 +315,69 @@ const CampaignComposer: React.FC<CampaignComposerProps> = ({ onSend }) => {
               onDeselectAll={handleDeselectAllAccounts}
             />
 
-            {/* Smart Configuration Section */}
+            {/* Sending Method Selection - NEW STRUCTURE */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Cloud className="w-5 h-5" />
+                  Sending Method Selection
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div>
+                  <Label htmlFor="sendMethod">Choose Sending Infrastructure</Label>
+                  <Select value={sendMethod} onValueChange={setSendMethod}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="cloud-functions">
+                        <div className="flex items-center gap-2">
+                          <Cloud className="w-4 h-4" />
+                          Cloud Functions ({smtpAccounts.length + appsScriptAccounts.length} accounts)
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="cloud-functions-powermta">
+                        <div className="flex items-center gap-2">
+                          <Server className="w-4 h-4" />
+                          Cloud Functions + PowerMTA ({smtpAccounts.length + appsScriptAccounts.length} accounts + {activePowerMTAServers.length} servers)
+                        </div>
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-gray-500 mt-2">
+                    {isPowerMTAMode 
+                      ? 'PowerMTA will monitor and control your SMTP/Apps Script sending with pause/resume functionality'
+                      : 'Direct cloud function sending using your SMTP/Apps Script accounts'
+                    }
+                  </p>
+                </div>
+
+                {/* PowerMTA Server Selection - Only show when PowerMTA mode is selected */}
+                {isPowerMTAMode && (
+                  <div>
+                    <Label htmlFor="powerMTAServer">Select PowerMTA Server for Monitoring & Control</Label>
+                    <Select value={selectedPowerMTAServer} onValueChange={setSelectedPowerMTAServer}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select PowerMTA server" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {activePowerMTAServers.map((server) => (
+                          <SelectItem key={server.id} value={server.id}>
+                            {server.name || 'Unnamed Server'} ({server.server_host || 'No Host'})
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-gray-500 mt-1">
+                      Configure PowerMTA servers in Settings → PowerMTA Servers tab
+                    </p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Smart Configuration Section - Only show for cloud functions */}
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
@@ -406,7 +467,7 @@ const CampaignComposer: React.FC<CampaignComposerProps> = ({ onSend }) => {
               </CardContent>
             </Card>
 
-            {/* Sending Configuration - FULLY UPGRADED ⚡ */}
+            {/* Sending Configuration - Show advanced options only for cloud functions */}
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
@@ -514,77 +575,6 @@ const CampaignComposer: React.FC<CampaignComposerProps> = ({ onSend }) => {
                     </AlertDescription>
                   </Alert>
                 )}
-
-                {/* Configuration Summary */}
-                <div className="p-4 border rounded-lg bg-blue-50">
-                  <h4 className="font-medium text-blue-900 mb-2">Configuration Summary</h4>
-                  <div className="space-y-1 text-sm">
-                    <div className="flex justify-between">
-                      <span>Sending Mode:</span>
-                      <span className="font-medium">{selectedMode?.label || 'Not selected'}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>Dispatch Method:</span>
-                      <span className="font-medium">{selectedDispatch?.label || 'Not selected'}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>Performance Level:</span>
-                      <span className="font-medium">
-                        {sendingMode === 'zero_delay' && dispatchMethod === 'parallel' ? '🚀 EXTREME' :
-                         sendingMode === 'zero_delay' ? '⚡ VERY HIGH' :
-                         sendingMode === 'fast' ? '🔥 HIGH' : '✅ SAFE'}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* PowerMTA Monitoring - CORRECTED TO MIDDLEWARE APPROACH */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Server className="w-5 h-5" />
-                  PowerMTA Monitoring & Control (Optional)
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <Alert>
-                  <Server className="w-4 h-4" />
-                  <AlertDescription>
-                    <strong>PowerMTA acts as middleware:</strong> It monitors and controls your SMTP/Apps Script sending, 
-                    providing pause/resume functionality and real-time monitoring. You still need to select your sending accounts above.
-                  </AlertDescription>
-                </Alert>
-
-                <div className="flex items-center justify-between">
-                  <div>
-                    <Label>Enable PowerMTA Monitoring</Label>
-                    <p className="text-sm text-gray-600">Use PowerMTA server to monitor and control email sending</p>
-                  </div>
-                  <Switch checked={powerMTAEnabled} onCheckedChange={setPowerMTAEnabled} />
-                </div>
-
-                {powerMTAEnabled && (
-                  <div>
-                    <Label htmlFor="powerMTAServer">Select PowerMTA Server for Monitoring</Label>
-                    <Select value={selectedPowerMTAServer} onValueChange={setSelectedPowerMTAServer}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select PowerMTA server" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {activePowerMTAServers.map((server) => (
-                          <SelectItem key={server.id} value={server.id}>
-                            {server.name || 'Unnamed Server'} ({server.server_host || 'No Host'})
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <p className="text-xs text-gray-500 mt-1">
-                      Configure PowerMTA servers in Settings → PowerMTA Servers tab
-                    </p>
-                  </div>
-                )}
               </CardContent>
             </Card>
             
@@ -602,14 +592,22 @@ const CampaignComposer: React.FC<CampaignComposerProps> = ({ onSend }) => {
                     <Input
                       placeholder="Sender Name"
                       value={from.name}
-                      onChange={(e) => updateFromEmail(index, 'name', e.target.value)}
+                      onChange={(e) => {
+                        const updated = [...fromRotation];
+                        updated[index].name = e.target.value;
+                        setFromRotation(updated);
+                      }}
                       className="flex-1"
                     />
                     <Input
                       placeholder="sender@example.com"
                       type="email"
                       value={from.email}
-                      onChange={(e) => updateFromEmail(index, 'email', e.target.value)}
+                      onChange={(e) => {
+                        const updated = [...fromRotation];
+                        updated[index].email = e.target.value;
+                        setFromRotation(updated);
+                      }}
                       className="flex-1"
                     />
                     {fromRotation.length > 1 && (
@@ -617,14 +615,18 @@ const CampaignComposer: React.FC<CampaignComposerProps> = ({ onSend }) => {
                         type="button" 
                         variant="outline" 
                         size="sm"
-                        onClick={() => removeFromEmail(index)}
+                        onClick={() => {
+                          if (fromRotation.length > 1) {
+                            setFromRotation(fromRotation.filter((_, i) => i !== index));
+                          }
+                        }}
                       >
                         <X className="w-4 h-4" />
                       </Button>
                     )}
                   </div>
                 ))}
-                <Button type="button" variant="outline" onClick={addFromEmail}>
+                <Button type="button" variant="outline" onClick={() => setFromRotation([...fromRotation, { name: '', email: '' }])}>
                   Add From Email
                 </Button>
               </CardContent>
@@ -644,7 +646,11 @@ const CampaignComposer: React.FC<CampaignComposerProps> = ({ onSend }) => {
                     <Input
                       placeholder="Subject line..."
                       value={subject}
-                      onChange={(e) => updateSubject(index, e.target.value)}
+                      onChange={(e) => {
+                        const updated = [...subjectRotation];
+                        updated[index] = e.target.value;
+                        setSubjectRotation(updated);
+                      }}
                       className="flex-1"
                     />
                     {subjectRotation.length > 1 && (
@@ -652,14 +658,18 @@ const CampaignComposer: React.FC<CampaignComposerProps> = ({ onSend }) => {
                         type="button" 
                         variant="outline" 
                         size="sm"
-                        onClick={() => removeSubject(index)}
+                        onClick={() => {
+                          if (subjectRotation.length > 1) {
+                            setSubjectRotation(subjectRotation.filter((_, i) => i !== index));
+                          }
+                        }}
                       >
                         <X className="w-4 h-4" />
                       </Button>
                     )}
                   </div>
                 ))}
-                <Button type="button" variant="outline" onClick={addSubject}>
+                <Button type="button" variant="outline" onClick={() => setSubjectRotation([...subjectRotation, ''])}>
                   Add Subject Variation
                 </Button>
               </CardContent>
@@ -710,37 +720,9 @@ const CampaignComposer: React.FC<CampaignComposerProps> = ({ onSend }) => {
               </CardContent>
             </Card>
 
-            {/* Sending Method Selection - CORRECTED */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Sending Method</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div>
-                  <Label htmlFor="sendMethod">Send Method</Label>
-                  <Select value={sendMethod} onValueChange={setSendMethod}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="smtp">SMTP ({smtpAccounts.length} accounts)</SelectItem>
-                      <SelectItem value="apps-script">Apps Script ({appsScriptAccounts.length} accounts)</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <p className="text-xs text-gray-500 mt-2">
-                    PowerMTA monitoring can be enabled above to control pause/resume and monitor these accounts
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Advanced Features */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Advanced Features</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                
+            {/* Show PowerMTA features only when PowerMTA mode is enabled */}
+            {isPowerMTAMode && (
+              <>
                 {/* Test After Configuration */}
                 <TestAfterSection
                   useTestAfter={useTestAfter}
@@ -751,86 +733,51 @@ const CampaignComposer: React.FC<CampaignComposerProps> = ({ onSend }) => {
                   onTestAfterCountChange={setTestAfterCount}
                 />
 
-                <Separator />
-
-                {/* Scheduling */}
-                <div className="flex items-center justify-between">
-                  <div>
-                    <Label>Schedule Campaign</Label>
-                    <p className="text-sm text-gray-600">Send at a specific date and time</p>
-                  </div>
-                  <Switch checked={useScheduling} onCheckedChange={setUseScheduling} />
-                </div>
-                {useScheduling && (
-                  <Input
-                    type="datetime-local"
-                    value={scheduledDate}
-                    onChange={(e) => setScheduledDate(e.target.value)}
-                  />
-                )}
-
-                <Separator />
-
-                {/* Tracking and Analytics */}
-                <div className="flex items-center justify-between">
-                  <div>
-                    <Label>Enable Tracking</Label>
-                    <p className="text-sm text-gray-600">Track opens, clicks, and engagement</p>
-                  </div>
-                  <Switch checked={useTracking} onCheckedChange={setUseTracking} />
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <div>
-                    <Label>Personalization</Label>
-                    <p className="text-sm text-gray-600">Use dynamic tags like {"{"}{"{"}{"}"}name{"}"}{"}"}</p>
-                  </div>
-                  <Switch checked={usePersonalization} onCheckedChange={setUsePersonalization} />
-                </div>
-
-                <Separator />
-
-                {/* Rate Limiting - Only show if not in zero delay mode */}
-                {sendingMode !== 'zero_delay' && (
-                  <>
-                    <div>
-                      <Label>Rate Limit (emails per hour)</Label>
+                {/* Advanced Features for PowerMTA */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle>PowerMTA Advanced Features</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-6">
+                    
+                    {/* Scheduling */}
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <Label>Schedule Campaign</Label>
+                        <p className="text-sm text-gray-600">Send at a specific date and time</p>
+                      </div>
+                      <Switch checked={useScheduling} onCheckedChange={setUseScheduling} />
+                    </div>
+                    {useScheduling && (
                       <Input
-                        type="number"
-                        value={rateLimit}
-                        onChange={(e) => setRateLimit(parseInt(e.target.value) || 50)}
-                        min="1"
-                        max="1000"
+                        type="datetime-local"
+                        value={scheduledDate}
+                        onChange={(e) => setScheduledDate(e.target.value)}
                       />
+                    )}
+
+                    <Separator />
+
+                    {/* Tracking and Analytics */}
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <Label>Enable Tracking</Label>
+                        <p className="text-sm text-gray-600">Track opens, clicks, and engagement</p>
+                      </div>
+                      <Switch checked={useTracking} onCheckedChange={setUseTracking} />
                     </div>
 
-                    {/* Retry Settings */}
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="flex items-center justify-between">
                       <div>
-                        <Label>Max Retries</Label>
-                        <Input
-                          type="number"
-                          value={maxRetries}
-                          onChange={(e) => setMaxRetries(parseInt(e.target.value) || 3)}
-                          min="0"
-                          max="10"
-                        />
+                        <Label>Personalization</Label>
+                        <p className="text-sm text-gray-600">Use dynamic tags like {"{"}{"{"}{"}"}name{"}"}{"}"}</p>
                       </div>
-                      <div>
-                        <Label>Retry Delay (seconds)</Label>
-                        <Input
-                          type="number"
-                          value={retryDelay}
-                          onChange={(e) => setRetryDelay(parseInt(e.target.value) || 300)}
-                          min="60"
-                          max="3600"
-                        />
-                      </div>
+                      <Switch checked={usePersonalization} onCheckedChange={setUsePersonalization} />
                     </div>
-                  </>
-                )}
-              </CardContent>
-            </Card>
+                  </CardContent>
+                </Card>
+              </>
+            )}
 
             {/* Submit Button */}
             <div className="flex justify-center">

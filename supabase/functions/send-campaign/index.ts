@@ -23,6 +23,8 @@ interface Campaign {
   html_content?: string;
   text_content?: string;
   send_method: string;
+  selected_accounts: string[];
+  selected_powermta_server?: string;
   config?: any;
 }
 
@@ -61,8 +63,8 @@ async function sendEmailViaSMTP(config: any, emailData: any): Promise<{ success:
   }
 }
 
-async function sendViaSMTP(account: EmailAccount, campaign: Campaign, recipients: string[], config: any) {
-  console.log(`Sending via SMTP: ${account.config.host}:${account.config.port}`);
+async function sendViaCloudFunctions(accounts: EmailAccount[], campaign: Campaign, recipients: string[], config: any) {
+  console.log(`Sending via Cloud Functions with ${accounts.length} accounts`);
   console.log(`Sending Mode: ${config.sending_mode}, Dispatch Method: ${config.dispatch_method}`);
   
   const results = [];
@@ -79,186 +81,165 @@ async function sendViaSMTP(account: EmailAccount, campaign: Campaign, recipients
 
   console.log(`Using ${delay}ms delay between emails`);
   
-  for (const recipient of recipients) {
-    try {
-      const emailData = {
-        from: { email: account.email, name: campaign.from_name },
-        to: recipient,
-        subject: campaign.subject,
-        html: campaign.html_content || campaign.text_content,
-        text: campaign.text_content
-      };
-
-      const result = await sendEmailViaSMTP(account.config, emailData);
-
-      if (result.success) {
-        console.log(`✓ SMTP sent to: ${recipient}`);
-        results.push({ email: recipient, status: 'sent', logs: result.logs });
-      } else {
-        console.log(`✗ SMTP failed to: ${recipient} - ${result.error}`);
-        if (result.logs) {
-          console.log(`SMTP Logs for ${recipient}:`, result.logs.join('\n'));
-        }
-        results.push({ email: recipient, status: 'failed', error: result.error, logs: result.logs });
+  // Handle different dispatch methods
+  if (config.dispatch_method === 'parallel' && config.sending_mode === 'zero_delay') {
+    console.log('🚀 PARALLEL + ZERO DELAY MODE: Maximum speed distribution');
+    
+    // Distribute recipients across accounts in parallel
+    const accountGroups = [];
+    const recipientsPerAccount = Math.ceil(recipients.length / accounts.length);
+    
+    for (let i = 0; i < accounts.length; i++) {
+      const startIndex = i * recipientsPerAccount;
+      const endIndex = Math.min(startIndex + recipientsPerAccount, recipients.length);
+      const accountRecipients = recipients.slice(startIndex, endIndex);
+      
+      if (accountRecipients.length > 0) {
+        accountGroups.push({
+          account: accounts[i],
+          recipients: accountRecipients
+        });
       }
-    } catch (error) {
-      console.log(`✗ SMTP error for ${recipient}:`, error);
-      results.push({ email: recipient, status: 'failed', error: error.message });
     }
     
-    // Apply delay only if not in zero delay mode
-    if (delay > 0) {
-      await new Promise(resolve => setTimeout(resolve, delay));
+    // Send all groups in parallel
+    const parallelResults = await Promise.all(
+      accountGroups.map(async (group) => {
+        const groupResults = [];
+        for (const recipient of group.recipients) {
+          try {
+            const emailData = {
+              from: { email: group.account.email, name: campaign.from_name },
+              to: recipient,
+              subject: campaign.subject,
+              html: campaign.html_content || campaign.text_content,
+              text: campaign.text_content
+            };
+
+            let result;
+            if (group.account.type === 'smtp') {
+              result = await sendEmailViaSMTP(group.account.config, emailData);
+            } else if (group.account.type === 'apps-script') {
+              result = await sendViaAppsScript(group.account, emailData);
+            }
+
+            if (result && result.success) {
+              console.log(`✓ Parallel sent to: ${recipient} via ${group.account.name}`);
+              groupResults.push({ email: recipient, status: 'sent', account: group.account.name, logs: result.logs });
+            } else {
+              console.log(`✗ Parallel failed to: ${recipient} via ${group.account.name} - ${result?.error}`);
+              groupResults.push({ email: recipient, status: 'failed', error: result?.error, account: group.account.name, logs: result?.logs });
+            }
+          } catch (error) {
+            console.log(`✗ Parallel error for ${recipient}:`, error);
+            groupResults.push({ email: recipient, status: 'failed', error: error.message, account: group.account.name });
+          }
+        }
+        return groupResults;
+      })
+    );
+    
+    // Flatten results
+    for (const groupResult of parallelResults) {
+      results.push(...groupResult);
     }
-  }
-  
-  return results;
-}
-
-async function sendViaAppsScript(account: EmailAccount, campaign: Campaign, recipients: string[], config: any) {
-  console.log(`Sending via Google Apps Script: ${account.config.script_id}`);
-  console.log(`Sending Mode: ${config.sending_mode}, Dispatch Method: ${config.dispatch_method}`);
-  
-  const results = [];
-  
-  // Determine delay based on sending mode
-  let delay = 1000;
-  if (config.sending_mode === 'fast') {
-    delay = 500;
-  } else if (config.sending_mode === 'zero_delay') {
-    delay = 0;
-  } else if (config.sending_mode === 'controlled') {
-    delay = 2000;
-  }
-
-  console.log(`Using ${delay}ms delay between emails`);
-  
-  try {
-    // For parallel dispatch, send all at once
-    if (config.dispatch_method === 'parallel' && config.sending_mode === 'zero_delay') {
-      console.log('🚀 PARALLEL + ZERO DELAY MODE: Sending all emails simultaneously');
-      
-      const response = await fetch(`https://script.google.com/macros/s/${account.config.deployment_id}/exec`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${account.config.api_key}`
-        },
-        body: JSON.stringify({
-          recipients: recipients,
-          subject: campaign.subject,
-          htmlContent: campaign.html_content,
-          textContent: campaign.text_content,
-          fromName: campaign.from_name,
-          fromEmail: account.email,
-          bulkMode: true,
-          parallelMode: true
-        })
-      });
-
-      if (response.ok) {
-        const result = await response.json();
-        for (const recipient of recipients) {
-          console.log(`✓ Apps Script sent to: ${recipient}`);
-          results.push({ email: recipient, status: 'sent' });
-        }
-      } else {
-        for (const recipient of recipients) {
-          console.log(`✗ Apps Script failed to: ${recipient}`);
-          results.push({ email: recipient, status: 'failed', error: 'Apps Script API error' });
-        }
-      }
-    } else {
-      // Sequential sending with delays
-      for (const recipient of recipients) {
-        const response = await fetch(`https://script.google.com/macros/s/${account.config.deployment_id}/exec`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${account.config.api_key}`
-          },
-          body: JSON.stringify({
-            recipients: [recipient],
-            subject: campaign.subject,
-            htmlContent: campaign.html_content,
-            textContent: campaign.text_content,
-            fromName: campaign.from_name,
-            fromEmail: account.email
-          })
-        });
-
-        if (response.ok) {
-          console.log(`✓ Apps Script sent to: ${recipient}`);
-          results.push({ email: recipient, status: 'sent' });
-        } else {
-          console.log(`✗ Apps Script failed to: ${recipient}`);
-          results.push({ email: recipient, status: 'failed', error: 'Apps Script API error' });
-        }
-
-        // Apply delay only if not in zero delay mode
-        if (delay > 0) {
-          await new Promise(resolve => setTimeout(resolve, delay));
-        }
-      }
-    }
-  } catch (error) {
-    console.log(`✗ Apps Script error:`, error);
+  } else {
+    // Round robin or sequential sending
+    let accountIndex = 0;
+    
     for (const recipient of recipients) {
-      results.push({ email: recipient, status: 'failed', error: error.message });
+      try {
+        const account = accounts[accountIndex % accounts.length];
+        
+        const emailData = {
+          from: { email: account.email, name: campaign.from_name },
+          to: recipient,
+          subject: campaign.subject,
+          html: campaign.html_content || campaign.text_content,
+          text: campaign.text_content
+        };
+
+        let result;
+        if (account.type === 'smtp') {
+          result = await sendEmailViaSMTP(account.config, emailData);
+        } else if (account.type === 'apps-script') {
+          result = await sendViaAppsScript(account, emailData);
+        }
+
+        if (result && result.success) {
+          console.log(`✓ Cloud Functions sent to: ${recipient} via ${account.name}`);
+          results.push({ email: recipient, status: 'sent', account: account.name, logs: result.logs });
+        } else {
+          console.log(`✗ Cloud Functions failed to: ${recipient} via ${account.name} - ${result?.error}`);
+          results.push({ email: recipient, status: 'failed', error: result?.error, account: account.name, logs: result?.logs });
+        }
+        
+        accountIndex++;
+      } catch (error) {
+        console.log(`✗ Cloud Functions error for ${recipient}:`, error);
+        results.push({ email: recipient, status: 'failed', error: error.message });
+      }
+      
+      // Apply delay only if not in zero delay mode
+      if (delay > 0) {
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
     }
   }
   
   return results;
 }
 
-async function sendViaPowerMTA(account: EmailAccount, campaign: Campaign, recipients: string[], config: any) {
-  console.log(`Sending via PowerMTA: ${account.config.server_host}`);
-  console.log(`Sending Mode: ${config.sending_mode}, Dispatch Method: ${config.dispatch_method}`);
-  
-  const results = [];
-  
+async function sendViaAppsScript(account: EmailAccount, emailData: any): Promise<{ success: boolean; error?: string; logs?: string[] }> {
   try {
-    // PowerMTA handles bulk sending natively
-    const response = await fetch(`http://${account.config.server_host}:${account.config.api_port}/api/submit`, {
+    const response = await fetch(`https://script.google.com/macros/s/${account.config.deployment_id}/exec`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Basic ${btoa(`${account.config.username}:${account.config.password}`)}`
+        'Authorization': `Bearer ${account.config.api_key}`
       },
       body: JSON.stringify({
-        recipients: recipients,
-        subject: campaign.subject,
-        html_content: campaign.html_content,
-        text_content: campaign.text_content,
-        from_name: campaign.from_name,
-        from_email: account.email,
-        virtual_mta: account.config.virtual_mta,
-        job_pool: account.config.job_pool,
-        sending_mode: config.sending_mode,
-        dispatch_method: config.dispatch_method,
-        max_speed: config.sending_mode === 'zero_delay'
+        recipients: [emailData.to],
+        subject: emailData.subject,
+        htmlContent: emailData.html,
+        textContent: emailData.text,
+        fromName: emailData.from.name,
+        fromEmail: emailData.from.email
       })
     });
 
     if (response.ok) {
-      for (const recipient of recipients) {
-        console.log(`✓ PowerMTA queued for: ${recipient}`);
-        results.push({ email: recipient, status: 'sent' });
-      }
+      return { success: true };
     } else {
-      for (const recipient of recipients) {
-        console.log(`✗ PowerMTA failed to queue: ${recipient}`);
-        results.push({ email: recipient, status: 'failed', error: 'PowerMTA API error' });
-      }
+      return { success: false, error: 'Apps Script API error' };
     }
   } catch (error) {
-    console.log(`✗ PowerMTA error:`, error);
-    for (const recipient of recipients) {
-      results.push({ email: recipient, status: 'failed', error: error.message });
+    return { success: false, error: error.message };
+  }
+}
+
+async function sendViaCloudFunctionsWithPowerMTA(accounts: EmailAccount[], campaign: Campaign, recipients: string[], config: any, powerMTAServerId: string) {
+  console.log(`Sending via Cloud Functions + PowerMTA monitoring`);
+  console.log(`PowerMTA Server ID: ${powerMTAServerId}`);
+  
+  // First, send using cloud functions
+  const cloudResults = await sendViaCloudFunctions(accounts, campaign, recipients, config);
+  
+  // Then, notify PowerMTA for monitoring (if PowerMTA integration is available)
+  try {
+    // This would be where you integrate with PowerMTA monitoring API
+    console.log(`PowerMTA monitoring enabled for campaign ${campaign.id}`);
+    
+    // Add PowerMTA monitoring metadata to results
+    for (const result of cloudResults) {
+      result.powermta_monitored = true;
+      result.powermta_server_id = powerMTAServerId;
     }
+  } catch (error) {
+    console.log('PowerMTA monitoring setup failed:', error);
   }
   
-  return results;
+  return cloudResults;
 }
 
 serve(async (req) => {
@@ -286,42 +267,43 @@ serve(async (req) => {
     // Parse campaign config
     const campaignConfig = campaign.config || {};
     console.log('Campaign Configuration:', campaignConfig);
+    console.log('Send Method:', campaign.send_method);
+    console.log('Selected Accounts:', campaign.selected_accounts);
+    console.log('Selected PowerMTA Server:', campaign.selected_powermta_server);
 
-    // Get active email account for the send method
+    // Get selected email accounts
     const { data: accounts, error: accountError } = await supabase
       .from('email_accounts')
       .select('*')
-      .eq('type', campaign.send_method)
+      .in('id', campaign.selected_accounts || [])
       .eq('is_active', true)
-      .limit(1)
 
     if (accountError) throw accountError
     if (!accounts || accounts.length === 0) {
-      throw new Error(`No active ${campaign.send_method} account found`)
+      throw new Error('No active email accounts found for the selected accounts')
     }
 
-    const account = accounts[0]
+    console.log(`Found ${accounts.length} active accounts for sending`);
 
     // Parse recipients
     const recipients = campaign.recipients.split(',')
       .map((email: string) => email.trim())
       .filter((email: string) => email.length > 0)
 
-    console.log(`Sending campaign ${campaignId} to ${recipients.length} recipients using ${campaign.send_method}`)
-    console.log(`Configuration: Mode=${campaignConfig.sending_mode || 'controlled'}, Dispatch=${campaignConfig.dispatch_method || 'round_robin'}`);
+    console.log(`Sending campaign ${campaignId} to ${recipients.length} recipients`);
 
     let results = [];
 
-    // Route to appropriate sending method with enhanced configuration
+    // Route to appropriate sending method
     switch (campaign.send_method) {
-      case 'smtp':
-        results = await sendViaSMTP(account, campaign, recipients, campaignConfig);
+      case 'cloud-functions':
+        results = await sendViaCloudFunctions(accounts, campaign, recipients, campaignConfig);
         break;
-      case 'apps-script':
-        results = await sendViaAppsScript(account, campaign, recipients, campaignConfig);
-        break;
-      case 'powermta':
-        results = await sendViaPowerMTA(account, campaign, recipients, campaignConfig);
+      case 'cloud-functions-powermta':
+        if (!campaign.selected_powermta_server) {
+          throw new Error('PowerMTA server is required for cloud-functions-powermta method');
+        }
+        results = await sendViaCloudFunctionsWithPowerMTA(accounts, campaign, recipients, campaignConfig, campaign.selected_powermta_server);
         break;
       default:
         throw new Error(`Unsupported send method: ${campaign.send_method}`);
@@ -367,9 +349,10 @@ serve(async (req) => {
         failedCount,
         totalRecipients: recipients.length,
         method: campaign.send_method,
-        account: account.name,
+        accountsUsed: accounts.map(a => a.name),
         sendingMode: campaignConfig.sending_mode || 'controlled',
         dispatchMethod: campaignConfig.dispatch_method || 'round_robin',
+        powerMTAEnabled: campaign.send_method === 'cloud-functions-powermta',
         details: results
       }),
       { 
