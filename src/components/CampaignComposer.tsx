@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -41,9 +42,9 @@ const CampaignComposer: React.FC<CampaignComposerProps> = ({ onSend }) => {
   const [recipients, setRecipients] = useState('');
   const [htmlContent, setHtmlContent] = useState('');
   const [textContent, setTextContent] = useState('');
-  const [sendMethod, setSendMethod] = useState('smtp');
+  const [sendMethod, setSendMethod] = useState('smtp'); // Only smtp or apps-script
   const [selectedAccounts, setSelectedAccounts] = useState<string[]>([]);
-  const [selectedPowerMTAServer, setSelectedPowerMTAServer] = useState('');
+  const [selectedPowerMTAServer, setSelectedPowerMTAServer] = useState(''); // Optional monitoring
   
   // Advanced features state
   const [useTestAfter, setUseTestAfter] = useState(false);
@@ -70,13 +71,14 @@ const CampaignComposer: React.FC<CampaignComposerProps> = ({ onSend }) => {
   });
 
   // PowerMTA monitoring state
-  const [monitoringEnabled, setMonitoringEnabled] = useState(false);
+  const [powerMTAEnabled, setPowerMTAEnabled] = useState(false);
 
   // Sending Configuration state - FULLY UPGRADED ⚡
   const [sendingMode, setSendingMode] = useState('controlled');
   const [dispatchMethod, setDispatchMethod] = useState('round_robin');
 
-  const activeAccounts = accounts.filter(account => account.is_active);
+  // Filter accounts by type - remove PowerMTA from email accounts
+  const activeAccounts = accounts.filter(account => account.is_active && account.type !== 'powermta');
   const smtpAccounts = activeAccounts.filter(acc => acc.type === 'smtp');
   const appsScriptAccounts = activeAccounts.filter(acc => acc.type === 'apps-script');
   const activePowerMTAServers = powerMTAServers.filter(server => server.is_active);
@@ -196,7 +198,7 @@ const CampaignComposer: React.FC<CampaignComposerProps> = ({ onSend }) => {
     setSubjectRotation(updated);
   };
 
-  // Form submission - FIXED VALIDATION LOGIC
+  // Form submission - CORRECTED VALIDATION
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
@@ -205,15 +207,15 @@ const CampaignComposer: React.FC<CampaignComposerProps> = ({ onSend }) => {
       return;
     }
 
-    // Fixed validation: Only check for PowerMTA server if send method is specifically 'powermta'
-    if (sendMethod === 'powermta' && !selectedPowerMTAServer) {
-      toast.error('Please select a PowerMTA server');
+    // Always require email accounts since PowerMTA is just middleware
+    if (selectedAccounts.length === 0) {
+      toast.error('Please select at least one email account (SMTP or Apps Script)');
       return;
     }
 
-    // Only check for email accounts if send method is NOT PowerMTA
-    if (sendMethod !== 'powermta' && selectedAccounts.length === 0) {
-      toast.error('Please select at least one email account');
+    // PowerMTA server is optional for monitoring/control
+    if (powerMTAEnabled && !selectedPowerMTAServer) {
+      toast.error('Please select a PowerMTA server for monitoring');
       return;
     }
 
@@ -223,9 +225,9 @@ const CampaignComposer: React.FC<CampaignComposerProps> = ({ onSend }) => {
       recipients,
       html_content: htmlContent,
       text_content: textContent,
-      send_method: sendMethod,
+      send_method: sendMethod, // Only smtp or apps-script
       selected_accounts: selectedAccounts,
-      selected_powermta_server: selectedPowerMTAServer,
+      selected_powermta_server: powerMTAEnabled ? selectedPowerMTAServer : null,
       config: {
         use_test_after: useTestAfter,
         test_after_email: testAfterEmail,
@@ -242,7 +244,7 @@ const CampaignComposer: React.FC<CampaignComposerProps> = ({ onSend }) => {
         functions_to_use: functionsToUse,
         accounts_to_use: accountsToUse,
         smart_optimization: smartOptimization,
-        monitoring_enabled: monitoringEnabled,
+        powermta_enabled: powerMTAEnabled,
         sending_mode: sendingMode,
         dispatch_method: dispatchMethod
       }
@@ -538,26 +540,34 @@ const CampaignComposer: React.FC<CampaignComposerProps> = ({ onSend }) => {
               </CardContent>
             </Card>
 
-            {/* PowerMTA Monitoring - Only show when PowerMTA is selected */}
-            {sendMethod === 'powermta' && (
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Server className="w-5 h-5" />
-                    PowerMTA Monitoring
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <Label>Enable Real-time Monitoring</Label>
-                      <p className="text-sm text-gray-600">Monitor PowerMTA performance in real-time</p>
-                    </div>
-                    <Switch checked={monitoringEnabled} onCheckedChange={setMonitoringEnabled} />
-                  </div>
+            {/* PowerMTA Monitoring - CORRECTED TO MIDDLEWARE APPROACH */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Server className="w-5 h-5" />
+                  PowerMTA Monitoring & Control (Optional)
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <Alert>
+                  <Server className="w-4 h-4" />
+                  <AlertDescription>
+                    <strong>PowerMTA acts as middleware:</strong> It monitors and controls your SMTP/Apps Script sending, 
+                    providing pause/resume functionality and real-time monitoring. You still need to select your sending accounts above.
+                  </AlertDescription>
+                </Alert>
 
+                <div className="flex items-center justify-between">
                   <div>
-                    <Label htmlFor="powerMTAServer">Select PowerMTA Server</Label>
+                    <Label>Enable PowerMTA Monitoring</Label>
+                    <p className="text-sm text-gray-600">Use PowerMTA server to monitor and control email sending</p>
+                  </div>
+                  <Switch checked={powerMTAEnabled} onCheckedChange={setPowerMTAEnabled} />
+                </div>
+
+                {powerMTAEnabled && (
+                  <div>
+                    <Label htmlFor="powerMTAServer">Select PowerMTA Server for Monitoring</Label>
                     <Select value={selectedPowerMTAServer} onValueChange={setSelectedPowerMTAServer}>
                       <SelectTrigger>
                         <SelectValue placeholder="Select PowerMTA server" />
@@ -570,10 +580,13 @@ const CampaignComposer: React.FC<CampaignComposerProps> = ({ onSend }) => {
                         ))}
                       </SelectContent>
                     </Select>
+                    <p className="text-xs text-gray-500 mt-1">
+                      Configure PowerMTA servers in Settings → PowerMTA Servers tab
+                    </p>
                   </div>
-                </CardContent>
-              </Card>
-            )}
+                )}
+              </CardContent>
+            </Card>
             
             {/* From Email Rotation */}
             <Card>
@@ -697,10 +710,10 @@ const CampaignComposer: React.FC<CampaignComposerProps> = ({ onSend }) => {
               </CardContent>
             </Card>
 
-            {/* Sending Configuration */}
+            {/* Sending Method Selection - CORRECTED */}
             <Card>
               <CardHeader>
-                <CardTitle>Sending Configuration</CardTitle>
+                <CardTitle>Sending Method</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div>
@@ -712,9 +725,11 @@ const CampaignComposer: React.FC<CampaignComposerProps> = ({ onSend }) => {
                     <SelectContent>
                       <SelectItem value="smtp">SMTP ({smtpAccounts.length} accounts)</SelectItem>
                       <SelectItem value="apps-script">Apps Script ({appsScriptAccounts.length} accounts)</SelectItem>
-                      <SelectItem value="powermta">PowerMTA ({activePowerMTAServers.length} servers)</SelectItem>
                     </SelectContent>
                   </Select>
+                  <p className="text-xs text-gray-500 mt-2">
+                    PowerMTA monitoring can be enabled above to control pause/resume and monitor these accounts
+                  </p>
                 </div>
               </CardContent>
             </Card>
