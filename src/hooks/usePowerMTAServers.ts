@@ -50,14 +50,26 @@ export const usePowerMTAServers = (organizationId?: string) => {
       }
 
       // Map the data to ensure all required fields are present with defaults
-      const mappedServers = (data || []).map(server => ({
-        ...server,
+      const mappedServers: PowerMTAServer[] = (data || []).map(server => ({
+        id: server.id,
+        organization_id: server.organization_id,
+        name: server.name,
+        server_host: server.server_host,
+        ssh_port: server.ssh_port,
+        username: server.username,
+        password: server.password,
+        api_port: server.api_port || undefined,
+        virtual_mta: server.virtual_mta || undefined,
+        job_pool: server.job_pool || undefined,
         proxy_enabled: server.proxy_enabled ?? false,
-        proxy_host: server.proxy_host ?? '',
-        proxy_port: server.proxy_port ?? 8080,
-        proxy_username: server.proxy_username ?? '',
-        proxy_password: server.proxy_password ?? '',
-        manual_overrides: server.manual_overrides ?? {}
+        proxy_host: server.proxy_host || undefined,
+        proxy_port: server.proxy_port || undefined,
+        proxy_username: server.proxy_username || undefined,
+        proxy_password: server.proxy_password || undefined,
+        manual_overrides: (server.manual_overrides as Record<string, string>) || {},
+        is_active: server.is_active,
+        created_at: server.created_at,
+        updated_at: server.updated_at
       }));
 
       setServers(mappedServers);
@@ -85,14 +97,26 @@ export const usePowerMTAServers = (organizationId?: string) => {
       if (error) throw error;
 
       // Map the returned data to ensure all fields are present
-      const mappedServer = {
-        ...data,
+      const mappedServer: PowerMTAServer = {
+        id: data.id,
+        organization_id: data.organization_id,
+        name: data.name,
+        server_host: data.server_host,
+        ssh_port: data.ssh_port,
+        username: data.username,
+        password: data.password,
+        api_port: data.api_port || undefined,
+        virtual_mta: data.virtual_mta || undefined,
+        job_pool: data.job_pool || undefined,
         proxy_enabled: data.proxy_enabled ?? false,
-        proxy_host: data.proxy_host ?? '',
-        proxy_port: data.proxy_port ?? 8080,
-        proxy_username: data.proxy_username ?? '',
-        proxy_password: data.proxy_password ?? '',
-        manual_overrides: data.manual_overrides ?? {}
+        proxy_host: data.proxy_host || undefined,
+        proxy_port: data.proxy_port || undefined,
+        proxy_username: data.proxy_username || undefined,
+        proxy_password: data.proxy_password || undefined,
+        manual_overrides: (data.manual_overrides as Record<string, string>) || {},
+        is_active: data.is_active,
+        created_at: data.created_at,
+        updated_at: data.updated_at
       };
 
       setServers(prev => [mappedServer, ...prev]);
@@ -117,14 +141,26 @@ export const usePowerMTAServers = (organizationId?: string) => {
       if (error) throw error;
 
       // Map the returned data to ensure all fields are present
-      const mappedServer = {
-        ...data,
+      const mappedServer: PowerMTAServer = {
+        id: data.id,
+        organization_id: data.organization_id,
+        name: data.name,
+        server_host: data.server_host,
+        ssh_port: data.ssh_port,
+        username: data.username,
+        password: data.password,
+        api_port: data.api_port || undefined,
+        virtual_mta: data.virtual_mta || undefined,
+        job_pool: data.job_pool || undefined,
         proxy_enabled: data.proxy_enabled ?? false,
-        proxy_host: data.proxy_host ?? '',
-        proxy_port: data.proxy_port ?? 8080,
-        proxy_username: data.proxy_username ?? '',
-        proxy_password: data.proxy_password ?? '',
-        manual_overrides: data.manual_overrides ?? {}
+        proxy_host: data.proxy_host || undefined,
+        proxy_port: data.proxy_port || undefined,
+        proxy_username: data.proxy_username || undefined,
+        proxy_password: data.proxy_password || undefined,
+        manual_overrides: (data.manual_overrides as Record<string, string>) || {},
+        is_active: data.is_active,
+        created_at: data.created_at,
+        updated_at: data.updated_at
       };
 
       setServers(prev => prev.map(server => server.id === id ? mappedServer : server));
