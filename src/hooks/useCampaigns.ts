@@ -69,6 +69,14 @@ export const useCampaigns = (organizationId?: string) => {
     return maxCount;
   }, []);
 
+  // Helper function to safely access config properties
+  const getConfigValue = useCallback((config: any, key: string, defaultValue: any = undefined) => {
+    if (config && typeof config === 'object' && !Array.isArray(config)) {
+      return config[key] ?? defaultValue;
+    }
+    return defaultValue;
+  }, []);
+
   const fetchCampaigns = useCallback(async (filters: CampaignFilters = {}) => {
     if (!organizationId) {
       setCampaigns([]);
@@ -131,7 +139,7 @@ export const useCampaigns = (organizationId?: string) => {
         // FIXED: Ensure total_recipients is calculated correctly
         const recipientCount = campaign.total_recipients || countRecipients(campaign.recipients || '');
         
-        // Extract selected_accounts and selected_powermta_server from config
+        // Extract selected_accounts and selected_powermta_server from config safely
         const config = campaign.config || {};
         
         return {
@@ -139,8 +147,8 @@ export const useCampaigns = (organizationId?: string) => {
           total_recipients: recipientCount,
           config: config,
           prepared_emails: Array.isArray(campaign.prepared_emails) ? campaign.prepared_emails : [],
-          selected_accounts: config.selected_accounts || [], // Extract from config
-          selected_powermta_server: config.selected_powermta_server || undefined // Extract from config
+          selected_accounts: getConfigValue(config, 'selected_accounts', []), // Extract from config safely
+          selected_powermta_server: getConfigValue(config, 'selected_powermta_server', undefined) // Extract from config safely
         };
       });
       
@@ -158,7 +166,7 @@ export const useCampaigns = (organizationId?: string) => {
     } finally {
       setLoading(false);
     }
-  }, [organizationId, currentPage, searchTerm, countRecipients]);
+  }, [organizationId, currentPage, searchTerm, countRecipients, getConfigValue]);
 
   // Memoize campaign operations
   const campaignOperations = useMemo(() => ({
@@ -212,8 +220,8 @@ export const useCampaigns = (organizationId?: string) => {
           total_recipients: recipientCount,
           config: data.config || {},
           prepared_emails: Array.isArray(data.prepared_emails) ? data.prepared_emails : [],
-          selected_accounts: config.selected_accounts || [],
-          selected_powermta_server: config.selected_powermta_server
+          selected_accounts: getConfigValue(config, 'selected_accounts', []),
+          selected_powermta_server: getConfigValue(config, 'selected_powermta_server', undefined)
         };
 
         setCampaigns(prev => [typedCampaign, ...prev.slice(0, CAMPAIGNS_PER_PAGE - 1)]);
@@ -278,8 +286,8 @@ export const useCampaigns = (organizationId?: string) => {
           ...data,
           config: data.config || {},
           prepared_emails: Array.isArray(data.prepared_emails) ? data.prepared_emails : [],
-          selected_accounts: data.config?.selected_accounts || [],
-          selected_powermta_server: data.config?.selected_powermta_server
+          selected_accounts: getConfigValue(data.config, 'selected_accounts', []),
+          selected_powermta_server: getConfigValue(data.config, 'selected_powermta_server', undefined)
         };
 
         setCampaigns(prev => prev.map(campaign => 
@@ -421,7 +429,7 @@ export const useCampaigns = (organizationId?: string) => {
       setSearchTerm(term);
       setCurrentPage(1); // Reset to first page on search
     }
-  }), [organizationId, campaigns, currentPage, totalCount, searchTerm, countRecipients]);
+  }), [organizationId, campaigns, currentPage, totalCount, searchTerm, countRecipients, getConfigValue]);
 
   // Fetch campaigns when dependencies change
   useEffect(() => {
