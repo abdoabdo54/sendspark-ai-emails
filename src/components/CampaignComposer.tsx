@@ -11,7 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Separator } from '@/components/ui/separator';
 import { 
   Mail, Send, Users, Bot, Server, 
-  TestTube, Calendar, X, Zap
+  TestTube, Calendar, X, Zap, Settings
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
@@ -21,6 +21,7 @@ import { useSimpleOrganizations } from '@/contexts/SimpleOrganizationContext';
 import CompactAccountSelector from './CompactAccountSelector';
 import SmartConfigurationPanel from './SmartConfigurationPanel';
 import PowerMTAMonitoringPanel from './PowerMTAMonitoringPanel';
+import SendingConfigurationPanel from './SendingConfigurationPanel';
 import TestAfterSection from './TestAfterSection';
 
 interface CampaignComposerProps {
@@ -69,6 +70,10 @@ const CampaignComposer: React.FC<CampaignComposerProps> = ({ onSend }) => {
 
   // PowerMTA monitoring state
   const [monitoringEnabled, setMonitoringEnabled] = useState(false);
+
+  // Sending Configuration state
+  const [sendingMode, setSendingMode] = useState('controlled');
+  const [dispatchMethod, setDispatchMethod] = useState('round_robin');
 
   const activeAccounts = accounts.filter(account => account.is_active);
   const smtpAccounts = activeAccounts.filter(acc => acc.type === 'smtp');
@@ -174,15 +179,17 @@ const CampaignComposer: React.FC<CampaignComposerProps> = ({ onSend }) => {
         scheduled_date: scheduledDate,
         use_tracking: useTracking,
         use_personalization: usePersonalization,
-        rate_limit: rateLimit,
+        rate_limit: sendingMode === 'zero_delay' ? 0 : (sendingMode === 'fast' ? 100 : rateLimit),
         max_retries: maxRetries,
-        retry_delay: retryDelay,
+        retry_delay: sendingMode === 'zero_delay' ? 0 : (sendingMode === 'fast' ? 100 : retryDelay),
         smart_config_enabled: smartConfigEnabled,
         use_manual_override: useManualOverride,
         functions_to_use: functionsToUse,
         accounts_to_use: accountsToUse,
         smart_optimization: smartOptimization,
-        monitoring_enabled: monitoringEnabled
+        monitoring_enabled: monitoringEnabled,
+        sending_mode: sendingMode,
+        dispatch_method: dispatchMethod
       }
     };
 
@@ -194,8 +201,8 @@ const CampaignComposer: React.FC<CampaignComposerProps> = ({ onSend }) => {
       {/* Header Section */}
       <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">Campaign Composer</h1>
-          <p className="text-gray-600 mt-1">Create and send professional email campaigns with advanced features</p>
+          <h1 className="text-3xl font-bold text-gray-900">Campaign Composer - FULLY UPGRADED ⚡</h1>
+          <p className="text-gray-600 mt-1">Create and send professional email campaigns with advanced features and ultimate control</p>
         </div>
         
         {/* Quick Access Buttons */}
@@ -229,7 +236,7 @@ const CampaignComposer: React.FC<CampaignComposerProps> = ({ onSend }) => {
 
       {/* Main Content Tabs */}
       <Tabs defaultValue="compose" className="w-full">
-        <TabsList className="grid w-full grid-cols-4">
+        <TabsList className="grid w-full grid-cols-5">
           <TabsTrigger value="compose" className="flex items-center gap-2">
             <Mail className="w-4 h-4" />
             Compose
@@ -237,6 +244,10 @@ const CampaignComposer: React.FC<CampaignComposerProps> = ({ onSend }) => {
           <TabsTrigger value="smart-config" className="flex items-center gap-2">
             <Zap className="w-4 h-4" />
             Smart Config
+          </TabsTrigger>
+          <TabsTrigger value="sending-config" className="flex items-center gap-2">
+            <Settings className="w-4 h-4" />
+            Sending Config
           </TabsTrigger>
           <TabsTrigger value="powermta-monitor" className="flex items-center gap-2">
             <Server className="w-4 h-4" />
@@ -478,41 +489,45 @@ const CampaignComposer: React.FC<CampaignComposerProps> = ({ onSend }) => {
 
                 <Separator />
 
-                {/* Rate Limiting */}
-                <div>
-                  <Label>Rate Limit (emails per hour)</Label>
-                  <Input
-                    type="number"
-                    value={rateLimit}
-                    onChange={(e) => setRateLimit(parseInt(e.target.value) || 50)}
-                    min="1"
-                    max="1000"
-                  />
-                </div>
+                {/* Rate Limiting - Only show if not in zero delay mode */}
+                {sendingMode !== 'zero_delay' && (
+                  <>
+                    <div>
+                      <Label>Rate Limit (emails per hour)</Label>
+                      <Input
+                        type="number"
+                        value={rateLimit}
+                        onChange={(e) => setRateLimit(parseInt(e.target.value) || 50)}
+                        min="1"
+                        max="1000"
+                      />
+                    </div>
 
-                {/* Retry Settings */}
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label>Max Retries</Label>
-                    <Input
-                      type="number"
-                      value={maxRetries}
-                      onChange={(e) => setMaxRetries(parseInt(e.target.value) || 3)}
-                      min="0"
-                      max="10"
-                    />
-                  </div>
-                  <div>
-                    <Label>Retry Delay (seconds)</Label>
-                    <Input
-                      type="number"
-                      value={retryDelay}
-                      onChange={(e) => setRetryDelay(parseInt(e.target.value) || 300)}
-                      min="60"
-                      max="3600"
-                    />
-                  </div>
-                </div>
+                    {/* Retry Settings */}
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <Label>Max Retries</Label>
+                        <Input
+                          type="number"
+                          value={maxRetries}
+                          onChange={(e) => setMaxRetries(parseInt(e.target.value) || 3)}
+                          min="0"
+                          max="10"
+                        />
+                      </div>
+                      <div>
+                        <Label>Retry Delay (seconds)</Label>
+                        <Input
+                          type="number"
+                          value={retryDelay}
+                          onChange={(e) => setRetryDelay(parseInt(e.target.value) || 300)}
+                          min="60"
+                          max="3600"
+                        />
+                      </div>
+                    </div>
+                  </>
+                )}
               </CardContent>
             </Card>
 
@@ -539,6 +554,16 @@ const CampaignComposer: React.FC<CampaignComposerProps> = ({ onSend }) => {
             onAccountsToUseChange={setAccountsToUse}
             smartOptimization={smartOptimization}
             onSmartOptimizationChange={setSmartOptimization}
+          />
+        </TabsContent>
+
+        {/* Sending Configuration Tab */}
+        <TabsContent value="sending-config" className="space-y-6">
+          <SendingConfigurationPanel
+            sendingMode={sendingMode}
+            onSendingModeChange={setSendingMode}
+            dispatchMethod={dispatchMethod}
+            onDispatchMethodChange={setDispatchMethod}
           />
         </TabsContent>
 

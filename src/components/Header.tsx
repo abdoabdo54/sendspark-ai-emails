@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { useNavigate, Link, useLocation } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
@@ -55,7 +56,9 @@ const Header: React.FC<HeaderProps> = ({ activeTab, onTabChange }) => {
 
   const handleTabNavigation = (tab: string) => {
     console.log('Header: Navigating to tab:', tab);
-    if (tab === 'campaigns') {
+    
+    // Handle direct page navigation
+    if (tab === 'campaigns' || tab === 'history') {
       navigate('/campaigns');
     } else if (tab === 'smart-config') {
       navigate('/smart-config');
@@ -63,7 +66,10 @@ const Header: React.FC<HeaderProps> = ({ activeTab, onTabChange }) => {
       navigate('/function-manager');
     } else if (tab === 'powermta-servers') {
       navigate('/powermta-servers');
+    } else if (tab === 'settings') {
+      navigate('/settings');
     } else {
+      // Handle tabs within the main page
       navigate('/');
       if (onTabChange) {
         onTabChange(tab);
@@ -74,13 +80,15 @@ const Header: React.FC<HeaderProps> = ({ activeTab, onTabChange }) => {
   // Determine the current active state based on location and activeTab
   const getCurrentActiveTab = (itemId: string) => {
     if (location.pathname === '/campaigns') {
-      return itemId === 'campaigns';
+      return itemId === 'campaigns' || itemId === 'history';
     } else if (location.pathname === '/smart-config') {
       return itemId === 'smart-config';
     } else if (location.pathname === '/function-manager') {
       return itemId === 'function-manager';
     } else if (location.pathname === '/powermta-servers') {
       return itemId === 'powermta-servers';
+    } else if (location.pathname === '/settings') {
+      return itemId === 'settings';
     } else if (location.pathname === '/') {
       return activeTab === itemId;
     }
@@ -88,18 +96,11 @@ const Header: React.FC<HeaderProps> = ({ activeTab, onTabChange }) => {
   };
 
   const navItems = [
-    { id: 'bulk', label: 'Bulk Email', icon: Mail, onClick: () => handleTabNavigation('bulk') },
+    { id: 'campaign', label: 'Campaign Composer', icon: Mail, onClick: () => handleTabNavigation('campaign') },
     { id: 'single', label: 'Single Email', icon: Mail, onClick: () => handleTabNavigation('single') },
-    { id: 'campaigns', label: 'Email Campaigns', icon: Mail, onClick: () => handleTabNavigation('campaigns') },
-    { id: 'smart-config', label: 'Smart Config', icon: BarChart3, onClick: () => handleTabNavigation('smart-config') },
+    { id: 'campaigns', label: 'Campaign History', icon: History, onClick: () => handleTabNavigation('campaigns') },
     { id: 'function-manager', label: 'Functions', icon: Settings, onClick: () => handleTabNavigation('function-manager') },
     { id: 'powermta-servers', label: 'PowerMTA', icon: Server, onClick: () => handleTabNavigation('powermta-servers') },
-  ];
-
-  const sidebarItems = [
-    { id: 'accounts-local', label: 'Local Accounts', icon: User, onClick: () => handleTabNavigation('accounts-local') },
-    { id: 'subscribers', label: 'Subscribers', icon: Users, onClick: () => handleTabNavigation('subscribers') },
-    { id: 'history', label: 'History', icon: History, onClick: () => handleTabNavigation('history') },
     { id: 'settings', label: 'Settings', icon: Settings, onClick: () => handleTabNavigation('settings') },
   ];
 
@@ -229,24 +230,6 @@ const Header: React.FC<HeaderProps> = ({ activeTab, onTabChange }) => {
                 </Button>
               );
             })}
-          </div>
-        </div>
-
-        {/* Sidebar Navigation */}
-        <div className="mt-4 border-t pt-4">
-          <div className="flex flex-wrap gap-2">
-            {sidebarItems.map((item) => (
-              <Button
-                key={item.id}
-                variant={getCurrentActiveTab(item.id) ? "default" : "ghost"}
-                size="sm"
-                onClick={item.onClick}
-                className="flex items-center gap-2"
-              >
-                <item.icon className="w-4 h-4" />
-                {item.label}
-              </Button>
-            ))}
           </div>
         </div>
       </header>
