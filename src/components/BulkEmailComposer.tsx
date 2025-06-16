@@ -888,8 +888,8 @@ const BulkEmailComposer: React.FC<BulkEmailComposerProps> = ({ onSend }) => {
                           <div key={server.id} className="border rounded-lg p-4">
                             <div className="flex items-center justify-between">
                               <div>
-                                <h4 className="font-medium">{server.name}</h4>
-                                <p className="text-sm text-gray-600">{server.server_host}</p>
+                                <h4 className="font-medium">{String(server.name)}</h4>
+                                <p className="text-sm text-gray-600">{String(server.server_host)}</p>
                                 <div className="flex items-center gap-2 mt-2">
                                   <Badge variant="default">Online</Badge>
                                   <Badge variant="outline">Queue: 0</Badge>
