@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardContent, CardTitle } from "@/components/ui/card";
@@ -8,8 +9,6 @@ import { Eye, Send, Rocket, Loader2, Zap } from "lucide-react";
 import { useClientCampaignPreparation } from "@/hooks/useClientCampaignPreparation";
 import { useCampaignSender } from "@/hooks/useCampaignSender";
 import { supabase } from "@/integrations/supabase/client";
-import { usePowerMTAServers } from "@/hooks/usePowerMTAServers";
-import { useSimpleOrganizations } from "@/contexts/SimpleOrganizationContext";
 import CampaignSendMethodSelector from "./CampaignSendMethodSelector";
 import MiddlewareController from "./MiddlewareController";
 
@@ -18,9 +17,7 @@ interface CampaignPrepareAndSendProps {
 }
 
 interface CampaignConfig {
-  sendMethod?: 'cloud_functions' | 'powermta' | 'middleware';
-  selectedPowerMTAServer?: string;
-  middlewareConfig?: any;
+  sendMethod?: 'cloud_functions' | 'middleware';
   [key: string]: any;
 }
 
@@ -31,11 +28,8 @@ const CampaignPrepareAndSend: React.FC<CampaignPrepareAndSendProps> = ({ campaig
   const [preparationDone, setPreparationDone] = useState(false);
   const [sending, setSending] = useState(false);
   const [sendResults, setSendResults] = useState<any>(null);
-  const [sendMethod, setSendMethod] = useState<'cloud_functions' | 'powermta' | 'middleware'>('cloud_functions');
-  const [selectedPowerMTAServer, setSelectedPowerMTAServer] = useState<string>('');
+  const [sendMethod, setSendMethod] = useState<'cloud_functions' | 'middleware'>('cloud_functions');
 
-  const { currentOrganization } = useSimpleOrganizations();
-  const { servers } = usePowerMTAServers(currentOrganization?.id);
   const { prepareCampaignClientSide, isProcessing, progress } = useClientCampaignPreparation();
   const { sendCampaign, isSending, progress: sendProgress } = useCampaignSender(campaign?.organization_id);
 
@@ -58,9 +52,6 @@ const CampaignPrepareAndSend: React.FC<CampaignPrepareAndSendProps> = ({ campaig
         const config = data.config as CampaignConfig;
         if (config?.sendMethod) {
           setSendMethod(config.sendMethod);
-        }
-        if (config?.selectedPowerMTAServer) {
-          setSelectedPowerMTAServer(config.selectedPowerMTAServer);
         }
       }
       setLoading(false);
@@ -117,111 +108,6 @@ const CampaignPrepareAndSend: React.FC<CampaignPrepareAndSendProps> = ({ campaig
     }
   };
 
-  const handleSendViaPowerMTA = async () => {
-    if (!selectedPowerMTAServer) {
-      toast.error('Please select a PowerMTA server');
-      return;
-    }
-
-    setSending(true);
-    setSendResults(null);
-    
-    try {
-      console.log('🚀 Pushing campaign to PowerMTA server:', selectedPowerMTAServer);
-      
-      // Get the selected PowerMTA server details
-      const selectedServer = servers.find(s => s.id === selectedPowerMTAServer);
-      if (!selectedServer) {
-        throw new Error('Selected PowerMTA server not found');
-      }
-
-      // Get all active sender accounts to push to PowerMTA
-      const { data: senderAccounts, error: accountsError } = await supabase
-        .from('email_accounts')
-        .select('*')
-        .eq('organization_id', currentOrganization?.id)
-        .eq('is_active', true);
-
-      if (accountsError) throw accountsError;
-
-      console.log('📤 Pushing sender accounts to PowerMTA:', {
-        server: selectedServer.server_host,
-        accountCount: senderAccounts?.length || 0,
-        smtpAccounts: senderAccounts?.filter(a => a.type === 'smtp').length || 0,
-        appsScriptAccounts: senderAccounts?.filter(a => a.type === 'apps-script').length || 0
-      });
-
-      // Push configuration to PowerMTA server
-      const { data, error } = await supabase.functions.invoke('push-to-powermta', {
-        body: {
-          powermta_config: {
-            server_host: selectedServer.server_host,
-            ssh_port: selectedServer.ssh_port,
-            username: selectedServer.username,
-            password: selectedServer.password,
-            api_port: selectedServer.api_port || 8080,
-            virtual_mta: selectedServer.virtual_mta || 'default',
-            job_pool: selectedServer.job_pool || 'default',
-            proxy_enabled: selectedServer.proxy_enabled,
-            proxy_host: selectedServer.proxy_host,
-            proxy_port: selectedServer.proxy_port,
-            proxy_username: selectedServer.proxy_username,
-            proxy_password: selectedServer.proxy_password,
-            manual_overrides: selectedServer.manual_overrides || {}
-          },
-          sender_accounts: senderAccounts || [],
-          campaign_data: {
-            id: campaign.id,
-            subject: campaign.subject,
-            html_content: campaign.html_content,
-            text_content: campaign.text_content,
-            from_name: campaign.from_name,
-            prepared_emails: campaign.prepared_emails,
-            total_recipients: campaign.total_recipients
-          }
-        }
-      });
-
-      if (error) throw error;
-
-      // Update campaign status to indicate it was pushed to PowerMTA
-      await supabase
-        .from('email_campaigns')
-        .update({
-          status: 'sent',
-          sent_at: new Date().toISOString(),
-          config: {
-            ...campaign.config,
-            sendMethod: 'powermta',
-            selectedPowerMTAServer: selectedPowerMTAServer,
-            powerMTAResponse: data
-          }
-        })
-        .eq('id', campaignId);
-
-      setSendResults({
-        success: true,
-        totalEmails: campaign.total_recipients,
-        method: 'powermta',
-        serverUsed: selectedServer.name,
-        configFiles: data.configFiles,
-        message: data.message || 'Campaign successfully pushed to PowerMTA server'
-      });
-      
-      toast.success(`🚀 Campaign pushed to PowerMTA server "${selectedServer.name}"!`);
-      await refresh();
-    } catch (e: any) {
-      console.error('❌ PowerMTA push error:', e);
-      toast.error(e?.message || "Failed to push campaign to PowerMTA.");
-      setSendResults({
-        success: false,
-        error: e?.message || "Failed to push to PowerMTA"
-      });
-    } finally {
-      setSending(false);
-    }
-  };
-
   const handleSendViaMiddleware = async () => {
     setSending(true);
     setSendResults(null);
@@ -246,7 +132,7 @@ const CampaignPrepareAndSend: React.FC<CampaignPrepareAndSendProps> = ({ campaig
       }));
 
       const { error: jobsError } = await supabase
-        .from('email_jobs')
+        .from('email_jobs' as any)
         .insert(emailJobs);
 
       if (jobsError) throw jobsError;
@@ -322,7 +208,7 @@ const CampaignPrepareAndSend: React.FC<CampaignPrepareAndSendProps> = ({ campaig
             <AlertDescription>
               <strong>Ultra-Fast 3-Step Process:</strong><br/>
               1. <strong>Prepare</strong>: Process emails in browser and push to Supabase<br/>
-              2. <strong>Choose Method</strong>: Cloud Functions, PowerMTA, or Middleware<br/>
+              2. <strong>Choose Method</strong>: Cloud Functions or PowerMTA Middleware<br/>
               3. <strong>Send</strong>: Fire all emails via selected method<br/>
             </AlertDescription>
           </Alert>
@@ -360,12 +246,10 @@ const CampaignPrepareAndSend: React.FC<CampaignPrepareAndSendProps> = ({ campaig
                 </AlertDescription>
               </Alert>
               
-              {/* Send Method Selection with PowerMTA server selection */}
+              {/* Send Method Selection */}
               <CampaignSendMethodSelector
                 selectedMethod={sendMethod}
                 onMethodChange={setSendMethod}
-                selectedPowerMTAServer={selectedPowerMTAServer}
-                onPowerMTAServerChange={setSelectedPowerMTAServer}
               />
               
               {/* Middleware Controller */}
@@ -382,8 +266,6 @@ const CampaignPrepareAndSend: React.FC<CampaignPrepareAndSendProps> = ({ campaig
                 onClick={() => {
                   if (sendMethod === 'cloud_functions') {
                     handleSend();
-                  } else if (sendMethod === 'powermta') {
-                    handleSendViaPowerMTA();
                   } else if (sendMethod === 'middleware') {
                     handleSendViaMiddleware();
                   }
@@ -391,8 +273,7 @@ const CampaignPrepareAndSend: React.FC<CampaignPrepareAndSendProps> = ({ campaig
                 disabled={
                   sending || 
                   isSending || 
-                  campaign.status === "sent" || 
-                  (sendMethod === 'powermta' && !selectedPowerMTAServer)
+                  campaign.status === "sent"
                 }
                 className="w-full bg-red-600 hover:bg-red-700 text-white"
               >
@@ -400,14 +281,12 @@ const CampaignPrepareAndSend: React.FC<CampaignPrepareAndSendProps> = ({ campaig
                   <>
                     <Loader2 className="animate-spin w-4 h-4 mr-1" />
                     {sendMethod === 'cloud_functions' && 'Sending Ultra-Fast...'}
-                    {sendMethod === 'powermta' && 'Pushing to PowerMTA...'}
                     {sendMethod === 'middleware' && 'Setting up Middleware...'}
                   </>
                 ) : (
                   <>
                     <Zap className="w-4 h-4 mr-2" />
                     {sendMethod === 'cloud_functions' && '2. Send Now (Cloud Functions)'}
-                    {sendMethod === 'powermta' && '2. Push to PowerMTA Server'}
                     {sendMethod === 'middleware' && '2. Setup Middleware Processing'}
                   </>
                 )}
@@ -415,8 +294,7 @@ const CampaignPrepareAndSend: React.FC<CampaignPrepareAndSendProps> = ({ campaig
               
               {sendProgress > 0 && (
                 <div className="mt-2 text-xs text-green-700">
-                  {sendMethod === 'cloud_functions' ? 'Sending' : 
-                   sendMethod === 'powermta' ? 'Pushing' : 'Setting up'} progress: {sendProgress}%
+                  {sendMethod === 'cloud_functions' ? 'Sending' : 'Setting up'} progress: {sendProgress}%
                 </div>
               )}
 
@@ -425,21 +303,13 @@ const CampaignPrepareAndSend: React.FC<CampaignPrepareAndSendProps> = ({ campaig
                   <AlertDescription>
                     {sendResults.success ? (
                       <>
-                        <strong>🚀 {sendResults.method === 'powermta' ? 'PowerMTA Push' : 
-                                      sendResults.method === 'middleware' ? 'Middleware Setup' : 'Send'} Results:</strong><br/>
-                        • Emails {sendResults.method === 'powermta' ? 'queued' : 
-                                  sendResults.method === 'middleware' ? 'queued for processing' : 'sent'}: {sendResults.totalEmails}<br/>
-                        {sendResults.method === 'powermta' && sendResults.serverUsed && (
-                          <>• PowerMTA Server: {sendResults.serverUsed}<br/></>
-                        )}
+                        <strong>🚀 {sendResults.method === 'middleware' ? 'Middleware Setup' : 'Send'} Results:</strong><br/>
+                        • Emails {sendResults.method === 'middleware' ? 'queued for processing' : 'sent'}: {sendResults.totalEmails}<br/>
                         {sendResults.actualDuration && (
                           <>
                             • Duration: {sendResults.actualDuration}ms<br/>
                             • Speed: {Math.round(sendResults.totalEmails / (sendResults.actualDuration / 1000))} emails/second<br/>
                           </>
-                        )}
-                        {sendResults.configFiles && sendResults.configFiles.length > 0 && (
-                          <>• Config Files: {sendResults.configFiles.join(', ')}<br/></>
                         )}
                         {sendResults.message && (
                           <>• Message: {sendResults.message}</>
@@ -447,8 +317,7 @@ const CampaignPrepareAndSend: React.FC<CampaignPrepareAndSendProps> = ({ campaig
                       </>
                     ) : (
                       <>
-                        <strong>❌ {sendMethod === 'cloud_functions' ? 'Send' : 
-                                      sendMethod === 'powermta' ? 'PowerMTA Push' : 'Middleware Setup'} Failed:</strong><br/>
+                        <strong>❌ {sendMethod === 'cloud_functions' ? 'Send' : 'Middleware Setup'} Failed:</strong><br/>
                         Error: {sendResults.error}
                       </>
                     )}

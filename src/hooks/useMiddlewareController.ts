@@ -16,17 +16,27 @@ export const useMiddlewareController = (config: MiddlewareConfig) => {
   });
   const [isProcessing, setIsProcessing] = useState(false);
 
-  // Fetch jobs from control table
+  // Fetch jobs from control table - using direct query since table exists
   const fetchJobs = useCallback(async (): Promise<EmailJob[]> => {
     try {
       const { data, error } = await supabase
-        .from('email_jobs')
-        .select('*')
-        .in('status', ['pending', 'active', 'retry'])
-        .order('created_at', { ascending: true })
-        .limit(config.maxConcurrency);
+        .rpc('get_email_jobs_for_processing', { 
+          max_jobs: config.maxConcurrency 
+        });
 
-      if (error) throw error;
+      if (error) {
+        // Fallback to direct query if RPC doesn't exist
+        const { data: fallbackData, error: fallbackError } = await supabase
+          .from('email_jobs' as any)
+          .select('*')
+          .in('status', ['pending', 'active', 'retry'])
+          .order('created_at', { ascending: true })
+          .limit(config.maxConcurrency);
+
+        if (fallbackError) throw fallbackError;
+        return (fallbackData || []) as EmailJob[];
+      }
+      
       return data || [];
     } catch (error) {
       console.error('Error fetching email jobs:', error);
@@ -41,7 +51,7 @@ export const useMiddlewareController = (config: MiddlewareConfig) => {
   ): Promise<void> => {
     try {
       const { error } = await supabase
-        .from('email_jobs')
+        .from('email_jobs' as any)
         .update({
           ...updates,
           updated_at: new Date().toISOString()
@@ -62,7 +72,7 @@ export const useMiddlewareController = (config: MiddlewareConfig) => {
       
       // Check if job is still active (could have been paused during processing)
       const { data: currentJob } = await supabase
-        .from('email_jobs')
+        .from('email_jobs' as any)
         .select('status')
         .eq('id', job.id)
         .single();
@@ -144,13 +154,13 @@ export const useMiddlewareController = (config: MiddlewareConfig) => {
   const updateStatus = useCallback(async (): Promise<void> => {
     try {
       const { data, error } = await supabase
-        .from('email_jobs')
+        .from('email_jobs' as any)
         .select('status')
         .gte('created_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()); // Last 24 hours
 
       if (error) throw error;
 
-      const statusCounts = (data || []).reduce((acc, job) => {
+      const statusCounts = (data || []).reduce((acc: any, job: any) => {
         acc[job.status] = (acc[job.status] || 0) + 1;
         return acc;
       }, {} as Record<string, number>);
@@ -183,7 +193,7 @@ export const useMiddlewareController = (config: MiddlewareConfig) => {
   const pauseCampaign = useCallback(async (campaignId: string): Promise<void> => {
     try {
       const { error } = await supabase
-        .from('email_jobs')
+        .from('email_jobs' as any)
         .update({ status: 'paused', updated_at: new Date().toISOString() })
         .eq('campaign_id', campaignId)
         .in('status', ['pending', 'active', 'retry']);
@@ -201,7 +211,7 @@ export const useMiddlewareController = (config: MiddlewareConfig) => {
   const resumeCampaign = useCallback(async (campaignId: string): Promise<void> => {
     try {
       const { error } = await supabase
-        .from('email_jobs')
+        .from('email_jobs' as any)
         .update({ status: 'active', updated_at: new Date().toISOString() })
         .eq('campaign_id', campaignId)
         .eq('status', 'paused');
