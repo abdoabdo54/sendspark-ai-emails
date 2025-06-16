@@ -614,9 +614,15 @@ export type Database = {
           id: string
           is_active: boolean
           job_pool: string | null
+          manual_overrides: Json | null
           name: string
           organization_id: string
           password: string
+          proxy_enabled: boolean | null
+          proxy_host: string | null
+          proxy_password: string | null
+          proxy_port: number | null
+          proxy_username: string | null
           server_host: string
           ssh_port: number
           updated_at: string
@@ -629,9 +635,15 @@ export type Database = {
           id?: string
           is_active?: boolean
           job_pool?: string | null
+          manual_overrides?: Json | null
           name: string
           organization_id: string
           password: string
+          proxy_enabled?: boolean | null
+          proxy_host?: string | null
+          proxy_password?: string | null
+          proxy_port?: number | null
+          proxy_username?: string | null
           server_host: string
           ssh_port?: number
           updated_at?: string
@@ -644,9 +656,15 @@ export type Database = {
           id?: string
           is_active?: boolean
           job_pool?: string | null
+          manual_overrides?: Json | null
           name?: string
           organization_id?: string
           password?: string
+          proxy_enabled?: boolean | null
+          proxy_host?: string | null
+          proxy_password?: string | null
+          proxy_port?: number | null
+          proxy_username?: string | null
           server_host?: string
           ssh_port?: number
           updated_at?: string

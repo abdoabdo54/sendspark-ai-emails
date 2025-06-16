@@ -51,7 +51,8 @@ const PowerMTAServers = () => {
         proxy_port: config.proxy_port,
         proxy_username: config.proxy_username,
         proxy_password: config.proxy_password,
-        manual_overrides: config.manual_overrides || {}
+        manual_overrides: config.manual_overrides || {},
+        is_active: true
       });
       
       toast({
@@ -176,7 +177,7 @@ const PowerMTAServers = () => {
           <div className="flex gap-2">
             <Button
               variant="outline"
-              onClick={handleRefresh}
+              onClick={() => refetch()}
               disabled={loading}
               className="flex items-center gap-2"
             >
@@ -364,7 +365,7 @@ const PowerMTAServers = () => {
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => handleWebInterface(server)}
+                      onClick={() => setWebInterfaceUrl(`http://${server.server_host}:${server.api_port || 8080}`)}
                       disabled={!server.api_port}
                       title="Open Web Interface"
                     >
@@ -374,7 +375,11 @@ const PowerMTAServers = () => {
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => handleDeleteServer(server.id, server.name)}
+                      onClick={() => {
+                        if (confirm(`Are you sure you want to delete "${server.name}"?`)) {
+                          deleteServer(server.id);
+                        }
+                      }}
                       className="text-red-600 hover:text-red-700"
                     >
                       <Trash2 className="w-3 h-3" />

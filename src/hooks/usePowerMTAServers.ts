@@ -49,7 +49,18 @@ export const usePowerMTAServers = (organizationId?: string) => {
         return;
       }
 
-      setServers(data || []);
+      // Map the data to ensure all required fields are present with defaults
+      const mappedServers = (data || []).map(server => ({
+        ...server,
+        proxy_enabled: server.proxy_enabled ?? false,
+        proxy_host: server.proxy_host ?? '',
+        proxy_port: server.proxy_port ?? 8080,
+        proxy_username: server.proxy_username ?? '',
+        proxy_password: server.proxy_password ?? '',
+        manual_overrides: server.manual_overrides ?? {}
+      }));
+
+      setServers(mappedServers);
     } catch (error) {
       console.error('Error fetching PowerMTA servers:', error);
       setServers([]);
@@ -73,9 +84,20 @@ export const usePowerMTAServers = (organizationId?: string) => {
 
       if (error) throw error;
 
-      setServers(prev => [data, ...prev]);
+      // Map the returned data to ensure all fields are present
+      const mappedServer = {
+        ...data,
+        proxy_enabled: data.proxy_enabled ?? false,
+        proxy_host: data.proxy_host ?? '',
+        proxy_port: data.proxy_port ?? 8080,
+        proxy_username: data.proxy_username ?? '',
+        proxy_password: data.proxy_password ?? '',
+        manual_overrides: data.manual_overrides ?? {}
+      };
+
+      setServers(prev => [mappedServer, ...prev]);
       toast.success(`PowerMTA server ${serverData.name} has been added successfully`);
-      return data;
+      return mappedServer;
     } catch (error) {
       console.error('Error adding PowerMTA server:', error);
       toast.error('Failed to add PowerMTA server');
@@ -94,9 +116,20 @@ export const usePowerMTAServers = (organizationId?: string) => {
 
       if (error) throw error;
 
-      setServers(prev => prev.map(server => server.id === id ? data : server));
+      // Map the returned data to ensure all fields are present
+      const mappedServer = {
+        ...data,
+        proxy_enabled: data.proxy_enabled ?? false,
+        proxy_host: data.proxy_host ?? '',
+        proxy_port: data.proxy_port ?? 8080,
+        proxy_username: data.proxy_username ?? '',
+        proxy_password: data.proxy_password ?? '',
+        manual_overrides: data.manual_overrides ?? {}
+      };
+
+      setServers(prev => prev.map(server => server.id === id ? mappedServer : server));
       toast.success('PowerMTA server updated successfully');
-      return data;
+      return mappedServer;
     } catch (error) {
       console.error('Error updating PowerMTA server:', error);
       toast.error('Failed to update PowerMTA server');
