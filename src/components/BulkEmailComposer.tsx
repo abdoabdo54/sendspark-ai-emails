@@ -575,13 +575,64 @@ const BulkEmailComposer: React.FC<BulkEmailComposerProps> = ({ onSend }) => {
               </Card>
             </div>
 
-            {/* Account Selection */}
-            <AccountSelector
-              selectedAccounts={selectedAccounts}
-              onAccountsChange={setSelectedAccounts}
-              onSelectAll={handleSelectAllAccounts}
-              onDeselectAll={handleDeselectAllAccounts}
-            />
+            {/* Account Selection with Select/Deselect All */}
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <CardTitle className="flex items-center gap-2">
+                    <Users className="w-5 h-5" />
+                    Account Selection
+                  </CardTitle>
+                  <div className="flex gap-2">
+                    <Button variant="outline" size="sm" onClick={handleSelectAllAccounts}>
+                      <Check className="w-4 h-4 mr-1" />
+                      Select All
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={handleDeselectAllAccounts}>
+                      <X className="w-4 h-4 mr-1" />
+                      Deselect All
+                    </Button>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {activeAccounts.map((account) => (
+                    <div key={account.id} className="border rounded-lg p-4">
+                      <div className="flex items-center justify-between">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <Checkbox
+                              checked={selectedAccounts.includes(account.id)}
+                              onCheckedChange={() => handleAccountToggle(account.id)}
+                            />
+                            <div>
+                              <p className="font-medium">{account.display_name || account.email}</p>
+                              <p className="text-sm text-gray-600">{account.email}</p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2 mt-2">
+                            <Badge variant={account.type === 'smtp' ? 'default' : 'secondary'}>
+                              {account.type.toUpperCase()}
+                            </Badge>
+                            <Badge variant="outline">
+                              {account.daily_quota || 'Unlimited'} daily
+                            </Badge>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                {activeAccounts.length === 0 && (
+                  <div className="text-center py-8 text-gray-500">
+                    <Users className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                    <p>No active accounts found</p>
+                    <p className="text-sm">Add accounts in Settings to get started</p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
 
             {/* PowerMTA Server Integration */}
             {activePowerMTAServers.length > 0 && (
