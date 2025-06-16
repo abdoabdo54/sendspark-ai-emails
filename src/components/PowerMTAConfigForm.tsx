@@ -1,363 +1,458 @@
 
-import React, { useState } from 'react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Eye, EyeOff, Server, TestTube, ExternalLink, Globe, CheckCircle, XCircle } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Separator } from "@/components/ui/separator";
+import { Badge } from "@/components/ui/badge";
 import { toast } from '@/hooks/use-toast';
 import { testPowerMTAConnection } from '@/utils/powerMTASender';
-
-interface PowerMTAConfig {
-  server_host: string;
-  ssh_port: number;
-  username: string;
-  password: string;
-  api_port?: number;
-  virtual_mta?: string;
-  job_pool?: string;
-}
+import { Loader2, TestTube, Globe, Terminal, Plus, Trash2 } from 'lucide-react';
 
 interface PowerMTAConfigFormProps {
-  onSubmit: (name: string, config: PowerMTAConfig) => void;
+  onSubmit: (name: string, email: string, config: any) => Promise<void>;
   onCancel: () => void;
-  initialData?: {
-    name: string;
-    config: PowerMTAConfig;
-  };
+  initialData?: any;
 }
 
-const PowerMTAConfigForm = ({ onSubmit, onCancel, initialData }: PowerMTAConfigFormProps) => {
-  const [name, setName] = useState(initialData?.name || '');
-  const [showPassword, setShowPassword] = useState(false);
-  const [isTesting, setIsTesting] = useState(false);
-  const [showWebTest, setShowWebTest] = useState(false);
-  const [webTestStatus, setWebTestStatus] = useState<'loading' | 'success' | 'error' | null>(null);
-  const [config, setConfig] = useState<PowerMTAConfig>(initialData?.config || {
+const PowerMTAConfigForm: React.FC<PowerMTAConfigFormProps> = ({
+  onSubmit,
+  onCancel,
+  initialData
+}) => {
+  const [formData, setFormData] = useState({
+    name: '',
+    email: '',
     server_host: '',
     ssh_port: 22,
     username: '',
     password: '',
     api_port: 8080,
-    virtual_mta: 'default',
-    job_pool: 'default'
+    virtual_mta: '',
+    job_pool: '',
+    manual_overrides: {} as Record<string, string>
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const [testing, setTesting] = useState(false);
+  const [webTestUrl, setWebTestUrl] = useState('');
+  const [newOverrideKey, setNewOverrideKey] = useState('');
+  const [newOverrideValue, setNewOverrideValue] = useState('');
+
+  useEffect(() => {
+    if (initialData) {
+      console.log('Loading PowerMTA initial data:', initialData);
+      setFormData({
+        name: initialData.name || '',
+        email: initialData.email || '',
+        server_host: initialData.config?.server_host || '',
+        ssh_port: initialData.config?.ssh_port || 22,
+        username: initialData.config?.username || '',
+        password: initialData.config?.password || '',
+        api_port: initialData.config?.api_port || 8080,
+        virtual_mta: initialData.config?.virtual_mta || '',
+        job_pool: initialData.config?.job_pool || '',
+        manual_overrides: initialData.config?.manual_overrides || {}
+      });
+    }
+  }, [initialData]);
+
+  useEffect(() => {
+    if (formData.server_host && formData.api_port) {
+      setWebTestUrl(`http://${formData.server_host}:${formData.api_port}`);
+    }
+  }, [formData.server_host, formData.api_port]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    if (!name.trim() || !config.server_host || !config.username || !config.password) {
+
+    if (!formData.name.trim()) {
       toast({
-        title: "Missing Information",
-        description: "Please fill in all required fields",
+        title: "Error",
+        description: "PowerMTA server name is required",
         variant: "destructive"
       });
       return;
     }
 
-    onSubmit(name, config);
-  };
+    if (!formData.server_host.trim()) {
+      toast({
+        title: "Error", 
+        description: "Server host/IP is required",
+        variant: "destructive"
+      });
+      return;
+    }
 
-  const updateConfig = (key: keyof PowerMTAConfig, value: any) => {
-    setConfig(prev => ({ ...prev, [key]: value }));
+    const config = {
+      server_host: formData.server_host,
+      ssh_port: formData.ssh_port,
+      username: formData.username,
+      password: formData.password,
+      api_port: formData.api_port,
+      virtual_mta: formData.virtual_mta,
+      job_pool: formData.job_pool,
+      manual_overrides: formData.manual_overrides
+    };
+
+    await onSubmit(formData.name, formData.email, config);
   };
 
   const handleTestConnection = async () => {
-    if (!config.server_host || !config.username || !config.password) {
+    if (!formData.server_host || !formData.username || !formData.password) {
       toast({
-        title: "Missing Information",
-        description: "Please fill in server host, username, and password to test the connection",
+        title: "Error",
+        description: "Please fill in server host, username and password before testing",
         variant: "destructive"
       });
       return;
     }
 
-    setIsTesting(true);
+    setTesting(true);
+    console.log('🔍 Testing PowerMTA connection with:', {
+      host: formData.server_host,
+      port: formData.ssh_port,
+      username: formData.username
+    });
+
     try {
-      console.log('🔍 Testing PowerMTA SSH connection:', { 
-        host: config.server_host, 
-        port: config.ssh_port,
-        username: config.username
-      });
-      
       const result = await testPowerMTAConnection({
-        name: name || 'Test Server',
-        ...config
+        name: formData.name,
+        server_host: formData.server_host,
+        ssh_port: formData.ssh_port,
+        username: formData.username,
+        password: formData.password,
+        api_port: formData.api_port
       });
-      
+
       if (result.success) {
         toast({
-          title: "SSH Connection Successful!",
-          description: result.serverInfo || "PowerMTA server SSH connection is working correctly"
+          title: "Connection Successful",
+          description: result.serverInfo || "PowerMTA server connection successful"
         });
       } else {
         toast({
-          title: "SSH Connection Failed",
-          description: result.error || "Unable to connect to PowerMTA server via SSH",
+          title: "Connection Failed",
+          description: result.error || "Failed to connect to PowerMTA server",
           variant: "destructive"
         });
       }
     } catch (error) {
-      console.error('SSH connection test error:', error);
+      console.error('❌ PowerMTA test error:', error);
       toast({
-        title: "SSH Connection Failed",
-        description: "Unable to connect to PowerMTA server via SSH",
+        title: "Test Error",
+        description: error instanceof Error ? error.message : "Unknown error occurred",
         variant: "destructive"
       });
     } finally {
-      setIsTesting(false);
+      setTesting(false);
     }
   };
 
-  const handleToggleWebTest = () => {
-    setShowWebTest(!showWebTest);
-    if (!showWebTest) {
-      setWebTestStatus('loading');
-    } else {
-      setWebTestStatus(null);
+  const addManualOverride = () => {
+    if (!newOverrideKey.trim() || !newOverrideValue.trim()) {
+      toast({
+        title: "Error",
+        description: "Both key and value are required for manual override",
+        variant: "destructive"
+      });
+      return;
     }
-  };
 
-  const getWebInterfaceUrl = () => {
-    const port = config.api_port || 8080;
-    return `http://${config.server_host}:${port}`;
-  };
+    setFormData(prev => ({
+      ...prev,
+      manual_overrides: {
+        ...prev.manual_overrides,
+        [newOverrideKey.trim()]: newOverrideValue.trim()
+      }
+    }));
 
-  const handleIframeLoad = () => {
-    console.log('✅ PowerMTA web interface loaded successfully');
-    setWebTestStatus('success');
+    setNewOverrideKey('');
+    setNewOverrideValue('');
+
     toast({
-      title: "Web Interface Loaded",
-      description: "PowerMTA web interface is accessible"
+      title: "Override Added",
+      description: `Manual override "${newOverrideKey}" has been added`
     });
   };
 
-  const handleIframeError = () => {
-    console.error('❌ PowerMTA web interface failed to load');
-    setWebTestStatus('error');
-    toast({
-      title: "Web Interface Failed",
-      description: "Unable to load PowerMTA web interface - check server host and port",
-      variant: "destructive"
+  const removeManualOverride = (key: string) => {
+    setFormData(prev => {
+      const newOverrides = { ...prev.manual_overrides };
+      delete newOverrides[key];
+      return {
+        ...prev,
+        manual_overrides: newOverrides
+      };
     });
+
+    toast({
+      title: "Override Removed",
+      description: `Manual override "${key}" has been removed`
+    });
+  };
+
+  const updateManualOverride = (key: string, value: string) => {
+    setFormData(prev => ({
+      ...prev,
+      manual_overrides: {
+        ...prev.manual_overrides,
+        [key]: value
+      }
+    }));
   };
 
   return (
-    <Card className="w-full max-w-2xl mx-auto">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Server className="w-5 h-5" />
-          PowerMTA Server Configuration
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        <Alert className="mb-6">
-          <AlertDescription>
-            Configure your PowerMTA server settings. PowerMTA will use your existing SMTP and Apps Script accounts for sending - no separate email configuration needed.
-          </AlertDescription>
-        </Alert>
+    <div className="space-y-6">
+      <Card>
+        <CardHeader>
+          <CardTitle>
+            {initialData ? 'Edit PowerMTA Server' : 'Add PowerMTA Server'}
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="name">Server Name *</Label>
+                <Input
+                  id="name"
+                  value={formData.name}
+                  onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+                  placeholder="e.g., PowerMTA Production"
+                  required
+                />
+              </div>
 
-        <form onSubmit={handleSubmit} className="space-y-6">
-          <div>
-            <Label htmlFor="server-name">Server Name *</Label>
-            <Input
-              id="server-name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="My PowerMTA Server"
-              required
-            />
-          </div>
+              <div>
+                <Label htmlFor="email">Contact Email</Label>
+                <Input
+                  id="email"
+                  type="email"
+                  value={formData.email}
+                  onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
+                  placeholder="admin@example.com"
+                />
+              </div>
+            </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <Label htmlFor="server-host">Server Host/IP *</Label>
-              <Input
-                id="server-host"
-                value={config.server_host}
-                onChange={(e) => updateConfig('server_host', e.target.value)}
-                placeholder="192.168.1.100 or server.domain.com"
-                required
-              />
-            </div>
-            <div>
-              <Label htmlFor="ssh-port">SSH Port *</Label>
-              <Input
-                id="ssh-port"
-                type="number"
-                value={config.ssh_port}
-                onChange={(e) => updateConfig('ssh_port', parseInt(e.target.value) || 22)}
-                placeholder="22"
-                required
-              />
-            </div>
-          </div>
+            <Separator />
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <Label htmlFor="username">SSH Username *</Label>
-              <Input
-                id="username"
-                value={config.username}
-                onChange={(e) => updateConfig('username', e.target.value)}
-                placeholder="root"
-                required
-              />
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="server_host">Server Host/IP *</Label>
+                <Input
+                  id="server_host"
+                  value={formData.server_host}
+                  onChange={(e) => setFormData(prev => ({ ...prev, server_host: e.target.value }))}
+                  placeholder="159.223.129.223"
+                  required
+                />
+              </div>
+
+              <div>
+                <Label htmlFor="ssh_port">SSH Port</Label>
+                <Input
+                  id="ssh_port"
+                  type="number"
+                  value={formData.ssh_port}
+                  onChange={(e) => setFormData(prev => ({ ...prev, ssh_port: parseInt(e.target.value) || 22 }))}
+                  placeholder="22"
+                  min="1"
+                  max="65535"
+                />
+              </div>
             </div>
-            <div>
-              <Label htmlFor="password">SSH Password *</Label>
-              <div className="relative">
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="username">SSH Username *</Label>
+                <Input
+                  id="username"
+                  value={formData.username}
+                  onChange={(e) => setFormData(prev => ({ ...prev, username: e.target.value }))}
+                  placeholder="root"
+                  required
+                />
+              </div>
+
+              <div>
+                <Label htmlFor="password">SSH Password *</Label>
                 <Input
                   id="password"
-                  type={showPassword ? 'text' : 'password'}
-                  value={config.password}
-                  onChange={(e) => updateConfig('password', e.target.value)}
-                  placeholder="Your server password"
+                  type="password"
+                  value={formData.password}
+                  onChange={(e) => setFormData(prev => ({ ...prev, password: e.target.value }))}
+                  placeholder="••••••••"
                   required
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <Label htmlFor="api_port">Web Interface Port</Label>
+                <Input
+                  id="api_port"
+                  type="number"
+                  value={formData.api_port}
+                  onChange={(e) => setFormData(prev => ({ ...prev, api_port: parseInt(e.target.value) || 8080 }))}
+                  placeholder="8080"
+                  min="1"
+                  max="65535"
+                />
+              </div>
+
+              <div>
+                <Label htmlFor="virtual_mta">Virtual MTA</Label>
+                <Input
+                  id="virtual_mta"
+                  value={formData.virtual_mta}
+                  onChange={(e) => setFormData(prev => ({ ...prev, virtual_mta: e.target.value }))}
+                  placeholder="default"
+                />
+              </div>
+
+              <div>
+                <Label htmlFor="job_pool">Job Pool</Label>
+                <Input
+                  id="job_pool"
+                  value={formData.job_pool}
+                  onChange={(e) => setFormData(prev => ({ ...prev, job_pool: e.target.value }))}
+                  placeholder="default"
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-2 pt-4">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleTestConnection}
+                disabled={testing}
+                className="flex items-center gap-2"
+              >
+                {testing ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Terminal className="w-4 h-4" />
+                )}
+                {testing ? 'Testing SSH...' : 'Test SSH Connection'}
+              </Button>
+
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  if (webTestUrl) {
+                    window.open(webTestUrl, '_blank', 'width=800,height=600');
+                  }
+                }}
+                disabled={!webTestUrl}
+                className="flex items-center gap-2"
+              >
+                <Globe className="w-4 h-4" />
+                Test Web Interface
+              </Button>
+            </div>
+
+            {webTestUrl && (
+              <div className="space-y-2">
+                <Label>Web Interface Preview:</Label>
+                <div className="border rounded-lg p-2 bg-gray-50">
+                  <p className="text-sm text-gray-600 mb-2">Testing: {webTestUrl}</p>
+                  <iframe
+                    src={webTestUrl}
+                    width="100%"
+                    height="300"
+                    className="border rounded bg-white"
+                    title="PowerMTA Web Interface"
+                    onError={() => console.log('Failed to load PowerMTA web interface')}
+                  />
+                </div>
+              </div>
+            )}
+
+            <Separator />
+
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <Label className="text-base font-medium">Manual Override Configuration</Label>
+                <Badge variant="outline">Customizable</Badge>
+              </div>
+              
+              <p className="text-sm text-gray-600">
+                Add custom configuration parameters that will override default PowerMTA settings.
+              </p>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                <Input
+                  placeholder="Configuration Key"
+                  value={newOverrideKey}
+                  onChange={(e) => setNewOverrideKey(e.target.value)}
+                />
+                <Input
+                  placeholder="Configuration Value"
+                  value={newOverrideValue}
+                  onChange={(e) => setNewOverrideValue(e.target.value)}
                 />
                 <Button
                   type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
-                  onClick={() => setShowPassword(!showPassword)}
+                  variant="outline"
+                  onClick={addManualOverride}
+                  className="flex items-center gap-2"
                 >
-                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  <Plus className="w-4 h-4" />
+                  Add Override
                 </Button>
               </div>
-            </div>
-          </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div>
-              <Label htmlFor="api-port">Web Interface Port</Label>
-              <Input
-                id="api-port"
-                type="number"
-                value={config.api_port || ''}
-                onChange={(e) => updateConfig('api_port', parseInt(e.target.value) || undefined)}
-                placeholder="8080"
-              />
-            </div>
-            <div>
-              <Label htmlFor="virtual-mta">Virtual MTA</Label>
-              <Input
-                id="virtual-mta"
-                value={config.virtual_mta || ''}
-                onChange={(e) => updateConfig('virtual_mta', e.target.value)}
-                placeholder="default"
-              />
-            </div>
-            <div>
-              <Label htmlFor="job-pool">Job Pool</Label>
-              <Input
-                id="job-pool"
-                value={config.job_pool || ''}
-                onChange={(e) => updateConfig('job_pool', e.target.value)}
-                placeholder="default"
-              />
-            </div>
-          </div>
-
-          {/* Web Interface Test Section */}
-          {config.server_host && (
-            <Card className="border-blue-200 bg-blue-50">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-sm flex items-center gap-2">
-                  <Globe className="w-4 h-4" />
-                  PowerMTA Web Interface Test
-                  <Button 
-                    type="button" 
-                    variant="outline" 
-                    size="sm"
-                    onClick={handleToggleWebTest}
-                  >
-                    {showWebTest ? 'Hide' : 'Show'} Web Test
-                  </Button>
-                </CardTitle>
-              </CardHeader>
-              {showWebTest && (
-                <CardContent className="space-y-3">
-                  <div className="text-sm">
-                    <p><strong>URL:</strong> {getWebInterfaceUrl()}</p>
-                    <div className="flex items-center gap-2 mt-2">
-                      {webTestStatus === 'loading' && (
-                        <>
-                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
-                          <span className="text-blue-700">Loading web interface...</span>
-                        </>
-                      )}
-                      {webTestStatus === 'success' && (
-                        <>
-                          <CheckCircle className="w-4 h-4 text-green-600" />
-                          <span className="text-green-700">Web interface loaded successfully</span>
-                        </>
-                      )}
-                      {webTestStatus === 'error' && (
-                        <>
-                          <XCircle className="w-4 h-4 text-red-600" />
-                          <span className="text-red-700">Failed to load web interface</span>
-                        </>
-                      )}
-                    </div>
+              {Object.keys(formData.manual_overrides).length > 0 && (
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">Current Overrides:</Label>
+                  <div className="space-y-2 max-h-40 overflow-y-auto border rounded-lg p-3 bg-gray-50">
+                    {Object.entries(formData.manual_overrides).map(([key, value]) => (
+                      <div key={key} className="flex items-center gap-2 p-2 bg-white rounded border">
+                        <div className="flex-1 grid grid-cols-2 gap-2">
+                          <Input
+                            value={key}
+                            readOnly
+                            className="text-sm font-mono bg-gray-50"
+                          />
+                          <Input
+                            value={value}
+                            onChange={(e) => updateManualOverride(key, e.target.value)}
+                            className="text-sm font-mono"
+                          />
+                        </div>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => removeManualOverride(key)}
+                          className="flex items-center gap-1"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </Button>
+                      </div>
+                    ))}
                   </div>
-                  <div className="border rounded-lg bg-white" style={{ height: '300px' }}>
-                    <iframe
-                      src={getWebInterfaceUrl()}
-                      className="w-full h-full rounded-lg"
-                      title="PowerMTA Web Interface"
-                      onLoad={handleIframeLoad}
-                      onError={handleIframeError}
-                      sandbox="allow-same-origin allow-scripts allow-forms"
-                    />
-                  </div>
-                  <Button 
-                    type="button" 
-                    variant="outline" 
-                    size="sm"
-                    onClick={() => window.open(getWebInterfaceUrl(), '_blank')}
-                  >
-                    <ExternalLink className="w-3 h-3 mr-1" />
-                    Open in New Tab
-                  </Button>
-                </CardContent>
+                </div>
               )}
-            </Card>
-          )}
+            </div>
 
-          <div className="flex flex-wrap gap-3">
-            <Button 
-              type="button" 
-              variant="outline" 
-              onClick={handleTestConnection}
-              disabled={isTesting || !config.server_host || !config.username || !config.password}
-            >
-              {isTesting ? (
-                <>
-                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-current mr-2"></div>
-                  Testing SSH...
-                </>
-              ) : (
-                <>
-                  <TestTube className="w-4 h-4 mr-2" />
-                  Test SSH Connection
-                </>
-              )}
-            </Button>
-          </div>
-          
-          <div className="flex justify-between space-x-3 pt-4 border-t">
-            <Button type="button" variant="outline" onClick={onCancel}>
-              Cancel
-            </Button>
-            <Button type="submit">
-              {initialData ? 'Update Server' : 'Add Server'}
-            </Button>
-          </div>
-        </form>
-      </CardContent>
-    </Card>
+            <div className="flex gap-2 pt-4">
+              <Button type="submit" className="flex-1">
+                {initialData ? 'Update PowerMTA Server' : 'Add PowerMTA Server'}
+              </Button>
+              <Button type="button" variant="outline" onClick={onCancel}>
+                Cancel
+              </Button>
+            </div>
+          </form>
+        </CardContent>
+      </Card>
+    </div>
   );
 };
 

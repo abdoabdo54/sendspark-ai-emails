@@ -71,11 +71,11 @@ const AccountManager = () => {
     setEditingAccount(null);
   };
 
-  const handleTest = async (account: any) => {
+  const handleTest = (account: any) => {
     if (account.type === 'smtp') {
-      await handleTestSMTP(account);
+      handleTestSMTP(account);
     } else if (account.type === 'apps-script') {
-      await handleTestAppsScript(account);
+      handleTestAppsScript(account);
     }
   };
 
@@ -226,7 +226,13 @@ const AccountManager = () => {
 
             <TabsContent value="powermta">
               <PowerMTAConfigForm
-                onSubmit={(name, email, config) => handleAddAccount('powermta', name, email, config)}
+                onSubmit={(name, email, config) => {
+                  if (editingAccount?.type === 'powermta') {
+                    return handleEditAccount('powermta', name, email, config);
+                  } else {
+                    return handleAddAccount('powermta', name, email, config);
+                  }
+                }}
                 onCancel={handleCancel}
                 initialData={editingAccount?.type === 'powermta' ? editingAccount : undefined}
               />
