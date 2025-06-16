@@ -19,10 +19,13 @@ import {
   Shield,
   CheckCircle,
   XCircle,
-  ExternalLink
+  ExternalLink,
+  ArrowLeft
 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 
 const PowerMTAServers = () => {
+  const navigate = useNavigate();
   const { currentOrganization } = useSimpleOrganizations();
   const { servers, loading, addServer, updateServer, deleteServer, refetch } = usePowerMTAServers(currentOrganization?.id);
   const [showAddForm, setShowAddForm] = useState(false);
@@ -147,6 +150,16 @@ const PowerMTAServers = () => {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-50 to-purple-50 p-6">
         <div className="max-w-4xl mx-auto">
+          <div className="mb-4">
+            <Button 
+              variant="outline" 
+              onClick={() => navigate('/campaigns')}
+              className="flex items-center gap-2"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              Back to Campaigns
+            </Button>
+          </div>
           <PowerMTAConfigForm
             onSubmit={editingServer ? handleUpdateServer : handleAddServer}
             onCancel={() => {
@@ -164,14 +177,24 @@ const PowerMTAServers = () => {
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-purple-50 p-6">
       <div className="max-w-7xl mx-auto space-y-6">
         <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900 flex items-center gap-2">
-              <Server className="w-8 h-8 text-blue-600" />
-              PowerMTA Servers
-            </h1>
-            <p className="text-gray-600 mt-2">
-              Manage your PowerMTA email servers and configurations
-            </p>
+          <div className="flex items-center gap-4">
+            <Button 
+              variant="outline" 
+              onClick={() => navigate('/campaigns')}
+              className="flex items-center gap-2"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              Back to Campaigns
+            </Button>
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900 flex items-center gap-2">
+                <Server className="w-8 h-8 text-blue-600" />
+                PowerMTA Servers
+              </h1>
+              <p className="text-gray-600 mt-2">
+                Manage your PowerMTA email servers and configurations
+              </p>
+            </div>
           </div>
           
           <div className="flex gap-2">
@@ -219,7 +242,7 @@ const PowerMTAServers = () => {
           </div>
         </div>
 
-        {/* Web Interface Preview */}
+        {/* Web Interface Preview - Embedded instead of popup */}
         {webInterfaceUrl && (
           <Card className="border-2 border-blue-200">
             <CardHeader>
@@ -248,7 +271,7 @@ const PowerMTAServers = () => {
               </div>
             </CardHeader>
             <CardContent>
-              <div className="border rounded-lg overflow-hidden" style={{ height: '500px' }}>
+              <div className="border rounded-lg overflow-hidden" style={{ height: '600px' }}>
                 <iframe
                   src={webInterfaceUrl}
                   className="w-full h-full"
@@ -365,9 +388,9 @@ const PowerMTAServers = () => {
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => setWebInterfaceUrl(`http://${server.server_host}:${server.api_port || 8080}`)}
+                      onClick={() => handleWebInterface(server)}
                       disabled={!server.api_port}
-                      title="Open Web Interface"
+                      title="Show Web Interface"
                     >
                       <Globe className="w-3 h-3" />
                     </Button>

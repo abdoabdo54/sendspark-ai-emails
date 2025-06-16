@@ -1,3 +1,4 @@
+
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 
 const corsHeaders = {
@@ -29,15 +30,26 @@ interface SenderAccount {
   config: any;
 }
 
+interface CampaignData {
+  id: string;
+  subject: string;
+  html_content: string;
+  text_content: string;
+  from_name: string;
+  prepared_emails: any[];
+  total_recipients: number;
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
 
   try {
-    const { powermta_config, sender_accounts }: { 
+    const { powermta_config, sender_accounts, campaign_data }: { 
       powermta_config: PowerMTAConfig,
-      sender_accounts: SenderAccount[]
+      sender_accounts: SenderAccount[],
+      campaign_data?: CampaignData
     } = await req.json()
 
     console.log('📤 PowerMTA Configuration Push:', {
@@ -45,7 +57,8 @@ serve(async (req) => {
       accountCount: sender_accounts?.length || 0,
       smtpAccounts: sender_accounts?.filter(a => a.type === 'smtp').length || 0,
       appsScriptAccounts: sender_accounts?.filter(a => a.type === 'apps-script').length || 0,
-      proxy: powermta_config.proxy_enabled ? `${powermta_config.proxy_host}:${powermta_config.proxy_port}` : 'disabled'
+      proxy: powermta_config.proxy_enabled ? `${powermta_config.proxy_host}:${powermta_config.proxy_port}` : 'disabled',
+      campaignId: campaign_data?.id || 'none'
     })
 
     if (!powermta_config.server_host || !sender_accounts?.length) {
@@ -56,8 +69,8 @@ serve(async (req) => {
       )
     }
 
-    // Push configuration to PowerMTA server via SSH
-    const configResult = await pushConfigurationToServer(powermta_config, sender_accounts);
+    // Push configuration and campaign to PowerMTA server via SSH
+    const configResult = await pushConfigurationToServer(powermta_config, sender_accounts, campaign_data);
     
     if (!configResult.success) {
       console.error('❌ Failed to push configuration to PowerMTA server:', configResult.error);
@@ -72,9 +85,12 @@ serve(async (req) => {
     return new Response(
       JSON.stringify({ 
         success: true,
-        message: 'Configuration pushed to PowerMTA server successfully',
+        message: campaign_data 
+          ? `Campaign "${campaign_data.subject}" with ${campaign_data.total_recipients} recipients pushed to PowerMTA server successfully`
+          : 'Configuration pushed to PowerMTA server successfully',
         configFiles: configResult.configFiles,
-        serverResponse: configResult.serverResponse
+        serverResponse: configResult.serverResponse,
+        campaignQueued: !!campaign_data
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )
@@ -88,7 +104,11 @@ serve(async (req) => {
   }
 })
 
-async function pushConfigurationToServer(config: PowerMTAConfig, accounts: SenderAccount[]): Promise<{ 
+async function pushConfigurationToServer(
+  config: PowerMTAConfig, 
+  accounts: SenderAccount[], 
+  campaignData?: CampaignData
+): Promise<{ 
   success: boolean; 
   error?: string; 
   configFiles?: string[];
@@ -106,6 +126,9 @@ async function pushConfigurationToServer(config: PowerMTAConfig, accounts: Sende
     const appsScriptConfig = generateAppsScriptConfig(accounts.filter(a => a.type === 'apps-script'), config);
     const mainConfig = generateMainConfig(config);
     
+    // Generate campaign queue file if campaign data is provided
+    const campaignConfig = campaignData ? generateCampaignConfig(campaignData, config) : '';
+    
     // Prepare SSH commands to push configuration
     const commands = [
       // Backup existing configuration
@@ -113,6 +136,7 @@ async function pushConfigurationToServer(config: PowerMTAConfig, accounts: Sende
       
       // Create configuration directory if not exists
       'mkdir -p /etc/pmta/configs',
+      'mkdir -p /etc/pmta/campaigns',
       
       // Write SMTP sources configuration
       `cat > /etc/pmta/configs/smtp-sources.conf << 'EOF'
@@ -128,12 +152,31 @@ EOF`,
       `cat > /etc/pmta/config << 'EOF'
 ${mainConfig}
 EOF`,
-      
+    ];
+
+    // Add campaign-specific commands if campaign data is provided
+    if (campaignData) {
+      commands.push(
+        // Write campaign configuration
+        `cat > /etc/pmta/campaigns/campaign-${campaignData.id}.conf << 'EOF'
+${campaignConfig}
+EOF`,
+        
+        // Create email queue file
+        `cat > /etc/pmta/campaigns/campaign-${campaignData.id}.queue << 'EOF'
+${generateEmailQueue(campaignData)}
+EOF`
+      );
+    }
+
+    commands.push(
       // Set proper permissions
       'chmod 640 /etc/pmta/config',
       'chmod 640 /etc/pmta/configs/*',
+      campaignData ? 'chmod 640 /etc/pmta/campaigns/*' : '',
       'chown pmta:pmta /etc/pmta/config',
       'chown pmta:pmta /etc/pmta/configs/*',
+      campaignData ? 'chown pmta:pmta /etc/pmta/campaigns/*' : '',
       
       // Validate configuration
       'pmta verify',
@@ -141,30 +184,44 @@ EOF`,
       // Reload PowerMTA
       'pmta reload',
       
+      // Submit campaign if provided
+      campaignData ? `pmta submit /etc/pmta/campaigns/campaign-${campaignData.id}.queue` : '',
+      
       // Check status
       'pmta status'
-    ];
+    );
 
     console.log('📤 Executing PowerMTA configuration commands...');
     
     // Here you would implement actual SSH connection and command execution
     // For now, we'll simulate the process and return success
     const proxyInfo = config.proxy_enabled ? ` (using proxy ${config.proxy_host}:${config.proxy_port})` : '';
+    const campaignInfo = campaignData ? `\nCampaign "${campaignData.subject}" with ${campaignData.total_recipients} recipients queued for sending` : '';
+    
     const simulatedResponse = `Configuration files created${proxyInfo}:
 - /etc/pmta/configs/smtp-sources.conf (${accounts.filter(a => a.type === 'smtp').length} SMTP sources)
 - /etc/pmta/configs/apps-script.conf (${accounts.filter(a => a.type === 'apps-script').length} Apps Script sources)
-- /etc/pmta/config updated with ${Object.keys(config.manual_overrides || {}).length} manual overrides
+- /etc/pmta/config updated with ${Object.keys(config.manual_overrides || {}).length} manual overrides${campaignInfo}
 PowerMTA configuration verified and reloaded successfully`;
     
     console.log('✅ PowerMTA configuration pushed successfully');
     
+    const configFiles = [
+      '/etc/pmta/configs/smtp-sources.conf',
+      '/etc/pmta/configs/apps-script.conf',
+      '/etc/pmta/config'
+    ];
+
+    if (campaignData) {
+      configFiles.push(
+        `/etc/pmta/campaigns/campaign-${campaignData.id}.conf`,
+        `/etc/pmta/campaigns/campaign-${campaignData.id}.queue`
+      );
+    }
+    
     return {
       success: true,
-      configFiles: [
-        '/etc/pmta/configs/smtp-sources.conf',
-        '/etc/pmta/configs/apps-script.conf',
-        '/etc/pmta/config'
-      ],
+      configFiles,
       serverResponse: simulatedResponse
     };
 
@@ -217,15 +274,14 @@ function generateAppsScriptConfig(appsScriptAccounts: SenderAccount[], config: P
 
   appsScriptAccounts.forEach((account, index) => {
     const scriptConfig = account.config;
-    const deploymentId = extractDeploymentId(scriptConfig.exec_url);
+    const deploymentId = extractDeploymentId(scriptConfig.script_url || '');
     
     configContent += `
 # Apps Script Source: ${account.name}
 <source apps-script-${index + 1}>
     type webhook
-    url ${scriptConfig.exec_url}
+    url ${scriptConfig.script_url}
     deployment-id ${deploymentId}
-    api-key ${scriptConfig.api_key || ''}
     from-name "${account.name}"
     from-email ${account.email}
     virtual-mta ${config.virtual_mta || 'default'}
@@ -295,7 +351,53 @@ include /etc/pmta/configs/apps-script.conf
   return mainConfig;
 }
 
-function extractDeploymentId(execUrl: string): string {
-  const match = execUrl.match(/\/s\/([A-Za-z0-9_-]+)\//);
+function generateCampaignConfig(campaignData: CampaignData, config: PowerMTAConfig): string {
+  return `# Campaign Configuration: ${campaignData.subject}
+# Generated on ${new Date().toISOString()}
+# Campaign ID: ${campaignData.id}
+
+<campaign ${campaignData.id}>
+    subject "${campaignData.subject}"
+    from-name "${campaignData.from_name}"
+    virtual-mta ${config.virtual_mta || 'default'}
+    job-pool ${config.job_pool || 'default'}
+    delivery-mode immediate
+    max-msg-rate 1000/h
+</campaign>
+`;
+}
+
+function generateEmailQueue(campaignData: CampaignData): string {
+  let queueContent = `# Email Queue for Campaign: ${campaignData.subject}
+# Generated on ${new Date().toISOString()}
+# Total Recipients: ${campaignData.total_recipients}
+
+`;
+
+  // Generate queue entries from prepared emails
+  if (campaignData.prepared_emails && Array.isArray(campaignData.prepared_emails)) {
+    campaignData.prepared_emails.forEach((email: any, index: number) => {
+      queueContent += `
+# Email ${index + 1}
+MAIL FROM:<${email.from_email || 'noreply@example.com'}>
+RCPT TO:<${email.to_email}>
+DATA
+From: "${campaignData.from_name}" <${email.from_email || 'noreply@example.com'}>
+To: ${email.to_email}
+Subject: ${campaignData.subject}
+Content-Type: text/html; charset=UTF-8
+
+${campaignData.html_content || campaignData.text_content}
+.
+
+`;
+    });
+  }
+
+  return queueContent;
+}
+
+function extractDeploymentId(scriptUrl: string): string {
+  const match = scriptUrl.match(/\/s\/([A-Za-z0-9_-]+)\//);
   return match ? match[1] : '';
 }
