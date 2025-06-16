@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -197,7 +196,7 @@ const CampaignComposer: React.FC<CampaignComposerProps> = ({ onSend }) => {
     setSubjectRotation(updated);
   };
 
-  // Form submission
+  // Form submission - FIXED VALIDATION LOGIC
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
@@ -206,13 +205,15 @@ const CampaignComposer: React.FC<CampaignComposerProps> = ({ onSend }) => {
       return;
     }
 
-    if (selectedAccounts.length === 0 && sendMethod !== 'powermta') {
-      toast.error('Please select at least one email account');
+    // Fixed validation: Only check for PowerMTA server if send method is specifically 'powermta'
+    if (sendMethod === 'powermta' && !selectedPowerMTAServer) {
+      toast.error('Please select a PowerMTA server');
       return;
     }
 
-    if (sendMethod === 'powermta' && !selectedPowerMTAServer) {
-      toast.error('Please select a PowerMTA server');
+    // Only check for email accounts if send method is NOT PowerMTA
+    if (sendMethod !== 'powermta' && selectedAccounts.length === 0) {
+      toast.error('Please select at least one email account');
       return;
     }
 
@@ -537,7 +538,7 @@ const CampaignComposer: React.FC<CampaignComposerProps> = ({ onSend }) => {
               </CardContent>
             </Card>
 
-            {/* PowerMTA Monitoring */}
+            {/* PowerMTA Monitoring - Only show when PowerMTA is selected */}
             {sendMethod === 'powermta' && (
               <Card>
                 <CardHeader>
