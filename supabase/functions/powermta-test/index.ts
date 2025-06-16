@@ -31,7 +31,10 @@ serve(async (req) => {
     if (!config.server_host || !config.username || !config.password) {
       console.error('❌ Missing required PowerMTA test parameters')
       return new Response(
-        JSON.stringify({ error: 'Missing required PowerMTA test parameters' }),
+        JSON.stringify({ 
+          success: false,
+          error: 'Missing required PowerMTA test parameters' 
+        }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
@@ -64,7 +67,11 @@ serve(async (req) => {
   } catch (error) {
     console.error('❌ Error in powermta-test:', error)
     return new Response(
-      JSON.stringify({ error: 'Internal server error', details: error.message }),
+      JSON.stringify({ 
+        success: false,
+        error: 'Internal server error', 
+        details: error.message 
+      }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )
   }
@@ -78,30 +85,67 @@ async function testSSHConnection(config: PowerMTATestConfig): Promise<{
   try {
     console.log(`🔐 Testing SSH connection to: ${config.server_host}:${config.ssh_port}`);
     
-    // Test commands to verify PowerMTA installation and connectivity
-    const testCommands = [
-      'whoami',
-      'uname -a',
-      'pmta version 2>/dev/null || echo "PowerMTA not found"',
-      'ls -la /var/spool/powermta/ 2>/dev/null || echo "PowerMTA spool directory not found"'
-    ];
-
-    // Simulate SSH connection test
-    // In a real implementation, you would use a proper SSH library
-    const sshTestCommand = `ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=no -p ${config.ssh_port} ${config.username}@${config.server_host} "${testCommands.join(' && ')}"`;
+    // Create a socket connection to test if the SSH port is open
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
     
-    console.log('📤 Executing SSH test commands...');
-    
-    // For now, we'll simulate a successful response
-    // In production, you would execute the actual SSH command
-    const simulatedServerInfo = `Connected as ${config.username}@${config.server_host} - PowerMTA Ready`;
-    
-    console.log('✅ SSH connection test successful');
-    
-    return {
-      success: true,
-      serverInfo: simulatedServerInfo
-    };
+    try {
+      // Test if we can connect to the SSH port
+      const testUrl = `http://${config.server_host}:${config.ssh_port}`;
+      const response = await fetch(testUrl, {
+        method: 'HEAD',
+        signal: controller.signal,
+      });
+      
+      clearTimeout(timeoutId);
+      
+      // If we get any response, the port is accessible
+      console.log('✅ SSH port is accessible');
+      return {
+        success: true,
+        serverInfo: `SSH port ${config.ssh_port} is accessible on ${config.server_host}`
+      };
+      
+    } catch (fetchError) {
+      clearTimeout(timeoutId);
+      
+      // Check if it's a network error vs connection refused
+      if (fetchError.name === 'AbortError') {
+        return {
+          success: false,
+          error: `Connection timeout - Unable to reach ${config.server_host}:${config.ssh_port}`
+        };
+      }
+      
+      // For SSH, connection refused might actually mean the port is open but rejecting HTTP
+      if (fetchError.message.includes('NetworkError') || fetchError.message.includes('Failed to fetch')) {
+        // Try a different approach - attempt to create a TCP connection
+        try {
+          const conn = await Deno.connect({
+            hostname: config.server_host,
+            port: config.ssh_port,
+          });
+          conn.close();
+          
+          console.log('✅ SSH port connection successful');
+          return {
+            success: true,
+            serverInfo: `Successfully connected to SSH port ${config.ssh_port} on ${config.server_host}`
+          };
+        } catch (tcpError) {
+          console.error('❌ TCP connection failed:', tcpError);
+          return {
+            success: false,
+            error: `Cannot connect to ${config.server_host}:${config.ssh_port} - ${tcpError.message}`
+          };
+        }
+      }
+      
+      return {
+        success: false,
+        error: `SSH connection failed: ${fetchError.message}`
+      };
+    }
 
   } catch (error) {
     console.error('❌ SSH connection test failed:', error);

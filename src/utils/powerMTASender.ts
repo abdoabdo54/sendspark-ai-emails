@@ -1,4 +1,3 @@
-
 interface PowerMTAConfig {
   name: string;
   server_host: string;
@@ -39,6 +38,15 @@ export async function testPowerMTAConnection(config: PowerMTAConfig): Promise<{ 
       port: config.ssh_port,
       username: config.username
     });
+    
+    // Validate configuration first
+    const validation = validatePowerMTAConfig(config);
+    if (!validation.valid) {
+      return { 
+        success: false, 
+        error: `Configuration error: ${validation.errors.join(', ')}`
+      };
+    }
     
     const { supabase } = await import('@/integrations/supabase/client');
     
@@ -202,6 +210,12 @@ export function validatePowerMTAConfig(config: PowerMTAConfig): { valid: boolean
   
   if (!config.server_host || config.server_host.trim() === '') {
     errors.push('PowerMTA server host/IP is required');
+  }
+  
+  // Validate IP address or domain format
+  const hostPattern = /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$|^[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9]*\.?[a-zA-Z]{2,}$/;
+  if (config.server_host && !hostPattern.test(config.server_host)) {
+    errors.push('Invalid server host format (use IP address or domain name)');
   }
   
   if (!config.ssh_port || config.ssh_port < 1 || config.ssh_port > 65535) {

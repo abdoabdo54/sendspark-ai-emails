@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Eye, EyeOff, Server, TestTube, ExternalLink, Globe } from 'lucide-react';
+import { Eye, EyeOff, Server, TestTube, ExternalLink, Globe, CheckCircle, XCircle } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { testPowerMTAConnection } from '@/utils/powerMTASender';
 
@@ -33,6 +33,7 @@ const PowerMTAConfigForm = ({ onSubmit, onCancel, initialData }: PowerMTAConfigF
   const [showPassword, setShowPassword] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
   const [showWebTest, setShowWebTest] = useState(false);
+  const [webTestStatus, setWebTestStatus] = useState<'loading' | 'success' | 'error' | null>(null);
   const [config, setConfig] = useState<PowerMTAConfig>(initialData?.config || {
     server_host: '',
     ssh_port: 22,
@@ -74,6 +75,12 @@ const PowerMTAConfigForm = ({ onSubmit, onCancel, initialData }: PowerMTAConfigF
 
     setIsTesting(true);
     try {
+      console.log('🔍 Testing PowerMTA SSH connection:', { 
+        host: config.server_host, 
+        port: config.ssh_port,
+        username: config.username
+      });
+      
       const result = await testPowerMTAConnection({
         name: name || 'Test Server',
         ...config
@@ -92,6 +99,7 @@ const PowerMTAConfigForm = ({ onSubmit, onCancel, initialData }: PowerMTAConfigF
         });
       }
     } catch (error) {
+      console.error('SSH connection test error:', error);
       toast({
         title: "SSH Connection Failed",
         description: "Unable to connect to PowerMTA server via SSH",
@@ -104,10 +112,35 @@ const PowerMTAConfigForm = ({ onSubmit, onCancel, initialData }: PowerMTAConfigF
 
   const handleToggleWebTest = () => {
     setShowWebTest(!showWebTest);
+    if (!showWebTest) {
+      setWebTestStatus('loading');
+    } else {
+      setWebTestStatus(null);
+    }
   };
 
   const getWebInterfaceUrl = () => {
-    return `http://${config.server_host}:${config.api_port || 8080}`;
+    const port = config.api_port || 8080;
+    return `http://${config.server_host}:${port}`;
+  };
+
+  const handleIframeLoad = () => {
+    console.log('✅ PowerMTA web interface loaded successfully');
+    setWebTestStatus('success');
+    toast({
+      title: "Web Interface Loaded",
+      description: "PowerMTA web interface is accessible"
+    });
+  };
+
+  const handleIframeError = () => {
+    console.error('❌ PowerMTA web interface failed to load');
+    setWebTestStatus('error');
+    toast({
+      title: "Web Interface Failed",
+      description: "Unable to load PowerMTA web interface - check server host and port",
+      variant: "destructive"
+    });
   };
 
   return (
@@ -227,6 +260,72 @@ const PowerMTAConfigForm = ({ onSubmit, onCancel, initialData }: PowerMTAConfigF
             </div>
           </div>
 
+          {/* Web Interface Test Section */}
+          {config.server_host && (
+            <Card className="border-blue-200 bg-blue-50">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <Globe className="w-4 h-4" />
+                  PowerMTA Web Interface Test
+                  <Button 
+                    type="button" 
+                    variant="outline" 
+                    size="sm"
+                    onClick={handleToggleWebTest}
+                  >
+                    {showWebTest ? 'Hide' : 'Show'} Web Test
+                  </Button>
+                </CardTitle>
+              </CardHeader>
+              {showWebTest && (
+                <CardContent className="space-y-3">
+                  <div className="text-sm">
+                    <p><strong>URL:</strong> {getWebInterfaceUrl()}</p>
+                    <div className="flex items-center gap-2 mt-2">
+                      {webTestStatus === 'loading' && (
+                        <>
+                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+                          <span className="text-blue-700">Loading web interface...</span>
+                        </>
+                      )}
+                      {webTestStatus === 'success' && (
+                        <>
+                          <CheckCircle className="w-4 h-4 text-green-600" />
+                          <span className="text-green-700">Web interface loaded successfully</span>
+                        </>
+                      )}
+                      {webTestStatus === 'error' && (
+                        <>
+                          <XCircle className="w-4 h-4 text-red-600" />
+                          <span className="text-red-700">Failed to load web interface</span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                  <div className="border rounded-lg bg-white" style={{ height: '300px' }}>
+                    <iframe
+                      src={getWebInterfaceUrl()}
+                      className="w-full h-full rounded-lg"
+                      title="PowerMTA Web Interface"
+                      onLoad={handleIframeLoad}
+                      onError={handleIframeError}
+                      sandbox="allow-same-origin allow-scripts allow-forms"
+                    />
+                  </div>
+                  <Button 
+                    type="button" 
+                    variant="outline" 
+                    size="sm"
+                    onClick={() => window.open(getWebInterfaceUrl(), '_blank')}
+                  >
+                    <ExternalLink className="w-3 h-3 mr-1" />
+                    Open in New Tab
+                  </Button>
+                </CardContent>
+              )}
+            </Card>
+          )}
+
           <div className="flex flex-wrap gap-3">
             <Button 
               type="button" 
@@ -246,66 +345,7 @@ const PowerMTAConfigForm = ({ onSubmit, onCancel, initialData }: PowerMTAConfigF
                 </>
               )}
             </Button>
-            
-            <Button 
-              type="button" 
-              variant="outline" 
-              onClick={handleToggleWebTest}
-              disabled={!config.server_host}
-            >
-              <Globe className="w-4 h-4 mr-2" />
-              {showWebTest ? 'Hide' : 'Test'} Web Interface
-            </Button>
           </div>
-
-          {/* Web Interface Test Display */}
-          {showWebTest && config.server_host && (
-            <Card className="border-blue-200 bg-blue-50">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-sm flex items-center gap-2">
-                  <Globe className="w-4 h-4" />
-                  PowerMTA Web Interface Test
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="text-sm">
-                  <p><strong>URL:</strong> {getWebInterfaceUrl()}</p>
-                  <p className="text-blue-700 text-xs mt-1">
-                    If the interface loads properly, your PowerMTA server is accessible via web.
-                  </p>
-                </div>
-                <div className="border rounded-lg bg-white" style={{ height: '300px' }}>
-                  <iframe
-                    src={getWebInterfaceUrl()}
-                    className="w-full h-full rounded-lg"
-                    title="PowerMTA Web Interface"
-                    onLoad={() => {
-                      toast({
-                        title: "Web Interface Loaded",
-                        description: "PowerMTA web interface is accessible"
-                      });
-                    }}
-                    onError={() => {
-                      toast({
-                        title: "Web Interface Failed",
-                        description: "Unable to load PowerMTA web interface",
-                        variant: "destructive"
-                      });
-                    }}
-                  />
-                </div>
-                <Button 
-                  type="button" 
-                  variant="outline" 
-                  size="sm"
-                  onClick={() => window.open(getWebInterfaceUrl(), '_blank')}
-                >
-                  <ExternalLink className="w-3 h-3 mr-1" />
-                  Open in New Tab
-                </Button>
-              </CardContent>
-            </Card>
-          )}
           
           <div className="flex justify-between space-x-3 pt-4 border-t">
             <Button type="button" variant="outline" onClick={onCancel}>

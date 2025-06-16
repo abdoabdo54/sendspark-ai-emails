@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -70,6 +69,22 @@ const AccountManager = () => {
   const handleCancel = () => {
     setActiveTab('list');
     setEditingAccount(null);
+  };
+
+  const handleTest = async (account: any) => {
+    if (account.type === 'smtp') {
+      await handleTestSMTP(account);
+    } else if (account.type === 'apps-script') {
+      await handleTestAppsScript(account);
+    }
+  };
+
+  const handleTestSMTP = async (account: any) => {
+    // Implement SMTP test logic here
+  };
+
+  const handleTestAppsScript = async (account: any) => {
+    // Implement Apps Script test logic here
   };
 
   if (orgLoading) {
