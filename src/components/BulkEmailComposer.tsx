@@ -419,7 +419,7 @@ const BulkEmailComposer: React.FC<BulkEmailComposerProps> = ({ onSend }) => {
                       <SelectContent>
                         {activePowerMTAServers.map((server) => (
                           <SelectItem key={server.id} value={server.id}>
-                            {String(server.name)} ({String(server.server_host)})
+                            {server.name ? String(server.name) : 'Unnamed Server'} ({server.server_host ? String(server.server_host) : 'No Host'})
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -606,7 +606,7 @@ const BulkEmailComposer: React.FC<BulkEmailComposerProps> = ({ onSend }) => {
                               onCheckedChange={() => handleAccountToggle(account.id)}
                             />
                             <div>
-                              <p className="font-medium">{String(account.name || account.email)}</p>
+                              <p className="font-medium">{account.name ? String(account.name) : String(account.email)}</p>
                               <p className="text-sm text-gray-600">{String(account.email)}</p>
                             </div>
                           </div>
@@ -648,16 +648,16 @@ const BulkEmailComposer: React.FC<BulkEmailComposerProps> = ({ onSend }) => {
                       <div key={server.id} className="border rounded-lg p-4">
                         <div className="flex items-center justify-between">
                           <div>
-                            <h4 className="font-medium">{String(server.name)}</h4>
+                            <h4 className="font-medium">{server.name ? String(server.name) : 'Unnamed Server'}</h4>
                             <p className="text-sm text-gray-600">
-                              {String(server.server_host)}:{String(server.ssh_port)}
+                              {server.server_host ? String(server.server_host) : 'No Host'}:{server.ssh_port ? String(server.ssh_port) : 'No Port'}
                             </p>
                             <div className="flex items-center gap-2 mt-2">
                               <Badge variant="outline">
-                                Virtual MTA: {String(server.virtual_mta || 'default')}
+                                Virtual MTA: {server.virtual_mta ? String(server.virtual_mta) : 'default'}
                               </Badge>
                               <Badge variant="outline">
-                                Job Pool: {String(server.job_pool || 'default')}
+                                Job Pool: {server.job_pool ? String(server.job_pool) : 'default'}
                               </Badge>
                             </div>
                           </div>
@@ -888,8 +888,8 @@ const BulkEmailComposer: React.FC<BulkEmailComposerProps> = ({ onSend }) => {
                           <div key={server.id} className="border rounded-lg p-4">
                             <div className="flex items-center justify-between">
                               <div>
-                                <h4 className="font-medium">{String(server.name)}</h4>
-                                <p className="text-sm text-gray-600">{String(server.server_host)}</p>
+                                <h4 className="font-medium">{server.name ? String(server.name) : 'Unnamed Server'}</h4>
+                                <p className="text-sm text-gray-600">{server.server_host ? String(server.server_host) : 'No Host'}</p>
                                 <div className="flex items-center gap-2 mt-2">
                                   <Badge variant="default">Online</Badge>
                                   <Badge variant="outline">Queue: 0</Badge>
