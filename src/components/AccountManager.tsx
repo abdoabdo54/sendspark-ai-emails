@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -226,7 +227,9 @@ const AccountManager = () => {
 
             <TabsContent value="powermta">
               <PowerMTAConfigForm
-                onSubmit={(name, email, config) => {
+                onSubmit={(name, config) => {
+                  // For PowerMTA, we don't need the email parameter
+                  const email = editingAccount?.email || 'powermta@' + (config.server_host || 'server.com');
                   if (editingAccount?.type === 'powermta') {
                     return handleEditAccount('powermta', name, email, config);
                   } else {

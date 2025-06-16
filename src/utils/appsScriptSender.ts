@@ -10,6 +10,45 @@ interface AppsScriptResponse {
   message?: string;
   quota_used?: number;
   quota_remaining?: number;
+  remainingQuota?: number; // Add this for compatibility
+}
+
+export async function testAppsScriptConnection(config: AppsScriptConfig): Promise<AppsScriptResponse> {
+  try {
+    console.log('🔗 Testing Apps Script connection...');
+    
+    const testPayload = {
+      test_connection: true,
+      timestamp: new Date().toISOString()
+    };
+
+    const response = await fetch(config.exec_url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(testPayload)
+    });
+
+    if (!response.ok) {
+      throw new Error(`Apps Script HTTP ${response.status}: ${response.statusText}`);
+    }
+
+    const result = await response.json();
+    
+    return {
+      success: true,
+      message: 'Connection test successful',
+      quota_remaining: result.quota_remaining || result.remainingQuota,
+      remainingQuota: result.quota_remaining || result.remainingQuota
+    };
+  } catch (error) {
+    console.error('❌ Apps Script connection test failed:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Connection test failed'
+    };
+  }
 }
 
 export async function sendEmailViaAppsScript(
@@ -53,7 +92,8 @@ export async function sendEmailViaAppsScript(
         success: true,
         message: result.message || 'Email sent successfully',
         quota_used: result.quota_used,
-        quota_remaining: result.quota_remaining
+        quota_remaining: result.quota_remaining,
+        remainingQuota: result.quota_remaining
       };
     } else {
       console.log(`❌ Apps Script failed for ${toEmail}: ${result.error}`);
