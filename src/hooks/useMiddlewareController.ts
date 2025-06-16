@@ -19,7 +19,8 @@ export const useMiddlewareController = (config: MiddlewareConfig) => {
   // Fetch jobs from email_jobs table
   const fetchJobs = useCallback(async (): Promise<EmailJob[]> => {
     try {
-      const { data, error } = await supabase
+      // Use any to bypass TypeScript errors until types are regenerated
+      const { data, error } = await (supabase as any)
         .from('email_jobs')
         .select('*')
         .in('status', ['pending', 'active', 'retry'])
@@ -44,7 +45,7 @@ export const useMiddlewareController = (config: MiddlewareConfig) => {
     updates: Partial<EmailJob>
   ): Promise<void> => {
     try {
-      const { error } = await supabase
+      const { error } = await (supabase as any)
         .from('email_jobs')
         .update({
           ...updates,
@@ -65,7 +66,7 @@ export const useMiddlewareController = (config: MiddlewareConfig) => {
       console.log(`🔄 Processing email job ${job.id} to ${job.recipient_email}`);
       
       // Check if job is still active (could have been paused during processing)
-      const { data: currentJob } = await supabase
+      const { data: currentJob } = await (supabase as any)
         .from('email_jobs')
         .select('status')
         .eq('id', job.id)
@@ -147,7 +148,7 @@ export const useMiddlewareController = (config: MiddlewareConfig) => {
   // Update middleware status
   const updateStatus = useCallback(async (): Promise<void> => {
     try {
-      const { data, error } = await supabase
+      const { data, error } = await (supabase as any)
         .from('email_jobs')
         .select('status')
         .gte('created_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()); // Last 24 hours
@@ -186,7 +187,7 @@ export const useMiddlewareController = (config: MiddlewareConfig) => {
   // Pause/resume campaign
   const pauseCampaign = useCallback(async (campaignId: string): Promise<void> => {
     try {
-      const { error } = await supabase
+      const { error } = await (supabase as any)
         .from('email_jobs')
         .update({ status: 'paused', updated_at: new Date().toISOString() })
         .eq('campaign_id', campaignId)
@@ -204,7 +205,7 @@ export const useMiddlewareController = (config: MiddlewareConfig) => {
 
   const resumeCampaign = useCallback(async (campaignId: string): Promise<void> => {
     try {
-      const { error } = await supabase
+      const { error } = await (supabase as any)
         .from('email_jobs')
         .update({ status: 'active', updated_at: new Date().toISOString() })
         .eq('campaign_id', campaignId)
