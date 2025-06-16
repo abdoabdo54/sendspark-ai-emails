@@ -28,6 +28,12 @@ const EmailComposer = ({ activeTab = 'campaign' }: EmailComposerProps) => {
       console.log('🔧 Send method:', campaignData.send_method);
       console.log('🖥️ PowerMTA server:', campaignData.selected_powermta_server);
       
+      // CRITICAL VALIDATION: Check if accounts are selected
+      if (!campaignData.selected_accounts || campaignData.selected_accounts.length === 0) {
+        toast.error('Please select at least one email account before creating the campaign');
+        return;
+      }
+      
       // Parse recipients to get total count
       const recipients = campaignData.recipients
         .split(',')
@@ -39,7 +45,7 @@ const EmailComposer = ({ activeTab = 'campaign' }: EmailComposerProps) => {
         return;
       }
 
-      // Ensure selected_accounts is included in the config
+      // Ensure selected_accounts is properly included in the campaign data
       const config = {
         ...campaignData.config,
         selected_accounts: campaignData.selected_accounts,
@@ -54,7 +60,7 @@ const EmailComposer = ({ activeTab = 'campaign' }: EmailComposerProps) => {
         html_content: campaignData.html_content || '',
         text_content: campaignData.text_content || '',
         send_method: campaignData.send_method || 'cloud-functions',
-        selected_accounts: campaignData.selected_accounts || [],
+        selected_accounts: campaignData.selected_accounts, // CRITICAL: Pass this through
         selected_powermta_server: campaignData.selected_powermta_server || undefined,
         status: 'draft',
         sent_count: 0,

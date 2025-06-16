@@ -13,6 +13,7 @@ interface EmailAccount {
   type: string;
   email: string;
   config: any;
+  is_active: boolean;
 }
 
 interface Campaign {
@@ -23,7 +24,7 @@ interface Campaign {
   html_content?: string;
   text_content?: string;
   send_method: string;
-  selected_accounts: string[];
+  selected_accounts?: string[];
   selected_powermta_server?: string;
   config?: any;
 }
@@ -268,37 +269,60 @@ serve(async (req) => {
     const campaignConfig = campaign.config || {};
     console.log('📋 Campaign Configuration:', campaignConfig);
     console.log('📤 Send Method:', campaign.send_method);
-    console.log('👥 Selected Accounts from campaign:', campaign.selected_accounts);
-    console.log('🖥️ Selected PowerMTA Server:', campaign.selected_powermta_server);
 
-    // Get the selected accounts - FIXED LOGIC
-    let selectedAccountIds = campaign.selected_accounts || [];
+    // CRITICAL FIX: Extract selected accounts from config with multiple fallbacks
+    let selectedAccountIds: string[] = [];
     
-    // Also check in the config as backup
-    if (!selectedAccountIds || selectedAccountIds.length === 0) {
-      selectedAccountIds = campaignConfig.selected_accounts || [];
+    // Try multiple ways to get the selected accounts
+    if (campaignConfig.selected_accounts && Array.isArray(campaignConfig.selected_accounts)) {
+      selectedAccountIds = campaignConfig.selected_accounts;
+    } else if (campaign.selected_accounts && Array.isArray(campaign.selected_accounts)) {
+      selectedAccountIds = campaign.selected_accounts;
     }
 
-    console.log('🔍 Final selected account IDs:', selectedAccountIds);
+    console.log('🔍 Final selected account IDs from campaign:', selectedAccountIds);
+    console.log('📊 Campaign config selected_accounts:', campaignConfig.selected_accounts);
+    console.log('📊 Campaign direct selected_accounts:', campaign.selected_accounts);
 
     if (!selectedAccountIds || selectedAccountIds.length === 0) {
-      throw new Error('No email accounts selected for this campaign. Please select at least one SMTP or Apps Script account.');
+      console.error('❌ No account IDs found in campaign data');
+      throw new Error('No email accounts selected for this campaign. Please edit the campaign and select at least one SMTP or Apps Script account.');
     }
 
-    // Get selected email accounts
+    // Get selected email accounts with detailed logging
+    console.log('🔍 Querying accounts with IDs:', selectedAccountIds);
+    
     const { data: accounts, error: accountError } = await supabase
       .from('email_accounts')
       .select('*')
-      .in('id', selectedAccountIds)
-      .eq('is_active', true)
+      .in('id', selectedAccountIds);
 
-    if (accountError) throw accountError
-    if (!accounts || accounts.length === 0) {
-      throw new Error(`No active email accounts found for the selected account IDs: ${selectedAccountIds.join(', ')}`)
+    console.log('📊 Raw accounts from database:', accounts);
+
+    if (accountError) {
+      console.error('❌ Database error fetching accounts:', accountError);
+      throw accountError;
     }
 
-    console.log(`📧 Found ${accounts.length} active accounts for sending`);
-    accounts.forEach(acc => console.log(`  - ${acc.name} (${acc.type}): ${acc.email}`));
+    if (!accounts || accounts.length === 0) {
+      console.error('❌ No accounts found in database for IDs:', selectedAccountIds);
+      throw new Error(`No email accounts found for the selected account IDs: ${selectedAccountIds.join(', ')}. Please check that the accounts exist and are properly configured.`);
+    }
+
+    // Filter for active accounts
+    const activeAccounts = accounts.filter(acc => acc.is_active === true);
+    console.log(`📧 Found ${accounts.length} total accounts, ${activeAccounts.length} active accounts`);
+    
+    if (activeAccounts.length === 0) {
+      console.error('❌ No active accounts found');
+      // Log account statuses for debugging
+      accounts.forEach(acc => {
+        console.log(`Account ${acc.name} (${acc.id}): is_active=${acc.is_active}, type=${acc.type}`);
+      });
+      throw new Error('No active email accounts selected for sending. Please ensure your selected accounts are enabled and active.');
+    }
+
+    activeAccounts.forEach(acc => console.log(`  - ${acc.name} (${acc.type}): ${acc.email} [ACTIVE]`));
 
     // Parse recipients
     const recipients = campaign.recipients.split(',')
@@ -312,13 +336,14 @@ serve(async (req) => {
     // Route to appropriate sending method
     switch (campaign.send_method) {
       case 'cloud-functions':
-        results = await sendViaCloudFunctions(accounts, campaign, recipients, campaignConfig);
+        results = await sendViaCloudFunctions(activeAccounts, campaign, recipients, campaignConfig);
         break;
       case 'cloud-functions-powermta':
-        if (!campaign.selected_powermta_server) {
+        if (!campaign.selected_powermta_server && !campaignConfig.selected_powermta_server) {
           throw new Error('PowerMTA server is required for cloud-functions-powermta method');
         }
-        results = await sendViaCloudFunctionsWithPowerMTA(accounts, campaign, recipients, campaignConfig, campaign.selected_powermta_server);
+        const powerMTAServer = campaign.selected_powermta_server || campaignConfig.selected_powermta_server;
+        results = await sendViaCloudFunctionsWithPowerMTA(activeAccounts, campaign, recipients, campaignConfig, powerMTAServer);
         break;
       default:
         throw new Error(`Unsupported send method: ${campaign.send_method}`);
@@ -364,7 +389,7 @@ serve(async (req) => {
         failedCount,
         totalRecipients: recipients.length,
         method: campaign.send_method,
-        accountsUsed: accounts.map(a => a.name),
+        accountsUsed: activeAccounts.map(a => a.name),
         sendingMode: campaignConfig.sending_mode || 'controlled',
         dispatchMethod: campaignConfig.dispatch_method || 'round_robin',
         powerMTAEnabled: campaign.send_method === 'cloud-functions-powermta',

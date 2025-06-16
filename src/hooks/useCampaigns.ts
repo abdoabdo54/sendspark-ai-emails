@@ -11,8 +11,8 @@ export interface Campaign {
   html_content: string;
   text_content: string;
   send_method: string;
-  selected_accounts?: string[]; // Made optional since it's stored in config
-  selected_powermta_server?: string; // Made optional since it's stored in config
+  selected_accounts?: string[];
+  selected_powermta_server?: string;
   status: string;
   sent_count: number;
   total_recipients: number;
@@ -77,6 +77,20 @@ export const useCampaigns = (organizationId?: string) => {
     return defaultValue;
   }, []);
 
+  // Helper function to extract selected accounts from campaign data
+  const extractSelectedAccounts = useCallback((campaign: any): string[] => {
+    // First try the config field
+    if (campaign.config) {
+      const configAccounts = getConfigValue(campaign.config, 'selected_accounts', []);
+      if (Array.isArray(configAccounts) && configAccounts.length > 0) {
+        return configAccounts;
+      }
+    }
+    
+    // Fallback to empty array
+    return [];
+  }, [getConfigValue]);
+
   const fetchCampaigns = useCallback(async (filters: CampaignFilters = {}) => {
     if (!organizationId) {
       setCampaigns([]);
@@ -128,7 +142,7 @@ export const useCampaigns = (organizationId?: string) => {
       const startIndex = (page - 1) * limit;
       query = query.range(startIndex, startIndex + limit - 1);
 
-      const { data, error, count } = await query;
+      const { data, error } = await query;
 
       if (error) {
         console.error('❌ Campaign fetch error:', error);
@@ -136,19 +150,22 @@ export const useCampaigns = (organizationId?: string) => {
       }
       
       const typedCampaigns: Campaign[] = (data || []).map(campaign => {
-        // FIXED: Ensure total_recipients is calculated correctly
+        // Ensure total_recipients is calculated correctly
         const recipientCount = campaign.total_recipients || countRecipients(campaign.recipients || '');
         
-        // Extract selected_accounts and selected_powermta_server from config safely
-        const config = campaign.config || {};
+        // Extract selected_accounts safely
+        const selectedAccounts = extractSelectedAccounts(campaign);
+        const selectedPowerMTAServer = getConfigValue(campaign.config, 'selected_powermta_server', undefined);
+        
+        console.log(`📋 Campaign ${campaign.id} has ${selectedAccounts.length} selected accounts:`, selectedAccounts);
         
         return {
           ...campaign,
           total_recipients: recipientCount,
-          config: config,
+          config: campaign.config || {},
           prepared_emails: Array.isArray(campaign.prepared_emails) ? campaign.prepared_emails : [],
-          selected_accounts: getConfigValue(config, 'selected_accounts', []), // Extract from config safely
-          selected_powermta_server: getConfigValue(config, 'selected_powermta_server', undefined) // Extract from config safely
+          selected_accounts: selectedAccounts,
+          selected_powermta_server: selectedPowerMTAServer
         };
       });
       
@@ -166,7 +183,7 @@ export const useCampaigns = (organizationId?: string) => {
     } finally {
       setLoading(false);
     }
-  }, [organizationId, currentPage, searchTerm, countRecipients, getConfigValue]);
+  }, [organizationId, currentPage, searchTerm, countRecipients, getConfigValue, extractSelectedAccounts]);
 
   // Memoize campaign operations
   const campaignOperations = useMemo(() => ({
@@ -181,18 +198,25 @@ export const useCampaigns = (organizationId?: string) => {
       }
 
       try {
-        // FIXED: Calculate recipient count before saving
+        // Calculate recipient count before saving
         const recipientCount = countRecipients(campaignData.recipients);
         
-        // Store selected_accounts and selected_powermta_server in config
+        // CRITICAL FIX: Ensure selected_accounts is properly stored in config
+        const selectedAccounts = campaignData.selected_accounts || [];
+        console.log('🔧 Creating campaign with selected accounts:', selectedAccounts);
+        
+        if (selectedAccounts.length === 0) {
+          console.warn('⚠️ No accounts selected for campaign creation');
+        }
+        
+        // Store all configuration including selected accounts
         const config = {
           ...campaignData.config,
-          selected_accounts: campaignData.selected_accounts || [],
+          selected_accounts: selectedAccounts,
           selected_powermta_server: campaignData.selected_powermta_server
         };
         
-        console.log('🔧 Creating campaign with config:', config);
-        console.log('📧 Recipients count:', recipientCount);
+        console.log('🔧 Campaign config being saved:', config);
 
         const { data, error } = await supabase
           .from('email_campaigns')
@@ -206,7 +230,7 @@ export const useCampaigns = (organizationId?: string) => {
             send_method: campaignData.send_method,
             status: campaignData.status,
             sent_count: campaignData.sent_count,
-            total_recipients: recipientCount, // FIXED: Set correct count
+            total_recipients: recipientCount,
             config: config,
             prepared_emails: campaignData.prepared_emails || []
           }])
@@ -220,8 +244,8 @@ export const useCampaigns = (organizationId?: string) => {
           total_recipients: recipientCount,
           config: data.config || {},
           prepared_emails: Array.isArray(data.prepared_emails) ? data.prepared_emails : [],
-          selected_accounts: getConfigValue(config, 'selected_accounts', []),
-          selected_powermta_server: getConfigValue(config, 'selected_powermta_server', undefined)
+          selected_accounts: selectedAccounts,
+          selected_powermta_server: campaignData.selected_powermta_server
         };
 
         setCampaigns(prev => [typedCampaign, ...prev.slice(0, CAMPAIGNS_PER_PAGE - 1)]);
@@ -246,12 +270,12 @@ export const useCampaigns = (organizationId?: string) => {
 
     updateCampaign: async (campaignId: string, updates: Partial<Campaign>) => {
       try {
-        // FIXED: Recalculate recipient count if recipients changed
+        // Recalculate recipient count if recipients changed
         if (updates.recipients) {
           updates.total_recipients = countRecipients(updates.recipients);
         }
 
-        // Update config if selected_accounts or selected_powermta_server changed
+        // Update config with selected accounts if provided
         let configUpdates = {};
         if (updates.selected_accounts !== undefined || updates.selected_powermta_server !== undefined) {
           const existingCampaign = campaigns.find(c => c.id === campaignId);
@@ -286,7 +310,7 @@ export const useCampaigns = (organizationId?: string) => {
           ...data,
           config: data.config || {},
           prepared_emails: Array.isArray(data.prepared_emails) ? data.prepared_emails : [],
-          selected_accounts: getConfigValue(data.config, 'selected_accounts', []),
+          selected_accounts: extractSelectedAccounts(data),
           selected_powermta_server: getConfigValue(data.config, 'selected_powermta_server', undefined)
         };
 
@@ -429,7 +453,7 @@ export const useCampaigns = (organizationId?: string) => {
       setSearchTerm(term);
       setCurrentPage(1); // Reset to first page on search
     }
-  }), [organizationId, campaigns, currentPage, totalCount, searchTerm, countRecipients, getConfigValue]);
+  }), [organizationId, campaigns, currentPage, totalCount, searchTerm, countRecipients, getConfigValue, extractSelectedAccounts]);
 
   // Fetch campaigns when dependencies change
   useEffect(() => {

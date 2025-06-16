@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
@@ -29,19 +30,6 @@ export const useEmailAccounts = (organizationId?: string) => {
       setLoading(true);
       console.log('Fetching accounts for organization:', organizationId);
       
-      // First check current user
-      const { data: { user }, error: userError } = await supabase.auth.getUser();
-      console.log('Current user:', user?.id, 'Error:', userError);
-      
-      // Check user roles for this organization
-      const { data: userRoles, error: rolesError } = await supabase
-        .from('user_roles')
-        .select('*')
-        .eq('user_id', user?.id)
-        .eq('organization_id', organizationId);
-      
-      console.log('User roles for org:', userRoles, 'Error:', rolesError);
-      
       const { data, error } = await supabase
         .from('email_accounts')
         .select('*')
@@ -66,14 +54,21 @@ export const useEmailAccounts = (organizationId?: string) => {
         // Ensure config is always an object
         const baseConfig = item.config && typeof item.config === 'object' ? item.config : {};
         
+        // CRITICAL FIX: Ensure is_active is properly handled - treat null as false
+        const isActive = item.is_active === true;
+        
+        console.log(`Account ${item.name} (${item.id}): is_active=${item.is_active} -> ${isActive}, type=${item.type}`);
+        
         return {
           ...item,
           type: item.type as 'apps-script' | 'powermta' | 'smtp',
+          is_active: isActive, // FIXED: Explicitly handle null/undefined as false
           config: baseConfig
         };
       }) as EmailAccount[];
       
       console.log('Processed accounts data:', typedData);
+      console.log('Active accounts count:', typedData.filter(acc => acc.is_active).length);
       setAccounts(typedData);
     } catch (error) {
       console.error('Error fetching email accounts:', error);
@@ -108,7 +103,7 @@ export const useEmailAccounts = (organizationId?: string) => {
         name: accountData.name,
         type: accountData.type,
         email: accountData.email,
-        is_active: accountData.is_active,
+        is_active: accountData.is_active === true, // FIXED: Ensure boolean
         config: baseConfig,
         organization_id: organizationId
       };
@@ -136,6 +131,7 @@ export const useEmailAccounts = (organizationId?: string) => {
       const typedData = {
         ...data,
         type: data.type as 'apps-script' | 'powermta' | 'smtp',
+        is_active: data.is_active === true, // FIXED: Ensure boolean
         config: data.config || {}
       } as EmailAccount;
 
@@ -159,6 +155,7 @@ export const useEmailAccounts = (organizationId?: string) => {
       
       const cleanUpdates = {
         ...updates,
+        is_active: updates.is_active === true, // FIXED: Ensure boolean
         config: baseConfig,
         updated_at: new Date().toISOString()
       };
@@ -175,6 +172,7 @@ export const useEmailAccounts = (organizationId?: string) => {
       const typedData = {
         ...data,
         type: data.type as 'apps-script' | 'powermta' | 'smtp',
+        is_active: data.is_active === true, // FIXED: Ensure boolean
         config: data.config || {}
       } as EmailAccount;
 
