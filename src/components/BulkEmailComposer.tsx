@@ -23,7 +23,6 @@ import { useEmailAccounts } from '@/hooks/useEmailAccounts';
 import { usePowerMTAServers } from '@/hooks/usePowerMTAServers';
 import { useSimpleOrganizations } from '@/contexts/SimpleOrganizationContext';
 import TestAfterSection from './TestAfterSection';
-import AccountSelector from './AccountSelector';
 
 interface BulkEmailComposerProps {
   onSend: (data: any) => void;
@@ -607,7 +606,7 @@ const BulkEmailComposer: React.FC<BulkEmailComposerProps> = ({ onSend }) => {
                               onCheckedChange={() => handleAccountToggle(account.id)}
                             />
                             <div>
-                              <p className="font-medium">{account.display_name || account.email}</p>
+                              <p className="font-medium">{account.name || account.email}</p>
                               <p className="text-sm text-gray-600">{account.email}</p>
                             </div>
                           </div>
@@ -616,7 +615,7 @@ const BulkEmailComposer: React.FC<BulkEmailComposerProps> = ({ onSend }) => {
                               {account.type.toUpperCase()}
                             </Badge>
                             <Badge variant="outline">
-                              {account.daily_quota || 'Unlimited'} daily
+                              Active
                             </Badge>
                           </div>
                         </div>
