@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { useNavigate, Link, useLocation } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
@@ -58,6 +57,12 @@ const Header: React.FC<HeaderProps> = ({ activeTab, onTabChange }) => {
     console.log('Header: Navigating to tab:', tab);
     if (tab === 'campaigns') {
       navigate('/campaigns');
+    } else if (tab === 'smart-config') {
+      navigate('/smart-config');
+    } else if (tab === 'function-manager') {
+      navigate('/function-manager');
+    } else if (tab === 'powermta-servers') {
+      navigate('/powermta-servers');
     } else {
       navigate('/');
       if (onTabChange) {
@@ -70,6 +75,12 @@ const Header: React.FC<HeaderProps> = ({ activeTab, onTabChange }) => {
   const getCurrentActiveTab = (itemId: string) => {
     if (location.pathname === '/campaigns') {
       return itemId === 'campaigns';
+    } else if (location.pathname === '/smart-config') {
+      return itemId === 'smart-config';
+    } else if (location.pathname === '/function-manager') {
+      return itemId === 'function-manager';
+    } else if (location.pathname === '/powermta-servers') {
+      return itemId === 'powermta-servers';
     } else if (location.pathname === '/') {
       return activeTab === itemId;
     }
@@ -80,9 +91,9 @@ const Header: React.FC<HeaderProps> = ({ activeTab, onTabChange }) => {
     { id: 'bulk', label: 'Bulk Email', icon: Mail, onClick: () => handleTabNavigation('bulk') },
     { id: 'single', label: 'Single Email', icon: Mail, onClick: () => handleTabNavigation('single') },
     { id: 'campaigns', label: 'Email Campaigns', icon: Mail, onClick: () => handleTabNavigation('campaigns') },
-    { id: 'testing', label: 'Testing', icon: BarChart3, onClick: () => handleTabNavigation('testing') },
-    { id: 'analytics', label: 'Analytics', icon: BarChart3, onClick: () => handleTabNavigation('analytics') },
-    { id: 'accounts', label: 'Accounts', icon: User, onClick: () => handleTabNavigation('accounts') },
+    { id: 'smart-config', label: 'Smart Config', icon: BarChart3, onClick: () => handleTabNavigation('smart-config') },
+    { id: 'function-manager', label: 'Functions', icon: Settings, onClick: () => handleTabNavigation('function-manager') },
+    { id: 'powermta-servers', label: 'PowerMTA', icon: Server, onClick: () => handleTabNavigation('powermta-servers') },
   ];
 
   const sidebarItems = [

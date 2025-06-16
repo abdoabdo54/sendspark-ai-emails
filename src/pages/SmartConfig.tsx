@@ -6,7 +6,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
-import { Calculator, Zap, Users, Clock, CheckCircle } from 'lucide-react';
+import { Switch } from '@/components/ui/switch';
+import { Calculator, Zap, Users, Clock, CheckCircle, Settings, AlertTriangle } from 'lucide-react';
 import { useGcfFunctions } from '@/hooks/useGcfFunctions';
 import { useEmailAccounts } from '@/hooks/useEmailAccounts';
 import { useSimpleOrganizations } from '@/contexts/SimpleOrganizationContext';
@@ -20,6 +21,9 @@ const SmartConfig = () => {
   const { accounts } = useEmailAccounts(currentOrganization?.id);
   
   const [emailVolume, setEmailVolume] = useState(10000);
+  const [manualMode, setManualMode] = useState(false);
+  const [manualFunctions, setManualFunctions] = useState(1);
+  const [manualAccounts, setManualAccounts] = useState(2);
   const [smartConfig, setSmartConfig] = useState({
     recommendedFunctions: 0,
     recommendedAccounts: 0,
@@ -41,16 +45,43 @@ const SmartConfig = () => {
       return;
     }
 
-    // Smart recommendations based on volume
-    let recommendedFunctions = Math.min(
-      Math.max(1, Math.ceil(emailVolume / 5000)), // 5k emails per function
-      Math.max(1, activeFunctions.length) // Use available functions
-    );
+    let recommendedFunctions: number;
+    let recommendedAccounts: number;
 
-    let recommendedAccounts = Math.min(
-      Math.max(2, Math.ceil(emailVolume / 2000)), // 2k emails per account
-      Math.max(1, activeAccounts.length) // Use available accounts
-    );
+    if (manualMode) {
+      // Use manual settings with validation
+      if (manualFunctions > activeFunctions.length) {
+        toast({
+          title: "Warning",
+          description: `You only have ${activeFunctions.length} active functions available`,
+          variant: "destructive"
+        });
+        return;
+      }
+
+      if (manualAccounts > activeAccounts.length) {
+        toast({
+          title: "Warning", 
+          description: `You only have ${activeAccounts.length} active accounts available`,
+          variant: "destructive"
+        });
+        return;
+      }
+
+      recommendedFunctions = Math.max(1, manualFunctions);
+      recommendedAccounts = Math.max(1, manualAccounts);
+    } else {
+      // Smart recommendations based on volume
+      recommendedFunctions = Math.min(
+        Math.max(1, Math.ceil(emailVolume / 5000)), // 5k emails per function
+        Math.max(1, activeFunctions.length) // Use available functions
+      );
+
+      recommendedAccounts = Math.min(
+        Math.max(2, Math.ceil(emailVolume / 2000)), // 2k emails per account
+        Math.max(1, activeAccounts.length) // Use available accounts
+      );
+    }
 
     const emailsPerFunction = Math.ceil(emailVolume / recommendedFunctions);
     const emailsPerAccount = Math.ceil(emailVolume / recommendedAccounts);
@@ -74,17 +105,26 @@ const SmartConfig = () => {
       emailVolume,
       recommendedFunctions,
       recommendedAccounts,
-      estimatedTime
+      estimatedTime,
+      manualMode,
+      manualFunctions: manualMode ? manualFunctions : recommendedFunctions,
+      manualAccounts: manualMode ? manualAccounts : recommendedAccounts
     }));
 
     toast({
       title: "✅ Configuration Calculated",
-      description: `Optimal setup for ${emailVolume.toLocaleString()} emails calculated`
+      description: `${manualMode ? 'Manual' : 'Optimal'} setup for ${emailVolume.toLocaleString()} emails calculated`
     });
   };
 
   const applyConfiguration = () => {
-    localStorage.setItem('smartConfig', JSON.stringify(smartConfig));
+    localStorage.setItem('smartConfig', JSON.stringify({
+      ...smartConfig,
+      emailVolume,
+      manualMode,
+      manualFunctions: manualMode ? manualFunctions : smartConfig.recommendedFunctions,
+      manualAccounts: manualMode ? manualAccounts : smartConfig.recommendedAccounts
+    }));
     toast({
       title: "✅ Configuration Applied",
       description: "Smart config will be used in campaign composer"
@@ -92,16 +132,34 @@ const SmartConfig = () => {
     navigate('/');
   };
 
+  const resetToDefaults = () => {
+    setManualMode(false);
+    setManualFunctions(1);
+    setManualAccounts(2);
+    setSmartConfig({
+      recommendedFunctions: 0,
+      recommendedAccounts: 0,
+      estimatedTime: '',
+      emailsPerFunction: 0,
+      emailsPerAccount: 0
+    });
+    localStorage.removeItem('smartConfig');
+    toast({
+      title: "Settings Reset",
+      description: "Configuration has been reset to defaults"
+    });
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-purple-50 p-6">
-      <div className="max-w-4xl mx-auto space-y-6">
+      <div className="max-w-6xl mx-auto space-y-6">
         <div className="text-center">
           <h1 className="text-3xl font-bold text-gray-900 flex items-center justify-center gap-2">
             <Calculator className="w-8 h-8 text-blue-600" />
-            SmartConfig Engine
+            SmartConfig Engine - FULLY UPGRADED
           </h1>
           <p className="text-gray-600 mt-2">
-            Get optimal recommendations for your email campaign
+            Get optimal recommendations or set custom parameters for your email campaign
           </p>
         </div>
 
@@ -129,6 +187,68 @@ const SmartConfig = () => {
 
               <Separator />
 
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Settings className="w-5 h-5 text-purple-600" />
+                    <Label className="text-base font-medium">Configuration Mode</Label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Label htmlFor="manual-mode" className="text-sm">Manual Mode</Label>
+                    <Switch
+                      id="manual-mode"
+                      checked={manualMode}
+                      onCheckedChange={setManualMode}
+                    />
+                  </div>
+                </div>
+
+                {manualMode && (
+                  <div className="p-4 border rounded-lg bg-purple-50 space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <Label htmlFor="manual-functions">Functions to Use</Label>
+                        <Input
+                          id="manual-functions"
+                          type="number"
+                          value={manualFunctions}
+                          onChange={(e) => setManualFunctions(Math.max(1, Number(e.target.value)))}
+                          min="1"
+                          max={activeFunctions.length}
+                        />
+                        <p className="text-xs text-gray-600 mt-1">
+                          Max: {activeFunctions.length} available
+                        </p>
+                      </div>
+                      
+                      <div>
+                        <Label htmlFor="manual-accounts">Accounts to Use</Label>
+                        <Input
+                          id="manual-accounts"
+                          type="number"
+                          value={manualAccounts}
+                          onChange={(e) => setManualAccounts(Math.max(1, Number(e.target.value)))}
+                          min="1"
+                          max={activeAccounts.length}
+                        />
+                        <p className="text-xs text-gray-600 mt-1">
+                          Max: {activeAccounts.length} available
+                        </p>
+                      </div>
+                    </div>
+
+                    {(manualFunctions > activeFunctions.length || manualAccounts > activeAccounts.length) && (
+                      <div className="flex items-center gap-2 p-2 bg-red-50 border border-red-200 rounded text-red-700 text-sm">
+                        <AlertTriangle className="w-4 h-4" />
+                        <span>Warning: You cannot use more resources than available</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <Separator />
+
               <div className="space-y-3">
                 <h3 className="font-semibold">Available Resources</h3>
                 <div className="grid grid-cols-2 gap-4">
@@ -147,14 +267,24 @@ const SmartConfig = () => {
                 </div>
               </div>
 
-              <Button 
-                onClick={calculateOptimalConfig}
-                className="w-full"
-                size="lg"
-              >
-                <Calculator className="w-4 h-4 mr-2" />
-                Calculate Optimal Config
-              </Button>
+              <div className="flex gap-2">
+                <Button 
+                  onClick={calculateOptimalConfig}
+                  className="flex-1"
+                  size="lg"
+                >
+                  <Calculator className="w-4 h-4 mr-2" />
+                  {manualMode ? 'Calculate Manual Config' : 'Calculate Optimal Config'}
+                </Button>
+                
+                <Button 
+                  onClick={resetToDefaults}
+                  variant="outline"
+                  size="lg"
+                >
+                  Reset
+                </Button>
+              </div>
             </CardContent>
           </Card>
 
@@ -163,7 +293,7 @@ const SmartConfig = () => {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Zap className="w-5 h-5" />
-                Smart Recommendations
+                {manualMode ? 'Manual Configuration' : 'Smart Recommendations'}
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-6">
@@ -174,7 +304,7 @@ const SmartConfig = () => {
                       <div className="text-3xl font-bold text-purple-600">
                         {smartConfig.recommendedFunctions}
                       </div>
-                      <div className="text-sm text-gray-600">Functions Needed</div>
+                      <div className="text-sm text-gray-600">Functions {manualMode ? 'Set' : 'Needed'}</div>
                       <div className="text-xs text-gray-500 mt-1">
                         {smartConfig.emailsPerFunction.toLocaleString()} emails each
                       </div>
@@ -183,7 +313,7 @@ const SmartConfig = () => {
                       <div className="text-3xl font-bold text-orange-600">
                         {smartConfig.recommendedAccounts}
                       </div>
-                      <div className="text-sm text-gray-600">Accounts Needed</div>
+                      <div className="text-sm text-gray-600">Accounts {manualMode ? 'Set' : 'Needed'}</div>
                       <div className="text-xs text-gray-500 mt-1">
                         {smartConfig.emailsPerAccount.toLocaleString()} emails each
                       </div>
@@ -213,6 +343,10 @@ const SmartConfig = () => {
                       </div>
                       <div className="flex items-center gap-2">
                         <CheckCircle className="w-4 h-4 text-green-600" />
+                        <span>{manualMode ? 'Custom configuration' : 'Optimized for volume'}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <CheckCircle className="w-4 h-4 text-green-600" />
                         <span>No serial bottlenecks</span>
                       </div>
                     </div>
@@ -230,12 +364,44 @@ const SmartConfig = () => {
               ) : (
                 <div className="text-center py-8 text-gray-500">
                   <Calculator className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                  <p>Enter email volume and click "Calculate Optimal Config"</p>
+                  <p>Enter email volume and click "Calculate {manualMode ? 'Manual' : 'Optimal'} Config"</p>
+                  {manualMode && (
+                    <p className="text-sm mt-2">Manual mode: Set your own function and account numbers</p>
+                  )}
                 </div>
               )}
             </CardContent>
           </Card>
         </div>
+
+        {/* Configuration Summary */}
+        {smartConfig.recommendedFunctions > 0 && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Configuration Summary</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-center">
+                <div className="p-4 bg-blue-50 rounded-lg">
+                  <div className="text-lg font-bold text-blue-600">{emailVolume.toLocaleString()}</div>
+                  <div className="text-sm text-gray-600">Total Emails</div>
+                </div>
+                <div className="p-4 bg-purple-50 rounded-lg">
+                  <div className="text-lg font-bold text-purple-600">{smartConfig.recommendedFunctions}</div>
+                  <div className="text-sm text-gray-600">Functions</div>
+                </div>
+                <div className="p-4 bg-orange-50 rounded-lg">
+                  <div className="text-lg font-bold text-orange-600">{smartConfig.recommendedAccounts}</div>
+                  <div className="text-sm text-gray-600">Accounts</div>
+                </div>
+                <div className="p-4 bg-green-50 rounded-lg">
+                  <div className="text-lg font-bold text-green-600">{smartConfig.estimatedTime}</div>
+                  <div className="text-sm text-gray-600">Est. Time</div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Quick Actions */}
         <Card>

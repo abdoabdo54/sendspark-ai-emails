@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -5,6 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
 import { toast } from '@/hooks/use-toast';
 import { testPowerMTAConnection } from '@/utils/powerMTASender';
 import { Loader2, TestTube, Globe, Terminal, Plus, Trash2, Shield } from 'lucide-react';
@@ -401,34 +403,35 @@ const PowerMTAConfigForm: React.FC<PowerMTAConfigFormProps> = ({
 
             <div className="space-y-4">
               <div className="flex items-center justify-between">
-                <Label className="text-base font-medium">Proxy Configuration</Label>
                 <div className="flex items-center gap-2">
-                  <Shield className="w-4 h-4" />
-                  <input
-                    type="checkbox"
+                  <Shield className="w-5 h-5 text-blue-600" />
+                  <Label className="text-base font-medium">Proxy Configuration</Label>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Label htmlFor="proxy_enabled" className="text-sm">Enable Proxy</Label>
+                  <Switch
                     id="proxy_enabled"
                     checked={formData.proxy_enabled}
-                    onChange={(e) => setFormData(prev => ({ ...prev, proxy_enabled: e.target.checked }))}
-                    className="rounded"
+                    onCheckedChange={(checked) => setFormData(prev => ({ ...prev, proxy_enabled: checked }))}
                   />
-                  <Label htmlFor="proxy_enabled" className="text-sm">Enable Proxy</Label>
                 </div>
               </div>
 
               {formData.proxy_enabled && (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 border rounded-lg bg-gray-50">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 border rounded-lg bg-blue-50">
                   <div>
-                    <Label htmlFor="proxy_host">Proxy Host/IP</Label>
+                    <Label htmlFor="proxy_host">Proxy Host/IP *</Label>
                     <Input
                       id="proxy_host"
                       value={formData.proxy_host}
                       onChange={(e) => setFormData(prev => ({ ...prev, proxy_host: e.target.value }))}
                       placeholder="proxy.example.com"
+                      required={formData.proxy_enabled}
                     />
                   </div>
 
                   <div>
-                    <Label htmlFor="proxy_port">Proxy Port</Label>
+                    <Label htmlFor="proxy_port">Proxy Port *</Label>
                     <Input
                       id="proxy_port"
                       type="number"
@@ -437,6 +440,7 @@ const PowerMTAConfigForm: React.FC<PowerMTAConfigFormProps> = ({
                       placeholder="8080"
                       min="1"
                       max="65535"
+                      required={formData.proxy_enabled}
                     />
                   </div>
 

@@ -10,6 +10,7 @@ import Index from "./pages/Index";
 import Campaigns from "./pages/Campaigns";
 import SmartConfig from "./pages/SmartConfig";
 import FunctionManager from "./pages/FunctionManager";
+import PowerMTAServers from "./pages/PowerMTAServers";
 import AuthForm from "./components/AuthForm";
 import { useState } from "react";
 
@@ -40,6 +41,7 @@ const AppContent = () => {
       <Route path="/campaigns" element={<Campaigns />} />
       <Route path="/smart-config" element={<SmartConfig />} />
       <Route path="/function-manager" element={<FunctionManager />} />
+      <Route path="/powermta-servers" element={<PowerMTAServers />} />
     </Routes>
   );
 };
